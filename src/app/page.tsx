@@ -1,69 +1,34 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
-  return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+import Image from "next/image";
+import { motion } from "framer-motion";
+import { ArrowRight, Eye, EyeOff, LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FormEvent, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+
+export default function SignInPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [visible, setVisible] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function signIn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setError(""); setLoading(true);
+    const { error: authError } = await createClient().auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (authError) return setError(authError.message);
+    router.push("/app");
+  }
+
+  return <main className="min-h-screen overflow-hidden bg-[#090909] text-[#f8f7f4] selection:bg-[#f59a18] selection:text-black">
+    <div className="grid-noise pointer-events-none fixed inset-0 opacity-40" /><div className="pointer-events-none fixed inset-x-0 top-0 h-[560px] bg-[radial-gradient(ellipse_at_72%_0%,rgba(245,154,24,0.2),transparent_52%)]" />
+    <nav className="relative z-10 mx-auto flex max-w-[1440px] items-center justify-between px-6 py-6 lg:px-12"><div className="flex items-center gap-3"><div className="relative h-11 w-11 overflow-hidden rounded-md border border-white/10 bg-black"><Image src="/brand/deboss-mark.png" alt="DEBOSS GLOBAL" fill className="object-cover scale-[1.65]" priority /></div><div><p className="text-sm font-bold tracking-[0.22em]">DEBOSS</p><p className="text-[9px] font-semibold tracking-[0.32em] text-[#f59a18]">GLOBAL OPERATIONS</p></div></div><p className="hidden text-[11px] font-medium uppercase tracking-[0.14em] text-white/40 sm:block">Secure command center</p></nav>
+    <section className="relative z-10 mx-auto grid min-h-[calc(100vh-92px)] max-w-[1440px] items-center gap-16 px-6 pb-20 lg:grid-cols-[1fr_0.85fr] lg:px-12">
+      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}><p className="mb-6 flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.2em] text-[#f59a18]"><span className="h-px w-8 bg-[#f59a18]" /> Freight intelligence, elevated</p><h1 className="max-w-2xl text-5xl font-semibold leading-[0.98] tracking-tight sm:text-6xl xl:text-7xl">Move the operation with complete clarity.</h1><p className="mt-7 max-w-xl text-base leading-7 text-white/55 sm:text-lg">A focused workspace for the people keeping customers, carriers, dispatch and revenue in motion.</p></motion.div>
+      <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.75, delay: 0.12 }} className="border border-white/10 bg-[#111110] p-5 shadow-2xl shadow-black/40 sm:p-8"><div className="mb-8 flex items-start justify-between border-b border-white/10 pb-5"><div><p className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-[#f59a18]"><Sparkles size={13} /> Secure access</p><h2 className="text-2xl font-semibold">Welcome back.</h2></div><span className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 text-white/60"><LockKeyhole size={16} /></span></div><form className="space-y-5" onSubmit={signIn}><label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.13em] text-white/50">Work email</span><input required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 w-full rounded-md border border-white/10 bg-black/30 px-4 text-sm outline-none transition placeholder:text-white/20 focus:border-[#f59a18]" type="email" placeholder="admin@debossglobal.com" /></label><label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.13em] text-white/50">Password</span><span className="relative block"><input required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 w-full rounded-md border border-white/10 bg-black/30 px-4 pr-12 text-sm outline-none transition placeholder:text-white/20 focus:border-[#f59a18]" type={visible ? "text" : "password"} placeholder="Enter your password" /><button type="button" onClick={() => setVisible(!visible)} aria-label={visible ? "Hide password" : "Show password"} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-white/45 transition hover:text-[#f59a18]">{visible ? <EyeOff size={17} /> : <Eye size={17} />}</button></span></label>{error && <p role="alert" className="rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-200">{error}</p>}<button disabled={loading} className="group flex h-12 w-full items-center justify-between rounded-md bg-[#f59a18] px-5 text-sm font-bold text-black transition hover:bg-[#ffb14a] disabled:opacity-60">{loading ? "Verifying access..." : "Enter operations workspace"}<ArrowRight size={18} className="transition-transform group-hover:translate-x-1" /></button></form><p className="mt-5 flex items-center gap-2 text-[10px] leading-4 text-white/35"><ShieldCheck size={13} className="shrink-0" /> Your access is provisioned by DEBOSS administration.</p></motion.div>
+    </section>
+  </main>;
 }
