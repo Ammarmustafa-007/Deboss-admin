@@ -66,6 +66,20 @@ function EmptyQueue({ manager }: { manager: boolean }) {
 }
 
 function ShipmentDetail({ detail, caps, manager, api, patch, refresh, notice }: any) {
+  if (manager) return <ManagerShipmentReview detail={detail} caps={caps} api={api} patch={patch} refresh={refresh} notice={notice}/>;
+  return <AgentShipmentExecution detail={detail} caps={caps} manager={false} api={api} patch={patch} refresh={refresh} notice={notice}/>;
+}
+
+function ManagerShipmentReview({ detail, caps, api, patch, refresh, notice }: any) {
+  const shipment = detail.shipment;
+  const pendingDocuments = (detail.documents ?? []).filter((document: any) => !document.is_verified).length;
+  const exceptionOpen = Boolean(shipment.exception_note && !shipment.exception_resolution);
+  return <div><section className="mb-6 rounded-lg bg-[#191816] p-5 text-white"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#f59a18]">Operations manager review</p><div className="mt-2 flex flex-wrap items-start justify-between gap-4"><div><h3 className="text-xl font-semibold">Control this shipment through execution.</h3><p className="mt-2 max-w-2xl text-sm leading-6 text-white/60">Assign the work from the left-hand queue, monitor the Agent's updates below, review paperwork, resolve exceptions, and mark the shipment invoice-ready when it is complete.</p></div><span className="rounded-md border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold text-[#f59a18]">{shipment.status.replaceAll("_", " ")}</span></div><div className="mt-5 grid gap-3 sm:grid-cols-3"><ManagerStatus label="Assignment" value={shipment.assigned_to ? "Assigned" : "Needs assignment"}/><ManagerStatus label="Documents" value={pendingDocuments ? `${pendingDocuments} pending review` : "No pending review"}/><ManagerStatus label="Exception" value={exceptionOpen ? "Needs resolution" : "No open exception"}/></div><p className="mt-5 text-xs leading-5 text-white/45">Manager controls are available throughout the record below: assignment in the queue, document verification in shipment paperwork, exception resolution in the exception workspace, and invoice readiness in shipment finance.</p></section><AgentShipmentExecution detail={detail} caps={caps} manager api={api} patch={patch} refresh={refresh} notice={notice}/></div>;
+}
+
+function ManagerStatus({ label, value }: { label: string; value: string }) { return <div className="rounded-md border border-white/10 bg-white/5 p-3"><p className="text-sm font-semibold">{value}</p><p className="mt-1 text-[10px] font-bold uppercase tracking-[.12em] text-white/45">{label}</p></div>; }
+
+function AgentShipmentExecution({ detail, caps, manager, api, patch, refresh, notice }: any) {
   const shipment = detail.shipment;
   const [form, setForm] = useState<any>({});
   const [documentType, setDocumentType] = useState("BOL");
