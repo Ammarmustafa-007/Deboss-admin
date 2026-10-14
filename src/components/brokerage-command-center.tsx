@@ -9,6 +9,7 @@ import { TeamBuilderPanel } from "@/components/team-builder-panel";
 import { BrokerageWorkflowGuide } from "@/components/brokerage-workflow-guide";
 import { InvoiceLedger } from "@/app/app/invoices/page";
 import { DepartmentAccessPanel } from "@/app/app/access/page";
+import { PendingButton, useSingleFlight } from "@/components/action-state";
 
 const root = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const stages = ["NEW", "CONTACTED", "QUALIFIED", "CUSTOMER", "LOST"];
@@ -51,10 +52,10 @@ export function BrokerageCommandCenter({ profile, onSignOut }: { profile: Profil
   }, [notice]);
 
   const refresh = useCallback(async () => {
-    await Promise.all([
+    void Promise.all([
       queryClient.invalidateQueries({ queryKey: ["brokerage", "workspace"] }),
       queryClient.invalidateQueries({ queryKey: ["brokerage", "notifications"] }),
-    ]);
+    ]).catch(() => undefined);
   }, [queryClient]);
   const report = (message: string, tone: "success" | "error" = "success") => setNotice({ message, tone });
 
@@ -136,46 +137,237 @@ function SalesAgentWorkspace({ data, api, refresh, report }: { data: any; api: (
 
 function ManagerLeadReview({ leadId, data, api, refresh, report }: { leadId: string; data: any; api: (path: string, init?: RequestInit) => Promise<Response>; refresh: () => Promise<void>; report: (message: string, tone?: "success" | "error") => void }) {
   const queryClient = useQueryClient();
-  const detail = useQuery({ queryKey: ["brokerage", "lead", leadId], queryFn: async () => responseData<any>(await api(`/api/v1/brokerage/leads/${leadId}/detail`)), staleTime: 15_000 });
   const [comment, setComment] = useState("");
-  const act = async (path: string, method: string, body: unknown, success: string) => { try { await responseData(await api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) })); await Promise.all([queryClient.invalidateQueries({ queryKey: ["brokerage", "lead", leadId] }), refresh()]); report(success); } catch (error) { report(message(error), "error"); } };
+  const actions = useSingleFlight();
+  const detail = useQuery({ queryKey: ["brokerage", "lead", leadId], queryFn: async () => responseData<any>(await api("/api/v1/brokerage/leads/" + leadId + "/detail")), staleTime: 15_000 });
+  const refreshLead = async () => {
+    void queryClient.invalidateQueries({ queryKey: ["brokerage", "lead", leadId] });
+    void refresh();
+  };
+  const act = async (path: string, method: string, body: unknown, success: string) => {
+    const result = await actions.run(method + ":" + path, async () => {
+      try {
+        await responseData(await api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) }));
+        await refreshLead();
+        report(success);
+        return true;
+      } catch (error) {
+        report(message(error), "error");
+        return false;
+      }
+    });
+    return result === true;
+  };
+
   if (detail.isLoading) return <DetailSkeleton/>;
   if (detail.isError || !detail.data) return <Empty title="Lead review unavailable" copy={message(detail.error)}/>;
+
   const lead = detail.data.lead;
+  const leadPath = "/api/v1/brokerage/leads/" + lead.id;
+  const leadBusy = actions.isBusy("PATCH:" + leadPath);
+  const commentBusy = actions.isBusy("POST:" + leadPath + "/comments");
   const quotes = detail.data.quotes ?? [];
   const submitted = quotes.filter((quote: any) => quote.stage === "SUBMITTED").length;
   const approved = quotes.filter((quote: any) => quote.stage === "APPROVED").length;
   const handedOff = quotes.filter((quote: any) => quote.stage === "HANDED_OFF").length;
-  return <div><header className="border-b border-black/8 p-5"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[#a65c00]">Manager review workspace</p><h2 className="mt-1 text-2xl font-semibold">{lead.company_name}</h2><p className="mt-2 text-sm text-black/50">{lead.contact_name || "No contact name"}{lead.contact_email ? ` · ${lead.contact_email}` : ""}</p></div><div className="flex items-center gap-2"><select value={lead.stage} onChange={(event) => void act(`/api/v1/brokerage/leads/${lead.id}`, "PATCH", { stage: event.target.value }, "Lead stage updated.")} className="h-9 rounded-md border border-black/10 bg-white px-2 text-xs font-bold">{stages.map((stage) => <option key={stage}>{stage}</option>)}</select><button onClick={() => void act(`/api/v1/brokerage/leads/${lead.id}`, "PATCH", { archived_at: lead.archived_at ? null : new Date().toISOString() }, lead.archived_at ? "Lead restored." : "Lead archived.")} className="h-9 rounded-md border border-black/10 px-3 text-xs font-bold">{lead.archived_at ? "Restore" : "Archive"}</button></div></div><div className="mt-5 grid gap-3 sm:grid-cols-3"><ReviewMetric label="Awaiting quote approval" value={submitted}/><ReviewMetric label="Approved, ready to hand off" value={approved}/><ReviewMetric label="Operations handoffs" value={handedOff}/></div></header><div className="grid gap-6 p-5 2xl:grid-cols-[.85fr_1.15fr]"><div className="space-y-6"><section className="rounded-lg bg-[#191816] p-5 text-white"><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[#f59a18]">Your decision path</p><ol className="mt-4 space-y-3 text-sm leading-6 text-white/65"><li><b className="text-white">1. Review:</b> open a submitted quote below and verify the rate and supporting files.</li><li><b className="text-white">2. Decide:</b> approve it or return it with a required rework reason.</li><li><b className="text-white">3. Handoff:</b> open an approved quote and create the Operations shipment.</li></ol></section><section><SectionTitle title="Customer context" copy="Read the commercial record before making an approval decision."/><div className="mt-4 grid gap-3 sm:grid-cols-2"><Info label="Contact" value={lead.contact_name || "Not supplied"}/><Info label="Phone" value={lead.contact_phone || "Not supplied"}/><Info label="Forecast" value={lead.estimated_monthly_value ? money(lead.estimated_monthly_value) : "Not supplied"}/><Info label="Next follow-up" value={lead.next_follow_up_at ? new Date(lead.next_follow_up_at).toLocaleString() : "Not scheduled"}/></div></section><section className="border-t border-black/8 pt-6"><SectionTitle title="Agent activity history" copy="Calls, follow-ups, appointments, and notes recorded against this lead."/><Timeline rows={detail.data.activities ?? []} empty="No activities have been recorded."/></section></div><div className="space-y-6"><section className="rounded-lg border border-[#f59a18]/35 bg-[#fffaf1] p-5"><SectionTitle title="Quote approval and Operations handoff" copy="Open a quote to approve, reject for rework, or hand approved work to Brokerage Operations."/><div className="mt-4 space-y-3">{quotes.map((quote: any) => <QuoteWorkspace key={quote.id} quoteId={quote.id} quote={quote} data={data} api={api} refresh={refresh} report={report}/>)}{!quotes.length && <p className="rounded-md border border-dashed border-black/15 bg-white px-4 py-5 text-sm text-black/50">The Sales Agent has not created a quote yet. A quote must be submitted before it can be approved or sent to Operations.</p>}</div></section><section className="border-t border-black/8 pt-6"><SectionTitle title="Manager comments" copy="Leave direction or an approval note visible to people working this lead."/><form onSubmit={(event) => { event.preventDefault(); if (!comment.trim()) return; void act(`/api/v1/brokerage/leads/${lead.id}/comments`, "POST", { body: comment }, "Manager comment added."); setComment(""); }} className="mt-4 flex gap-2"><input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add direction for the Sales Agent" className="h-10 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-sm"/><button className="h-10 rounded-md border border-black/10 px-3 text-xs font-bold">Post</button></form><CommentList rows={detail.data.comments ?? []} empty="No comments yet."/></section></div></div></div>;
+  const postComment = () => void (async () => {
+    if (!comment.trim()) return;
+    if (await act(leadPath + "/comments", "POST", { body: comment }, "Manager comment added.")) setComment("");
+  })();
+
+  return <div>
+    <header className="border-b border-black/8 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[#a65c00]">Manager review workspace</p><h2 className="mt-1 text-2xl font-semibold">{lead.company_name}</h2><p className="mt-2 text-sm text-black/50">{lead.contact_name || "No contact name"}{lead.contact_email && <>{ " · " }{lead.contact_email}</>}</p></div>
+        <div className="flex items-center gap-2">
+          <select disabled={leadBusy} value={lead.stage} onChange={(event) => void act(leadPath, "PATCH", { stage: event.target.value }, "Lead stage updated.")} className="h-9 rounded-md border border-black/10 bg-white px-2 text-xs font-bold disabled:opacity-55">{stages.map((stage) => <option key={stage}>{stage}</option>)}</select>
+          <PendingButton type="button" pending={leadBusy} pendingLabel="Saving..." onClick={() => void act(leadPath, "PATCH", { archived_at: lead.archived_at ? null : new Date().toISOString() }, lead.archived_at ? "Lead restored." : "Lead archived.")} className="h-9 rounded-md border border-black/10 px-3 text-xs font-bold disabled:opacity-50">{lead.archived_at ? "Restore" : "Archive"}</PendingButton>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-3 sm:grid-cols-3"><ReviewMetric label="Awaiting quote approval" value={submitted}/><ReviewMetric label="Approved, ready to hand off" value={approved}/><ReviewMetric label="Operations handoffs" value={handedOff}/></div>
+    </header>
+    <div className="grid gap-6 p-5 2xl:grid-cols-[.85fr_1.15fr]">
+      <div className="space-y-6">
+        <section className="rounded-lg bg-[#191816] p-5 text-white"><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[#f59a18]">Your decision path</p><ol className="mt-4 space-y-3 text-sm leading-6 text-white/65"><li><b className="text-white">1. Review:</b> open a submitted quote below and verify the rate and supporting files.</li><li><b className="text-white">2. Decide:</b> approve it or return it with a required rework reason.</li><li><b className="text-white">3. Handoff:</b> open an approved quote and create the Operations shipment.</li></ol></section>
+        <section><SectionTitle title="Customer context" copy="Read the commercial record before making an approval decision."/><div className="mt-4 grid gap-3 sm:grid-cols-2"><Info label="Contact" value={lead.contact_name || "Not supplied"}/><Info label="Phone" value={lead.contact_phone || "Not supplied"}/><Info label="Forecast" value={lead.estimated_monthly_value ? money(lead.estimated_monthly_value) : "Not supplied"}/><Info label="Next follow-up" value={lead.next_follow_up_at ? new Date(lead.next_follow_up_at).toLocaleString() : "Not scheduled"}/></div></section>
+        <section className="border-t border-black/8 pt-6"><SectionTitle title="Agent activity history" copy="Calls, follow-ups, appointments, and notes recorded against this lead."/><Timeline rows={detail.data.activities ?? []} empty="No activities have been recorded."/></section>
+      </div>
+      <div className="space-y-6">
+        <section className="rounded-lg border border-[#f59a18]/35 bg-[#fffaf1] p-5"><SectionTitle title="Quote approval and Operations handoff" copy="Open a quote to approve, reject for rework, or hand approved work to Brokerage Operations."/><div className="mt-4 space-y-3">{quotes.map((quote: any) => <QuoteWorkspace key={quote.id} quoteId={quote.id} quote={quote} data={data} api={api} refresh={refreshLead} report={report}/>)}{!quotes.length && <p className="rounded-md border border-dashed border-black/15 bg-white px-4 py-5 text-sm text-black/50">The Sales Agent has not created a quote yet. A quote must be submitted before it can be approved or sent to Operations.</p>}</div></section>
+        <section className="border-t border-black/8 pt-6"><SectionTitle title="Manager comments" copy="Leave direction or an approval note visible to people working this lead."/><form onSubmit={(event) => { event.preventDefault(); postComment(); }} className="mt-4 flex gap-2"><input disabled={commentBusy} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add direction for the Sales Agent" className="h-10 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-sm disabled:opacity-55"/><PendingButton pending={commentBusy} pendingLabel="Posting..." className="h-10 rounded-md border border-black/10 px-3 text-xs font-bold disabled:opacity-50">Post</PendingButton></form><CommentList rows={detail.data.comments ?? []} empty="No comments yet."/></section>
+      </div>
+    </div>
+  </div>;
 }
 
 function ReviewMetric({ label, value }: { label: string; value: number }) { return <div className="rounded-md bg-black/[.035] p-3"><p className="text-2xl font-semibold">{value}</p><p className="mt-1 text-[10px] font-bold uppercase tracking-[.1em] text-black/40">{label}</p></div>; }
 
 function LeadDetail({ leadId, data, api, refresh, report }: { leadId: string; data: any; api: (path: string, init?: RequestInit) => Promise<Response>; refresh: () => Promise<void>; report: (message: string, tone?: "success" | "error") => void }) {
   if (data.capabilities?.departmentManager) return <ManagerLeadReview leadId={leadId} data={data} api={api} refresh={refresh} report={report}/>;
+
   const queryClient = useQueryClient();
-  const detail = useQuery({ queryKey: ["brokerage", "lead", leadId], queryFn: async () => responseData<any>(await api(`/api/v1/brokerage/leads/${leadId}/detail`)), staleTime: 15_000 });
+  const detail = useQuery({ queryKey: ["brokerage", "lead", leadId], queryFn: async () => responseData<any>(await api("/api/v1/brokerage/leads/" + leadId + "/detail")), staleTime: 15_000 });
   const [leadForm, setLeadForm] = useState<any>(null);
   const [activity, setActivity] = useState({ activity_type: "CALL", body: "", due_at: "" });
   const [comment, setComment] = useState("");
   const [quoteForm, setQuoteForm] = useState({ pickup_location: "", delivery_location: "", equipment_type: "", quoted_rate: "" });
-  useEffect(() => { if (detail.data?.lead) setLeadForm({ ...detail.data.lead, next_follow_up_at: localInput(detail.data.lead.next_follow_up_at) }); }, [detail.data?.lead]);
-  const invalidate = async () => { await Promise.all([queryClient.invalidateQueries({ queryKey: ["brokerage", "lead", leadId] }), refresh()]); };
-  const perform = async (path: string, method: string, body: unknown, success: string) => { try { await responseData(await api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) })); await invalidate(); report(success); } catch (error) { report(message(error), "error"); } };
+  const actions = useSingleFlight();
+
+  useEffect(() => {
+    if (detail.data?.lead) setLeadForm({ ...detail.data.lead, next_follow_up_at: localInput(detail.data.lead.next_follow_up_at) });
+  }, [detail.data?.lead]);
+
+  const invalidate = async () => {
+    void queryClient.invalidateQueries({ queryKey: ["brokerage", "lead", leadId] });
+    void refresh();
+  };
+  const perform = async (path: string, method: string, body: unknown, success: string) => {
+    const result = await actions.run(method + ":" + path, async () => {
+      try {
+        await responseData(await api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) }));
+        await invalidate();
+        report(success);
+        return true;
+      } catch (error) {
+        report(message(error), "error");
+        return false;
+      }
+    });
+    return result === true;
+  };
+
   if (detail.isLoading || !leadForm) return <DetailSkeleton/>;
-  if (detail.isError) return <Empty title="Lead detail unavailable" copy={message(detail.error)}/>;
+  if (detail.isError || !detail.data) return <Empty title="Lead detail unavailable" copy={message(detail.error)}/>;
+
   const lead = detail.data.lead;
-  return <div><div className="flex flex-wrap items-start justify-between gap-4 border-b border-black/8 p-5"><div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[#a65c00]">Sales detail workspace</p><h2 className="mt-1 text-2xl font-semibold">{lead.company_name}</h2><p className="mt-2 text-sm text-black/50">{lead.contact_name || "No contact name"}{lead.contact_email ? ` · ${lead.contact_email}` : ""}</p></div><div className="flex items-center gap-2"><select value={leadForm.stage} onChange={(event) => { const stage = event.target.value; setLeadForm({ ...leadForm, stage }); void perform(`/api/v1/brokerage/leads/${lead.id}`, "PATCH", { stage }, "Lead stage updated."); }} className="h-9 rounded-md border border-black/10 bg-white px-2 text-xs font-bold">{stages.map((stage) => <option key={stage}>{stage}</option>)}</select><button onClick={() => void perform(`/api/v1/brokerage/leads/${lead.id}`, "PATCH", { archived_at: lead.archived_at ? null : new Date().toISOString() }, lead.archived_at ? "Lead restored." : "Lead archived.")} className="h-9 rounded-md border border-black/10 px-3 text-xs font-bold">{lead.archived_at ? "Restore" : "Archive"}</button></div></div><div className="grid gap-6 p-5 2xl:grid-cols-[1.05fr_.95fr]"><div className="space-y-6"><section><SectionTitle title="Lead information" copy="Update contact details, forecast, and next follow-up."/><div className="mt-4 grid gap-3 sm:grid-cols-2"><Input light label="Company" value={leadForm.company_name ?? ""} onChange={(company_name) => setLeadForm({ ...leadForm, company_name })}/><Input light label="Contact" required={false} value={leadForm.contact_name ?? ""} onChange={(contact_name) => setLeadForm({ ...leadForm, contact_name })}/><Input light label="Email" type="email" required={false} value={leadForm.contact_email ?? ""} onChange={(contact_email) => setLeadForm({ ...leadForm, contact_email })}/><Input light label="Phone" required={false} value={leadForm.contact_phone ?? ""} onChange={(contact_phone) => setLeadForm({ ...leadForm, contact_phone })}/><Input light label="Source" required={false} value={leadForm.source ?? ""} onChange={(source) => setLeadForm({ ...leadForm, source })}/><Input light label="Forecast" required={false} type="number" value={String(leadForm.estimated_monthly_value ?? "")} onChange={(estimated_monthly_value) => setLeadForm({ ...leadForm, estimated_monthly_value })}/><Input light label="Follow-up" required={false} type="datetime-local" value={leadForm.next_follow_up_at ?? ""} onChange={(next_follow_up_at) => setLeadForm({ ...leadForm, next_follow_up_at })}/></div><button onClick={() => void perform(`/api/v1/brokerage/leads/${lead.id}`, "PATCH", { company_name: leadForm.company_name, contact_name: leadForm.contact_name, contact_email: leadForm.contact_email, contact_phone: leadForm.contact_phone, source: leadForm.source, estimated_monthly_value: leadForm.estimated_monthly_value === "" ? null : Number(leadForm.estimated_monthly_value), next_follow_up_at: leadForm.next_follow_up_at ? new Date(leadForm.next_follow_up_at).toISOString() : null }, "Lead details saved.")} className="mt-4 h-9 rounded-md bg-[#191816] px-3 text-xs font-bold text-white">Save lead changes</button></section><section className="border-t border-black/8 pt-6"><SectionTitle title="Activities and follow-ups" copy="Capture calls, email, notes, callbacks, and appointments in one timeline."/><form onSubmit={(event) => { event.preventDefault(); void perform(`/api/v1/brokerage/leads/${lead.id}/activities`, "POST", { ...activity, due_at: activity.due_at ? new Date(activity.due_at).toISOString() : null }, "Activity added."); setActivity({ activity_type: "CALL", body: "", due_at: "" }); }} className="mt-4 grid gap-3 sm:grid-cols-[130px_1fr]"><select value={activity.activity_type} onChange={(event) => setActivity({ ...activity, activity_type: event.target.value })} className="h-10 rounded-md border border-black/10 px-3 text-sm"><option>CALL</option><option>EMAIL</option><option>NOTE</option><option>FOLLOW_UP</option><option>APPOINTMENT</option></select><input required value={activity.body} onChange={(event) => setActivity({ ...activity, body: event.target.value })} placeholder="What happened or what is next?" className="h-10 rounded-md border border-black/10 px-3 text-sm"/><input value={activity.due_at} onChange={(event) => setActivity({ ...activity, due_at: event.target.value })} type="datetime-local" className="h-10 rounded-md border border-black/10 px-3 text-sm"/><button className="h-10 rounded-md border border-black/10 text-xs font-bold">Add activity</button></form><Timeline rows={detail.data.activities} empty="No activities have been recorded."/></section><section className="border-t border-black/8 pt-6"><SectionTitle title="Internal comments" copy="Comments are visible to the people permitted to work on this lead."/><form onSubmit={(event) => { event.preventDefault(); if (comment.trim()) { void perform(`/api/v1/brokerage/leads/${lead.id}/comments`, "POST", { body: comment }, "Comment added."); setComment(""); } }} className="mt-4 flex gap-2"><input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment" className="h-10 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-sm"/><button className="h-10 rounded-md border border-black/10 px-3 text-xs font-bold">Post</button></form><CommentList rows={detail.data.comments} empty="No comments yet."/></section></div><div className="space-y-6"><section className="rounded-lg bg-[#191816] p-5 text-white"><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#f59a18]">Customer conversion</p><h3 className="mt-2 text-lg font-semibold">Move an approved relationship forward.</h3><p className="mt-2 text-sm leading-6 text-white/55">Conversion opens the customer workspace with contact information, history, shipment progress, and customer comments.</p><button onClick={() => void perform(`/api/v1/brokerage/leads/${lead.id}/convert`, "POST", undefined, "Customer workspace created.")} className="mt-5 h-10 rounded-md bg-[#f59a18] px-4 text-sm font-bold text-black">{detail.data.customer ? "Refresh customer" : "Convert to customer"}</button></section>{detail.data.customer && <CustomerWorkspace customerId={detail.data.customer.id} api={api} report={report}/>}<section className="rounded-lg border border-black/8 p-5"><SectionTitle title="Quote desk" copy="Draft rates, attach supporting documents, submit for review, and hand off approved work."/><form onSubmit={(event) => { event.preventDefault(); void perform("/api/v1/brokerage/quotes", "POST", { lead_id: lead.id, ...quoteForm, quoted_rate: quoteForm.quoted_rate ? Number(quoteForm.quoted_rate) : undefined }, "Quote draft created."); setQuoteForm({ pickup_location: "", delivery_location: "", equipment_type: "", quoted_rate: "" }); }} className="mt-4 space-y-3"><Input light label="Pickup" value={quoteForm.pickup_location} onChange={(pickup_location) => setQuoteForm({ ...quoteForm, pickup_location })}/><Input light label="Delivery" value={quoteForm.delivery_location} onChange={(delivery_location) => setQuoteForm({ ...quoteForm, delivery_location })}/><Input light label="Equipment" required={false} value={quoteForm.equipment_type} onChange={(equipment_type) => setQuoteForm({ ...quoteForm, equipment_type })}/><Input light label="Quoted rate" required={false} type="number" value={quoteForm.quoted_rate} onChange={(quoted_rate) => setQuoteForm({ ...quoteForm, quoted_rate })}/><button className="h-10 w-full rounded-md border border-black/10 text-sm font-bold">Create quote draft</button></form><div className="mt-5 space-y-2">{detail.data.quotes.map((quote: any) => <QuoteWorkspace key={quote.id} quoteId={quote.id} quote={quote} data={data} api={api} refresh={invalidate} report={report}/>)}</div></section></div></div></div>;
+  const leadPath = "/api/v1/brokerage/leads/" + lead.id;
+  const leadBusy = actions.isBusy("PATCH:" + leadPath);
+  const activityBusy = actions.isBusy("POST:" + leadPath + "/activities");
+  const commentBusy = actions.isBusy("POST:" + leadPath + "/comments");
+  const convertBusy = actions.isBusy("POST:" + leadPath + "/convert");
+  const quoteBusy = actions.isBusy("POST:/api/v1/brokerage/quotes");
+
+  const addActivity = () => void (async () => {
+    const saved = await perform(leadPath + "/activities", "POST", { ...activity, due_at: activity.due_at ? new Date(activity.due_at).toISOString() : null }, "Activity added.");
+    if (saved) setActivity({ activity_type: "CALL", body: "", due_at: "" });
+  })();
+  const addComment = () => void (async () => {
+    if (!comment.trim()) return;
+    const saved = await perform(leadPath + "/comments", "POST", { body: comment }, "Comment added.");
+    if (saved) setComment("");
+  })();
+  const createQuote = () => void (async () => {
+    const saved = await perform("/api/v1/brokerage/quotes", "POST", { lead_id: lead.id, ...quoteForm, quoted_rate: quoteForm.quoted_rate ? Number(quoteForm.quoted_rate) : undefined }, "Quote draft created.");
+    if (saved) setQuoteForm({ pickup_location: "", delivery_location: "", equipment_type: "", quoted_rate: "" });
+  })();
+
+  return <div>
+    <div className="flex flex-wrap items-start justify-between gap-4 border-b border-black/8 p-5">
+      <div><p className="text-[10px] font-bold uppercase tracking-[.15em] text-[#a65c00]">Sales detail workspace</p><h2 className="mt-1 text-2xl font-semibold">{lead.company_name}</h2><p className="mt-2 text-sm text-black/50">{lead.contact_name || "No contact name"}{lead.contact_email && <>{ " · " }{lead.contact_email}</>}</p></div>
+      <div className="flex items-center gap-2">
+        <select disabled={leadBusy} value={leadForm.stage} onChange={(event) => { const stage = event.target.value; setLeadForm({ ...leadForm, stage }); void perform(leadPath, "PATCH", { stage }, "Lead stage updated."); }} className="h-9 rounded-md border border-black/10 bg-white px-2 text-xs font-bold disabled:opacity-55">{stages.map((stage) => <option key={stage}>{stage}</option>)}</select>
+        <PendingButton type="button" pending={leadBusy} pendingLabel="Saving..." onClick={() => void perform(leadPath, "PATCH", { archived_at: lead.archived_at ? null : new Date().toISOString() }, lead.archived_at ? "Lead restored." : "Lead archived.")} className="h-9 rounded-md border border-black/10 px-3 text-xs font-bold disabled:opacity-50">{lead.archived_at ? "Restore" : "Archive"}</PendingButton>
+      </div>
+    </div>
+    <div className="grid gap-6 p-5 2xl:grid-cols-[1.05fr_.95fr]">
+      <div className="space-y-6">
+        <section>
+          <SectionTitle title="Lead information" copy="Update contact details, forecast, and next follow-up."/>
+          <fieldset disabled={leadBusy} className="mt-4 grid gap-3 disabled:opacity-55 sm:grid-cols-2">
+            <Input light label="Company" value={leadForm.company_name ?? ""} onChange={(company_name) => setLeadForm({ ...leadForm, company_name })}/>
+            <Input light label="Contact" required={false} value={leadForm.contact_name ?? ""} onChange={(contact_name) => setLeadForm({ ...leadForm, contact_name })}/>
+            <Input light label="Email" type="email" required={false} value={leadForm.contact_email ?? ""} onChange={(contact_email) => setLeadForm({ ...leadForm, contact_email })}/>
+            <Input light label="Phone" required={false} value={leadForm.contact_phone ?? ""} onChange={(contact_phone) => setLeadForm({ ...leadForm, contact_phone })}/>
+            <Input light label="Source" required={false} value={leadForm.source ?? ""} onChange={(source) => setLeadForm({ ...leadForm, source })}/>
+            <Input light label="Forecast" required={false} type="number" value={String(leadForm.estimated_monthly_value ?? "")} onChange={(estimated_monthly_value) => setLeadForm({ ...leadForm, estimated_monthly_value })}/>
+            <Input light label="Follow-up" required={false} type="datetime-local" value={leadForm.next_follow_up_at ?? ""} onChange={(next_follow_up_at) => setLeadForm({ ...leadForm, next_follow_up_at })}/>
+          </fieldset>
+          <PendingButton type="button" pending={leadBusy} pendingLabel="Saving lead..." onClick={() => void perform(leadPath, "PATCH", { company_name: leadForm.company_name, contact_name: leadForm.contact_name, contact_email: leadForm.contact_email, contact_phone: leadForm.contact_phone, source: leadForm.source, estimated_monthly_value: leadForm.estimated_monthly_value === "" ? null : Number(leadForm.estimated_monthly_value), next_follow_up_at: leadForm.next_follow_up_at ? new Date(leadForm.next_follow_up_at).toISOString() : null }, "Lead details saved.")} className="mt-4 h-9 rounded-md bg-[#191816] px-3 text-xs font-bold text-white disabled:opacity-50">Save lead changes</PendingButton>
+        </section>
+
+        <section className="border-t border-black/8 pt-6">
+          <SectionTitle title="Activities and follow-ups" copy="Capture calls, email, notes, callbacks, and appointments in one timeline."/>
+          <form onSubmit={(event) => { event.preventDefault(); addActivity(); }} className="mt-4 grid gap-3 sm:grid-cols-[130px_1fr]">
+            <fieldset disabled={activityBusy} className="contents">
+              <select value={activity.activity_type} onChange={(event) => setActivity({ ...activity, activity_type: event.target.value })} className="h-10 rounded-md border border-black/10 px-3 text-sm disabled:opacity-55"><option>CALL</option><option>EMAIL</option><option>NOTE</option><option>FOLLOW_UP</option><option>APPOINTMENT</option></select>
+              <input required value={activity.body} onChange={(event) => setActivity({ ...activity, body: event.target.value })} placeholder="What happened or what is next?" className="h-10 rounded-md border border-black/10 px-3 text-sm disabled:opacity-55"/>
+              <input value={activity.due_at} onChange={(event) => setActivity({ ...activity, due_at: event.target.value })} type="datetime-local" className="h-10 rounded-md border border-black/10 px-3 text-sm disabled:opacity-55"/>
+            </fieldset>
+            <PendingButton pending={activityBusy} pendingLabel="Adding..." className="h-10 rounded-md border border-black/10 text-xs font-bold disabled:opacity-50">Add activity</PendingButton>
+          </form>
+          <Timeline rows={detail.data.activities} empty="No activities have been recorded."/>
+        </section>
+
+        <section className="border-t border-black/8 pt-6">
+          <SectionTitle title="Internal comments" copy="Comments are visible to the people permitted to work on this lead."/>
+          <form onSubmit={(event) => { event.preventDefault(); addComment(); }} className="mt-4 flex gap-2">
+            <input disabled={commentBusy} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a comment" className="h-10 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-sm disabled:opacity-55"/>
+            <PendingButton pending={commentBusy} pendingLabel="Posting..." className="h-10 rounded-md border border-black/10 px-3 text-xs font-bold disabled:opacity-50">Post</PendingButton>
+          </form>
+          <CommentList rows={detail.data.comments} empty="No comments yet."/>
+        </section>
+      </div>
+
+      <div className="space-y-6">
+        <section className="rounded-lg bg-[#191816] p-5 text-white">
+          <p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#f59a18]">Customer conversion</p>
+          <h3 className="mt-2 text-lg font-semibold">Move an approved relationship forward.</h3>
+          <p className="mt-2 text-sm leading-6 text-white/55">Conversion opens the customer workspace with contact information, history, shipment progress, and customer comments.</p>
+          <PendingButton type="button" pending={convertBusy} pendingLabel="Creating customer..." onClick={() => void perform(leadPath + "/convert", "POST", undefined, "Customer workspace created.")} className="mt-5 h-10 rounded-md bg-[#f59a18] px-4 text-sm font-bold text-black disabled:opacity-50">{detail.data.customer ? "Refresh customer" : "Convert to customer"}</PendingButton>
+        </section>
+
+        {detail.data.customer && <CustomerWorkspace customerId={detail.data.customer.id} api={api} report={report}/>}
+
+        <section className="rounded-lg border border-black/8 p-5">
+          <SectionTitle title="Quote desk" copy="Draft rates, attach supporting documents, submit for review, and hand off approved work."/>
+          <form onSubmit={(event) => { event.preventDefault(); createQuote(); }} className="mt-4 space-y-3">
+            <fieldset disabled={quoteBusy} className="space-y-3 disabled:opacity-55">
+              <Input light label="Pickup" value={quoteForm.pickup_location} onChange={(pickup_location) => setQuoteForm({ ...quoteForm, pickup_location })}/>
+              <Input light label="Delivery" value={quoteForm.delivery_location} onChange={(delivery_location) => setQuoteForm({ ...quoteForm, delivery_location })}/>
+              <Input light label="Equipment" required={false} value={quoteForm.equipment_type} onChange={(equipment_type) => setQuoteForm({ ...quoteForm, equipment_type })}/>
+              <Input light label="Quoted rate" required={false} type="number" value={quoteForm.quoted_rate} onChange={(quoted_rate) => setQuoteForm({ ...quoteForm, quoted_rate })}/>
+            </fieldset>
+            <PendingButton pending={quoteBusy} pendingLabel="Creating quote..." className="h-10 w-full rounded-md border border-black/10 text-sm font-bold disabled:opacity-50">Create quote draft</PendingButton>
+          </form>
+          <div className="mt-5 space-y-2">{detail.data.quotes.map((quote: any) => <QuoteWorkspace key={quote.id} quoteId={quote.id} quote={quote} data={data} api={api} refresh={invalidate} report={report}/>)}</div>
+        </section>
+      </div>
+    </div>
+  </div>;
 }
 
 function CustomerWorkspace({ customerId, api, report }: { customerId: string; api: (path: string, init?: RequestInit) => Promise<Response>; report: (message: string, tone?: "success" | "error") => void }) {
   const queryClient = useQueryClient();
-  const customer = useQuery({ queryKey: ["brokerage", "customer", customerId], queryFn: async () => responseData<any>(await api(`/api/v1/brokerage/customers/${customerId}/profile`)), staleTime: 15_000 });
+  const customer = useQuery({ queryKey: ["brokerage", "customer", customerId], queryFn: async () => responseData<any>(await api("/api/v1/brokerage/customers/" + customerId + "/profile")), staleTime: 15_000 });
   const [comment, setComment] = useState("");
+  const actions = useSingleFlight();
+  const postComment = () => void actions.run("comment", async () => {
+    if (!comment.trim()) return;
+    try {
+      await responseData(await api("/api/v1/brokerage/customers/" + customerId + "/comments", { method: "POST", body: JSON.stringify({ body: comment }) }));
+      setComment("");
+      void queryClient.invalidateQueries({ queryKey: ["brokerage", "customer", customerId] });
+      report("Customer comment added.");
+    } catch (error) {
+      report(message(error), "error");
+    }
+  });
+
   if (customer.isLoading) return <div className="rounded-lg border border-black/8 p-5"><LoaderCircle className="animate-spin text-[#f59a18]" size={17}/></div>;
   if (customer.isError || !customer.data) return null;
+
+  const customerBusy = actions.isBusy("comment");
   const data = customer.data;
-  return <section className="rounded-lg border border-black/8 p-5"><SectionTitle title="Customer workspace" copy="Contact details, relationship history, shipments, and shared customer notes."/><div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><Info label="Contact" value={data.customer.contact_name || "Not set"}/><Info label="Email" value={data.customer.contact_email || "Not set"}/><Info label="Phone" value={data.customer.contact_phone || "Not set"}/><Info label="Customer since" value={new Date(data.customer.created_at).toLocaleDateString()}/></div><div className="mt-5"><p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Shipment history</p>{data.shipments.length ? <div className="mt-2 space-y-2">{data.shipments.map((shipment: any) => <div key={shipment.id} className="rounded-md bg-black/[.035] px-3 py-2 text-xs"><b>{shipment.reference_number}</b><span className="ml-2 text-black/50">{shipment.status} · {shipment.pickup_location} to {shipment.delivery_location}</span></div>)}</div> : <p className="mt-2 text-xs text-black/45">No Operations shipment has been created for this customer.</p>}</div><form onSubmit={(event) => { event.preventDefault(); if (!comment.trim()) return; void (async () => { try { await responseData(await api(`/api/v1/brokerage/customers/${customerId}/comments`, { method: "POST", body: JSON.stringify({ body: comment }) })); setComment(""); await queryClient.invalidateQueries({ queryKey: ["brokerage", "customer", customerId] }); report("Customer comment added."); } catch (error) { report(message(error), "error"); } })(); }} className="mt-5 flex gap-2"><input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add customer comment" className="h-10 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-sm"/><button className="h-10 rounded-md border border-black/10 px-3 text-xs font-bold">Post</button></form><CommentList rows={data.comments} empty="No customer comments yet."/></section>;
+  return <section className="rounded-lg border border-black/8 p-5">
+    <SectionTitle title="Customer workspace" copy="Contact details, relationship history, shipments, and shared customer notes."/>
+    <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><Info label="Contact" value={data.customer.contact_name || "Not set"}/><Info label="Email" value={data.customer.contact_email || "Not set"}/><Info label="Phone" value={data.customer.contact_phone || "Not set"}/><Info label="Customer since" value={new Date(data.customer.created_at).toLocaleDateString()}/></div>
+    <div className="mt-5"><p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Shipment history</p>{data.shipments.length ? <div className="mt-2 space-y-2">{data.shipments.map((shipment: any) => <div key={shipment.id} className="rounded-md bg-black/[.035] px-3 py-2 text-xs"><b>{shipment.reference_number}</b><span className="ml-2 text-black/50">{shipment.status} · {shipment.pickup_location} to {shipment.delivery_location}</span></div>)}</div> : <p className="mt-2 text-xs text-black/45">No Operations shipment has been created for this customer.</p>}</div>
+    <form onSubmit={(event) => { event.preventDefault(); postComment(); }} className="mt-5 flex gap-2">
+      <input disabled={customerBusy} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add customer comment" className="h-10 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-sm disabled:opacity-55"/>
+      <PendingButton pending={customerBusy} pendingLabel="Posting..." className="h-10 rounded-md border border-black/10 px-3 text-xs font-bold disabled:opacity-50">Post</PendingButton>
+    </form>
+    <CommentList rows={data.comments} empty="No customer comments yet."/>
+  </section>;
 }
 
 function QuoteWorkspace({ quoteId, quote, data, api, refresh, report }: { quoteId: string; quote: any; data: any; api: (path: string, init?: RequestInit) => Promise<Response>; refresh: () => Promise<void>; report: (message: string, tone?: "success" | "error") => void }) {
@@ -183,11 +375,128 @@ function QuoteWorkspace({ quoteId, quote, data, api, refresh, report }: { quoteI
   const [open, setOpen] = useState(false);
   const [comment, setComment] = useState("");
   const [reviewNote, setReviewNote] = useState("");
+  const [stagedFile, setStagedFile] = useState<File | null>(null);
   const [handoff, setHandoff] = useState({ operations_department_id: data.operationsDepartments?.[0]?.id ?? "", reference_number: "", customer_name: "" });
-  const detail = useQuery({ queryKey: ["brokerage", "quote", quoteId], queryFn: async () => responseData<any>(await api(`/api/v1/brokerage/quotes/${quoteId}/detail`)), enabled: open, staleTime: 10_000 });
-  const act = async (path: string, method: string, body: unknown, success: string) => { try { await responseData(await api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) })); await Promise.all([queryClient.invalidateQueries({ queryKey: ["brokerage", "quote", quoteId] }), refresh()]); report(success); } catch (error) { report(message(error), "error"); } };
-  const upload = async (file: File) => { try { const signed = await responseData<any>(await api(`/api/v1/brokerage/quotes/${quoteId}/upload-url`, { method: "POST", body: JSON.stringify({ file_name: file.name, content_type: file.type }) })); const uploaded = await fetch(signed.signed_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file }); if (!uploaded.ok) throw new Error("Attachment upload failed."); await act(`/api/v1/brokerage/quotes/${quoteId}/attachments`, "POST", { file_name: file.name, storage_path: signed.path }, "Quote attachment saved."); } catch (error) { report(message(error), "error"); } };
-  return <article className="rounded-md border border-black/8 bg-white"><button onClick={() => setOpen(!open)} className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"><span><b className="text-sm">{quote.pickup_location} to {quote.delivery_location}</b><span className="mt-1 block text-xs text-black/50">{quote.equipment_type || "Equipment not specified"} · {quote.quoted_rate ? `$${quote.quoted_rate}` : "Rate pending"}</span></span><span className="rounded-md bg-black/[.05] px-2 py-1 text-[9px] font-bold">{quote.stage}</span></button>{open && <div className="border-t border-black/8 p-4">{detail.isLoading ? <LoaderCircle size={16} className="animate-spin text-[#f59a18]"/> : detail.data ? <><div className="flex flex-wrap gap-2"><button onClick={() => void act(`/api/v1/brokerage/quotes/${quoteId}/submit`, "POST", undefined, "Quote submitted for review.")} disabled={!['DRAFT', 'REJECTED'].includes(detail.data.quote.stage)} className="h-8 rounded-md bg-[#191816] px-3 text-xs font-bold text-white disabled:opacity-35">Submit for review</button>{data.capabilities?.canReviewQuotes && detail.data.quote.stage === "SUBMITTED" && <><button onClick={() => void act(`/api/v1/brokerage/quotes/${quoteId}/review`, "POST", { action: "APPROVE" }, "Quote approved.")} className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-bold text-white">Approve</button><button onClick={() => { if (!reviewNote.trim()) return report("Enter a rejection reason first.", "error"); void act(`/api/v1/brokerage/quotes/${quoteId}/review`, "POST", { action: "REJECT", note: reviewNote }, "Quote returned for rework."); }} className="h-8 rounded-md border border-red-200 px-3 text-xs font-bold text-red-700">Reject for rework</button></>}{data.capabilities?.canHandoffQuotes && detail.data.quote.stage === "APPROVED" && <button onClick={() => document.getElementById(`handoff-${quoteId}`)?.scrollIntoView({ behavior: "smooth" })} className="h-8 rounded-md bg-[#f59a18] px-3 text-xs font-bold">Handoff</button>}</div>{data.capabilities?.canReviewQuotes && detail.data.quote.stage === "SUBMITTED" && <textarea value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Required reason when returning a quote for rework" className="mt-3 min-h-16 w-full rounded-md border border-black/10 p-3 text-sm"/>}<div className="mt-4 grid gap-4 lg:grid-cols-2"><div><p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Attachments</p><label className="mt-2 flex h-9 cursor-pointer items-center justify-center rounded-md border border-dashed border-black/20 text-xs font-bold">Attach PDF or image<input className="hidden" type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }}/></label><div className="mt-2 space-y-1">{detail.data.attachments.map((attachment: any) => <button key={attachment.id} onClick={() => void (async () => { try { const link = await responseData<any>(await api(`/api/v1/brokerage/quote-attachments/${attachment.id}/download-url`)); window.open(link.signed_url, "_blank", "noopener,noreferrer"); } catch (error) { report(message(error), "error"); } })()} className="flex w-full items-center justify-between rounded-md bg-black/[.035] px-2 py-2 text-left text-xs"><span className="truncate">{attachment.file_name}</span><FileText size={13}/></button>)}{!detail.data.attachments.length && <p className="text-xs text-black/45">No supporting files.</p>}</div></div><div><p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Revision history</p><Timeline rows={detail.data.events} empty="No quote events yet."/></div></div><form onSubmit={(event) => { event.preventDefault(); if (!comment.trim()) return; void act(`/api/v1/brokerage/quotes/${quoteId}/comments`, "POST", { body: comment }, "Quote comment added."); setComment(""); }} className="mt-4 flex gap-2"><input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add review note or internal comment" className="h-9 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-xs"/><button className="h-9 rounded-md border border-black/10 px-3 text-xs font-bold">Post</button></form><CommentList rows={detail.data.comments} empty="No quote comments."/>{data.capabilities?.canHandoffQuotes && detail.data.quote.stage === "APPROVED" && <form id={`handoff-${quoteId}`} onSubmit={(event) => { event.preventDefault(); void act(`/api/v1/brokerage/quotes/${quoteId}/handoff`, "POST", handoff, "Quote handed to Operations."); }} className="mt-5 rounded-md bg-[#fff4e4] p-3"><p className="text-xs font-bold">Sales to Operations handoff</p><div className="mt-3 grid gap-2 sm:grid-cols-3"><select required value={handoff.operations_department_id} onChange={(event) => setHandoff({ ...handoff, operations_department_id: event.target.value })} className="h-9 rounded-md border border-black/10 bg-white px-2 text-xs"><option value="">Operations department</option>{(data.operationsDepartments ?? []).map((department: any) => <option key={department.id} value={department.id}>{department.name}</option>)}</select><input required value={handoff.reference_number} onChange={(event) => setHandoff({ ...handoff, reference_number: event.target.value })} placeholder="Shipment reference" className="h-9 rounded-md border border-black/10 px-2 text-xs"/><input required value={handoff.customer_name} onChange={(event) => setHandoff({ ...handoff, customer_name: event.target.value })} placeholder="Customer name" className="h-9 rounded-md border border-black/10 px-2 text-xs"/></div><button className="mt-3 h-9 rounded-md bg-[#191816] px-3 text-xs font-bold text-white">Create Operations shipment</button></form>}</> : <p className="text-sm text-red-600">Quote details could not be loaded.</p>}</div>}</article>;
+  const actions = useSingleFlight();
+  const detail = useQuery({
+    queryKey: ["brokerage", "quote", quoteId],
+    queryFn: async () => responseData<any>(await api("/api/v1/brokerage/quotes/" + quoteId + "/detail")),
+    enabled: open,
+    staleTime: 10_000,
+  });
+
+  const refreshData = () => {
+    void queryClient.invalidateQueries({ queryKey: ["brokerage", "quote", quoteId] });
+    void refresh();
+  };
+
+  const act = (key: string, path: string, method: string, body: unknown, success: string) => void actions.run(key, async () => {
+    try {
+      await responseData(await api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) }));
+      refreshData();
+      report(success);
+    } catch (error) {
+      report(message(error), "error");
+    }
+  });
+
+  const saveAttachment = () => void actions.run("attachment", async () => {
+    if (!stagedFile) return;
+    try {
+      const signed = await responseData<any>(await api("/api/v1/brokerage/quotes/" + quoteId + "/upload-url", { method: "POST", body: JSON.stringify({ file_name: stagedFile.name, content_type: stagedFile.type }) }));
+      const uploaded = await fetch(signed.signed_url, { method: "PUT", headers: { "Content-Type": stagedFile.type }, body: stagedFile });
+      if (!uploaded.ok) throw new Error("Attachment upload failed.");
+      await responseData(await api("/api/v1/brokerage/quotes/" + quoteId + "/attachments", { method: "POST", body: JSON.stringify({ file_name: stagedFile.name, storage_path: signed.path }) }));
+      setStagedFile(null);
+      refreshData();
+      report("Quote attachment saved.");
+    } catch (error) {
+      report(message(error), "error");
+    }
+  });
+
+  const postComment = () => void actions.run("comment", async () => {
+    if (!comment.trim()) return;
+    try {
+      await responseData(await api("/api/v1/brokerage/quotes/" + quoteId + "/comments", { method: "POST", body: JSON.stringify({ body: comment }) }));
+      setComment("");
+      refreshData();
+      report("Quote comment added.");
+    } catch (error) {
+      report(message(error), "error");
+    }
+  });
+
+  const openAttachment = (attachment: any) => void actions.run("download:" + attachment.id, async () => {
+    try {
+      const link = await responseData<any>(await api("/api/v1/brokerage/quote-attachments/" + attachment.id + "/download-url"));
+      window.open(link.signed_url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      report(message(error), "error");
+    }
+  });
+
+  const quoteStage = detail.data?.quote?.stage;
+  const anyActionBusy = actions.isBusy();
+
+  return <article className="rounded-md border border-black/8 bg-white">
+    <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left">
+      <span><b className="text-sm">{quote.pickup_location} to {quote.delivery_location}</b><span className="mt-1 block text-xs text-black/50">{quote.equipment_type || "Equipment not specified"} · {quote.quoted_rate ? "$" + quote.quoted_rate : "Rate pending"}</span></span>
+      <span className="rounded-md bg-black/[.05] px-2 py-1 text-[9px] font-bold">{quote.stage}</span>
+    </button>
+    {open && <div className="border-t border-black/8 p-4">
+      {detail.isLoading ? <div className="flex items-center gap-2 text-xs text-black/50"><LoaderCircle size={16} className="animate-spin text-[#f59a18]"/> Loading quote workspace...</div> : detail.data ? <>
+        <div className="flex flex-wrap gap-2">
+          <PendingButton type="button" pending={actions.isBusy("submit")} pendingLabel="Submitting..." disabled={anyActionBusy || !["DRAFT", "REJECTED"].includes(quoteStage)} onClick={() => act("submit", "/api/v1/brokerage/quotes/" + quoteId + "/submit", "POST", undefined, "Quote submitted for review.")} className="h-8 rounded-md bg-[#191816] px-3 text-xs font-bold text-white disabled:opacity-35">Submit for review</PendingButton>
+          {data.capabilities?.canReviewQuotes && quoteStage === "SUBMITTED" && <>
+            <PendingButton type="button" pending={actions.isBusy("approve")} pendingLabel="Approving..." disabled={anyActionBusy} onClick={() => act("approve", "/api/v1/brokerage/quotes/" + quoteId + "/review", "POST", { action: "APPROVE" }, "Quote approved.")} className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-bold text-white disabled:opacity-45">Approve</PendingButton>
+            <PendingButton type="button" pending={actions.isBusy("reject")} pendingLabel="Returning..." disabled={anyActionBusy || !reviewNote.trim()} onClick={() => act("reject", "/api/v1/brokerage/quotes/" + quoteId + "/review", "POST", { action: "REJECT", note: reviewNote }, "Quote returned for rework.")} className="h-8 rounded-md border border-red-200 px-3 text-xs font-bold text-red-700 disabled:opacity-45">Reject for rework</PendingButton>
+          </>}
+          {data.capabilities?.canHandoffQuotes && quoteStage === "APPROVED" && <button type="button" disabled={anyActionBusy} onClick={() => document.getElementById("handoff-" + quoteId)?.scrollIntoView({ behavior: "smooth", block: "nearest" })} className="h-8 rounded-md bg-[#f59a18] px-3 text-xs font-bold disabled:opacity-45">Handoff</button>}
+        </div>
+
+        {data.capabilities?.canReviewQuotes && quoteStage === "SUBMITTED" && <textarea disabled={anyActionBusy} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Required reason when returning a quote for rework" className="mt-3 min-h-16 w-full rounded-md border border-black/10 p-3 text-sm disabled:opacity-55"/>}
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Attachments</p>
+            <label className="mt-2 flex h-9 items-center justify-center rounded-md border border-dashed border-black/20 text-xs font-bold disabled:opacity-50">
+              Choose PDF or image
+              <input disabled={anyActionBusy} className="hidden" type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setStagedFile(event.target.files?.[0] ?? null)}/>
+            </label>
+            {stagedFile && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#f59a18]/30 bg-[#fff7e8] p-3">
+              <div className="min-w-0"><p className="truncate text-xs font-semibold">{stagedFile.name}</p><p className="mt-1 text-[10px] text-black/50">Ready to save. This file has not been uploaded yet.</p></div>
+              <div className="flex gap-2">
+                <button type="button" disabled={anyActionBusy} onClick={() => setStagedFile(null)} className="h-8 rounded-md border border-black/10 px-2 text-[11px] font-bold disabled:opacity-50">Discard</button>
+                <PendingButton type="button" pending={actions.isBusy("attachment")} pendingLabel="Saving..." disabled={anyActionBusy && !actions.isBusy("attachment")} onClick={saveAttachment} className="h-8 rounded-md bg-[#191816] px-2 text-[11px] font-bold text-white disabled:opacity-50">Save attachment</PendingButton>
+              </div>
+            </div>}
+            <div className="mt-2 space-y-1">
+              {detail.data.attachments.map((attachment: any) => <PendingButton key={attachment.id} type="button" pending={actions.isBusy("download:" + attachment.id)} pendingLabel="Opening..." disabled={anyActionBusy && !actions.isBusy("download:" + attachment.id)} onClick={() => openAttachment(attachment)} className="w-full justify-between rounded-md bg-black/[.035] px-2 py-2 text-left text-xs"><span className="truncate">{attachment.file_name}</span><FileText size={13}/></PendingButton>)}
+              {!detail.data.attachments.length && <p className="text-xs text-black/45">No supporting files.</p>}
+            </div>
+          </div>
+          <div><p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Revision history</p><Timeline rows={detail.data.events} empty="No quote events yet."/></div>
+        </div>
+
+        <form onSubmit={(event) => { event.preventDefault(); postComment(); }} className="mt-4 flex gap-2">
+          <input disabled={anyActionBusy} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add review note or internal comment" className="h-9 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-xs disabled:opacity-55"/>
+          <PendingButton pending={actions.isBusy("comment")} pendingLabel="Posting..." disabled={anyActionBusy && !actions.isBusy("comment")} className="h-9 rounded-md border border-black/10 px-3 text-xs font-bold disabled:opacity-50">Post</PendingButton>
+        </form>
+        <CommentList rows={detail.data.comments} empty="No quote comments."/>
+
+        {data.capabilities?.canHandoffQuotes && quoteStage === "APPROVED" && <form id={"handoff-" + quoteId} onSubmit={(event) => { event.preventDefault(); act("handoff", "/api/v1/brokerage/quotes/" + quoteId + "/handoff", "POST", handoff, "Quote handed to Operations."); }} className="mt-5 rounded-md bg-[#fff4e4] p-3">
+          <p className="text-xs font-bold">Sales to Operations handoff</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <select required disabled={anyActionBusy} value={handoff.operations_department_id} onChange={(event) => setHandoff({ ...handoff, operations_department_id: event.target.value })} className="h-9 rounded-md border border-black/10 bg-white px-2 text-xs disabled:opacity-55"><option value="">Operations department</option>{(data.operationsDepartments ?? []).map((department: any) => <option key={department.id} value={department.id}>{department.name}</option>)}</select>
+            <input required disabled={anyActionBusy} value={handoff.reference_number} onChange={(event) => setHandoff({ ...handoff, reference_number: event.target.value })} placeholder="Shipment reference" className="h-9 rounded-md border border-black/10 px-2 text-xs disabled:opacity-55"/>
+            <input required disabled={anyActionBusy} value={handoff.customer_name} onChange={(event) => setHandoff({ ...handoff, customer_name: event.target.value })} placeholder="Customer name" className="h-9 rounded-md border border-black/10 px-2 text-xs disabled:opacity-55"/>
+          </div>
+          <PendingButton pending={actions.isBusy("handoff")} pendingLabel="Creating shipment..." disabled={anyActionBusy && !actions.isBusy("handoff")} className="mt-3 h-9 rounded-md bg-[#191816] px-3 text-xs font-bold text-white disabled:opacity-50">Create Operations shipment</PendingButton>
+        </form>}
+      </> : <p className="text-sm text-red-600">Quote details could not be loaded.</p>}
+    </div>}
+  </article>;
 }
 
 function ReportsWorkspace({ api, report, sales }: { api: (path: string, init?: RequestInit) => Promise<Response>; report: (message: string, tone?: "success" | "error") => void; sales: boolean }) {
