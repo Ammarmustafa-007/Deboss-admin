@@ -22,16 +22,27 @@ export function DepartmentAccessPanel({ embedded = false }: { embedded?: boolean
     if (response.ok) setData(body); else setMessage(body.error ?? "Unable to load departmental Agents.");
   };
   useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(""), 3600);
+    return () => window.clearTimeout(timer);
+  }, [message]);
 
   const setActive = async (user: any, is_active: boolean) => {
     if (saving) return;
     setSaving(user.id);
-    const response = await api(`/api/v1/brokerage/department-users/${user.id}`, { method: "PATCH", body: JSON.stringify({ is_active }) });
-    const body = await response.json();
-    setSaving("");
-    if (!response.ok) return setMessage(body.error ?? "Unable to update Agent access.");
-    setMessage(is_active ? "Agent login restored." : "Agent login revoked.");
-    await load();
+    try {
+      const response = await api(`/api/v1/brokerage/department-users/${user.id}`, { method: "PATCH", body: JSON.stringify({ is_active }) });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) return setMessage(body.error ?? "Unable to update Agent access.");
+      setData((current: any) => current ? { ...current, users: current.users.map((item: any) => item.id === user.id ? { ...item, is_active } : item) } : current);
+      setMessage(is_active ? "Agent login restored." : "Agent login revoked.");
+      void load();
+    } catch {
+      setMessage("Unable to update Agent access.");
+    } finally {
+      setSaving("");
+    }
   };
 
   if (!data) return <main className="grid min-h-[360px] place-items-center bg-[#f5f4f0]"><LoaderCircle className="animate-spin text-[#f59a18]"/></main>;

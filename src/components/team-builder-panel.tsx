@@ -50,6 +50,7 @@ export function TeamBuilderPanel() {
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
+    if (saving) return;
     if (!form.member_ids.length) return setMessage("Select at least one Agent before saving the team.");
     if (form.team_lead_id && !form.member_ids.includes(form.team_lead_id)) return setMessage("The Team Lead must be selected as a team member.");
     setSaving(true);
@@ -59,7 +60,7 @@ export function TeamBuilderPanel() {
       if (!response.ok) throw new Error(body.error ?? "Unable to save this team.");
       close();
       setMessage(editing ? "Team updated." : "Team created.");
-      await load();
+      void load();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Unable to save this team."); } finally { setSaving(false); }
   };
 

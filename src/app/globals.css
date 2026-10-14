@@ -29,6 +29,15 @@ button[aria-busy="true"] {
   cursor: not-allowed;
 }
 
+input:disabled,
+textarea:disabled,
+select:disabled,
+label:has(input:disabled),
+label:has(textarea:disabled),
+label:has(select:disabled) {
+  cursor: not-allowed;
+}
+
 button:focus-visible,
 select:focus-visible,
 input:focus-visible,

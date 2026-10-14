@@ -23,6 +23,7 @@ export function BrokerageCommandCenter({ profile, onSignOut }: { profile: Profil
   const [section, setSection] = useState("overview");
   const [collapsed, setCollapsed] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const sessionActions = useSingleFlight();
 
   const api = useCallback(async (path: string, init?: RequestInit) => {
     const token = (await supabase.auth.getSession()).data.session?.access_token;
@@ -84,10 +85,10 @@ export function BrokerageCommandCenter({ profile, onSignOut }: { profile: Profil
       <div className="mb-10 flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-3"><span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#f59a18] text-black"><Building2 size={18}/></span>{!collapsed && <div className="min-w-0"><p className="text-sm font-bold tracking-[.18em]">DEBOSS</p><p className="truncate text-[8px] font-bold tracking-[.18em] text-[#f59a18]">GLOBAL OPERATIONS</p></div>}</div><button onClick={() => setCollapsed((value) => !value)} title={collapsed ? "Expand navigation" : "Collapse navigation"} className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-white/55 hover:bg-white/10 hover:text-white">{collapsed ? <ChevronRight size={16}/> : <ChevronLeft size={16}/>}</button></div>
       {!collapsed && <p className="mb-3 px-3 text-[9px] font-bold uppercase tracking-[.16em] text-white/35">Brokerage</p>}
       {nav.filter(([, , , visible]) => visible).map(([key, Icon, label]) => <button key={key} onClick={() => setSection(key)} title={collapsed ? label : undefined} className={`relative mb-1 flex h-11 items-center gap-3 rounded-md text-sm transition ${collapsed ? "justify-center" : "px-3"} ${section === key ? "bg-[#f59a18] font-bold text-black" : "text-white/60 hover:bg-white/10 hover:text-white"}`}><Icon size={17}/>{!collapsed && label}{key === "notifications" && unread > 0 && <span className={`grid h-5 min-w-5 place-items-center rounded-md bg-red-500 px-1 text-[10px] font-bold text-white ${collapsed ? "absolute -right-1 -top-1" : "ml-auto"}`}>{unread}</span>}</button>)}
-      <button onClick={onSignOut} title="Sign out" className={`mt-auto flex h-10 items-center gap-3 border-t border-white/10 pt-4 text-sm text-white/60 hover:text-white ${collapsed ? "justify-center" : "px-3"}`}><LogOut size={17}/>{!collapsed && "Sign out"}</button>
+      <PendingButton type="button" pending={sessionActions.isBusy("signout")} pendingLabel={collapsed ? "..." : "Signing out..."} disabled={sessionActions.isBusy()} onClick={() => void sessionActions.run("signout", async () => { await onSignOut(); })} title="Sign out" className={`mt-auto flex h-10 items-center gap-3 border-t border-white/10 pt-4 text-sm text-white/60 hover:text-white disabled:opacity-55 ${collapsed ? "justify-center" : "px-3"}`}><LogOut size={17}/>{!collapsed && "Sign out"}</PendingButton>
     </aside>
     <section className={`min-h-screen transition-[padding] duration-200 ${collapsed ? "lg:pl-[76px]" : "lg:pl-64"}`}>
-      <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between border-b border-black/8 bg-white/95 px-5 backdrop-blur lg:px-9"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#a65c00]">Brokerage · {manager ? "Department manager" : teamLead ? "Team lead" : "Agent"}</p><h1 className="mt-1 text-lg font-semibold">{titleFor(section, sales)}</h1></div><div className="flex items-center gap-3"><button onClick={() => void refresh()} title="Refresh workspace" className="grid h-9 w-9 place-items-center rounded-md border border-black/10 text-black/55 hover:bg-black/5"><RefreshCw size={15}/></button><div className="hidden text-right sm:block"><p className="text-sm font-semibold">{profile.full_name}</p><p className="text-[10px] font-bold uppercase tracking-[.12em] text-black/45">{profile.role.replace("_", " ")}</p></div></div></header>
+      <header className="sticky top-0 z-20 flex min-h-20 items-center justify-between border-b border-black/8 bg-white/95 px-5 backdrop-blur lg:px-9"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#a65c00]">Brokerage · {manager ? "Department manager" : teamLead ? "Team lead" : "Agent"}</p><h1 className="mt-1 text-lg font-semibold">{titleFor(section, sales)}</h1></div><div className="flex items-center gap-3"><button disabled={workspace.isFetching} onClick={() => void refresh()} title="Refresh workspace" aria-label="Refresh workspace" className="grid h-9 w-9 place-items-center rounded-md border border-black/10 text-black/55 hover:bg-black/5 disabled:opacity-50"><RefreshCw size={15} className={workspace.isFetching ? "animate-spin" : ""}/></button><div className="hidden text-right sm:block"><p className="text-sm font-semibold">{profile.full_name}</p><p className="text-[10px] font-bold uppercase tracking-[.12em] text-black/45">{profile.role.replace("_", " ")}</p></div></div></header>
       <div className="mx-auto max-w-[1500px] p-5 lg:p-8">
         {notice && <Toast notice={notice} dismiss={() => setNotice(null)}/>} 
         {section === "overview" && <Overview data={data} sales={sales} setSection={setSection}/>} 
@@ -510,8 +511,34 @@ function ReportsWorkspace({ api, report, sales }: { api: (path: string, init?: R
 }
 
 function NotificationsWorkspace({ data, api, refresh, report }: { data: any[]; api: (path: string, init?: RequestInit) => Promise<Response>; refresh: () => Promise<void>; report: (message: string, tone?: "success" | "error") => void }) {
-  const read = async (item: any) => { try { await responseData(await api(`/api/v1/brokerage/notifications/${item.id}/read`, { method: "PATCH" })); await refresh(); report("Notification marked as read."); } catch (error) { report(message(error), "error"); } };
-  return <div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#a65c00]">Brokerage alerts</p><h2 className="mt-2 text-3xl font-semibold">Notification inbox</h2><div className="mt-7 divide-y overflow-hidden rounded-lg border border-black/8 bg-white">{data.map((item) => <article key={item.id} className={`flex gap-4 p-5 ${item.read_at ? "opacity-65" : "bg-[#fffaf1]"}`}><span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-black/[.05] text-[#a65c00]"><Bell size={16}/></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-sm leading-6 text-black/55">{item.body}</p></div>{!item.read_at && <button onClick={() => void read(item)} className="h-8 rounded-md border border-black/10 px-3 text-xs font-bold">Mark read</button>}</div><p className="mt-2 text-[10px] font-bold uppercase tracking-[.12em] text-black/40">{item.kind.replaceAll("_", " · ")} · {new Date(item.created_at).toLocaleString()}</p></div></article>)}{!data.length && <Empty title="You are up to date" copy="Assignments, approvals, comments, document reviews, exceptions, and overdue invoices will appear here."/>}</div></div>;
+  const actions = useSingleFlight();
+  const read = (item: any) => void actions.run("read:" + item.id, async () => {
+    try {
+      await responseData(await api("/api/v1/brokerage/notifications/" + item.id + "/read", { method: "PATCH" }));
+      void refresh();
+      report("Notification marked as read.");
+    } catch (error) {
+      report(message(error), "error");
+    }
+  });
+
+  return <div>
+    <p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#a65c00]">Brokerage alerts</p>
+    <h2 className="mt-2 text-3xl font-semibold">Notification inbox</h2>
+    <div className="mt-7 divide-y overflow-hidden rounded-lg border border-black/8 bg-white">
+      {data.map((item) => <article key={item.id} className={"flex gap-4 p-5 " + (item.read_at ? "opacity-65" : "bg-[#fffaf1]")}>
+        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-black/[.05] text-[#a65c00]"><Bell size={16}/></span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div><p className="text-sm font-semibold">{item.title}</p><p className="mt-1 text-sm leading-6 text-black/55">{item.body}</p></div>
+            {!item.read_at && <PendingButton type="button" pending={actions.isBusy("read:" + item.id)} pendingLabel="Marking..." disabled={actions.isBusy() && !actions.isBusy("read:" + item.id)} onClick={() => read(item)} className="h-8 rounded-md border border-black/10 px-3 text-xs font-bold disabled:opacity-50">Mark read</PendingButton>}
+          </div>
+          <p className="mt-2 text-[10px] font-bold uppercase tracking-[.12em] text-black/40">{item.kind.replaceAll("_", " · ")} · {new Date(item.created_at).toLocaleString()}</p>
+        </div>
+      </article>)}
+      {!data.length && <Empty title="You are up to date" copy="Assignments, approvals, comments, document reviews, exceptions, and overdue invoices will appear here."/>}
+    </div>
+  </div>;
 }
 
 function Metric({ icon: Icon, label, value }: { icon?: any; label: string; value: string | number }) { return <div className="rounded-lg border border-black/8 bg-white p-5">{Icon && <Icon size={18} className="text-[#a65c00]"/>}<p className={`${Icon ? "mt-4" : ""} text-2xl font-semibold`}>{value}</p><p className="mt-1 text-[10px] font-bold uppercase tracking-[.12em] text-black/40">{label}</p></div>; }

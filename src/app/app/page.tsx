@@ -121,7 +121,7 @@ export default function AdminWorkspace() {
     try {
       const { error } = await supabase.from("departments").insert(departmentForm);
       if (error) notify(error.message, "error");
-      else { setDepartmentForm({ name: "", business_unit: "BROKERAGE", function: "SALES" }); notify("Department created."); await load(); }
+      else { setDepartmentForm({ name: "", business_unit: "BROKERAGE", function: "SALES" }); notify("Department created."); void load(); }
     } finally { setBusy(null); }
   }
 
@@ -135,7 +135,7 @@ export default function AdminWorkspace() {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/api/v1/users`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify(userForm) });
       const payload = await response.json();
       if (!response.ok) notify(payload.error ?? "Unable to create user.", "error");
-      else { setUserForm({ full_name: "", email: "", password: "", role: "AGENT", department_id: "" }); notify("User account created and ready to sign in."); await load(); }
+      else { setUserForm({ full_name: "", email: "", password: "", role: "AGENT", department_id: "" }); notify("User account created and ready to sign in."); void load(); }
     } catch { notify("The Users API could not be reached.", "error"); } finally { setBusy(null); }
   }
 
@@ -150,7 +150,7 @@ export default function AdminWorkspace() {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/api/v1/users/${editingUser.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ full_name: editingUser.full_name, role: editingUser.role, department_id: editingUser.role === "SUPER_ADMIN" ? null : departmentId }) });
       const payload = await response.json().catch(() => null);
       if (!response.ok) notify(payload?.error ?? "Unable to update this user.", "error");
-      else { setEditingUser(null); notify("User access updated."); await load(); }
+      else { setEditingUser(null); notify("User access updated."); void load(); }
     } catch { notify("The Users API could not be reached.", "error"); } finally { setUserActionId(null); }
   }
 
@@ -162,7 +162,7 @@ export default function AdminWorkspace() {
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000"}/api/v1/users/${user.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ is_active: !user.is_active }) });
       const payload = await response.json().catch(() => null);
       if (!response.ok) notify(payload?.error ?? "Unable to update user status.", "error");
-      else { notify(user.is_active ? "User deactivated. Their login is now blocked." : "User reactivated."); await load(); }
+      else { notify(user.is_active ? "User deactivated. Their login is now blocked." : "User reactivated."); void load(); }
     } catch { notify("The Users API could not be reached.", "error"); } finally { setUserActionId(null); }
   }
 
