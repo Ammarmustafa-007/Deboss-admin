@@ -72,6 +72,7 @@ export function BrokerageCommandCenter({ profile, onSignOut }: { profile: Profil
     ["overview", LayoutDashboard, "Overview", true],
     ["workflow", Activity, "How work arrives", true],
     ["sales", ClipboardList, "Sales workspace", sales],
+    ["customers", UsersRound, "Customers", sales],
     ["operations", Truck, "Operations board", !sales],
     ["finance", ReceiptText, "Invoice ledger", !sales && (manager || data.capabilities?.canMarkInvoiceReady)],
     ["teams", UsersRound, "Teams & leads", manager],
@@ -94,6 +95,7 @@ export function BrokerageCommandCenter({ profile, onSignOut }: { profile: Profil
         {section === "overview" && <Overview data={data} sales={sales} setSection={setSection}/>} 
         {section === "workflow" && <BrokerageWorkflowGuide sales={sales} manager={manager} teamLead={teamLead} setSection={setSection}/>} 
         {section === "sales" && sales && <SalesWorkspace data={data} api={api} refresh={refresh} report={report}/>} 
+        {section === "customers" && sales && <CustomerDirectory api={api} report={report}/>}
         {section === "operations" && !sales && <OperationsBoard embedded initialWorkspace={data}/>} 
         {section === "finance" && !sales && <InvoiceLedger embedded/>}
         {section === "teams" && manager && <TeamBuilderPanel/>}
@@ -320,17 +322,31 @@ function LeadDetail({ leadId, data, api, refresh, report }: { leadId: string; da
         {detail.data.customer && <CustomerWorkspace customerId={detail.data.customer.id} api={api} report={report}/>}
 
         <section className="rounded-lg border border-black/8 p-5">
-          <SectionTitle title="Quote desk" copy="Draft rates, attach supporting documents, submit for review, and hand off approved work."/>
-          <form onSubmit={(event) => { event.preventDefault(); createQuote(); }} className="mt-4 space-y-3">
-            <fieldset disabled={quoteBusy} className="space-y-3 disabled:opacity-55">
-              <Input light label="Pickup" value={quoteForm.pickup_location} onChange={(pickup_location) => setQuoteForm({ ...quoteForm, pickup_location })}/>
-              <Input light label="Delivery" value={quoteForm.delivery_location} onChange={(delivery_location) => setQuoteForm({ ...quoteForm, delivery_location })}/>
-              <Input light label="Equipment" required={false} value={quoteForm.equipment_type} onChange={(equipment_type) => setQuoteForm({ ...quoteForm, equipment_type })}/>
-              <Input light label="Quoted rate" required={false} type="number" value={quoteForm.quoted_rate} onChange={(quoted_rate) => setQuoteForm({ ...quoteForm, quoted_rate })}/>
-            </fieldset>
-            <PendingButton pending={quoteBusy} pendingLabel="Creating quote..." className="h-10 w-full rounded-md border border-black/10 text-sm font-bold disabled:opacity-50">Create quote draft</PendingButton>
-          </form>
-          <div className="mt-5 space-y-2">{detail.data.quotes.map((quote: any) => <QuoteWorkspace key={quote.id} quoteId={quote.id} quote={quote} data={data} api={api} refresh={invalidate} report={report}/>)}</div>
+          {detail.data.customer ? <details>
+            <summary className="cursor-pointer list-none"><SectionTitle title="Quote workspace" copy="Shipment information now lives in the customer shipment desk above. Open this area to draft or review the quote that supports that work."/></summary>
+            <form onSubmit={(event) => { event.preventDefault(); createQuote(); }} className="mt-4 space-y-3">
+              <fieldset disabled={quoteBusy} className="space-y-3 disabled:opacity-55">
+                <Input light label="Pickup" value={quoteForm.pickup_location} onChange={(pickup_location) => setQuoteForm({ ...quoteForm, pickup_location })}/>
+                <Input light label="Delivery" value={quoteForm.delivery_location} onChange={(delivery_location) => setQuoteForm({ ...quoteForm, delivery_location })}/>
+                <Input light label="Equipment" required={false} value={quoteForm.equipment_type} onChange={(equipment_type) => setQuoteForm({ ...quoteForm, equipment_type })}/>
+                <Input light label="Quoted rate" required={false} type="number" value={quoteForm.quoted_rate} onChange={(quoted_rate) => setQuoteForm({ ...quoteForm, quoted_rate })}/>
+              </fieldset>
+              <PendingButton pending={quoteBusy} pendingLabel="Creating quote..." className="h-10 w-full rounded-md border border-black/10 text-sm font-bold disabled:opacity-50">Create quote draft</PendingButton>
+            </form>
+            <div className="mt-5 space-y-2">{detail.data.quotes.map((quote: any) => <QuoteWorkspace key={quote.id} quoteId={quote.id} quote={quote} data={data} api={api} refresh={invalidate} report={report}/>)}</div>
+          </details> : <>
+            <SectionTitle title="Quote desk" copy="Draft rates, attach supporting documents, submit for review, and hand off approved work."/>
+            <form onSubmit={(event) => { event.preventDefault(); createQuote(); }} className="mt-4 space-y-3">
+              <fieldset disabled={quoteBusy} className="space-y-3 disabled:opacity-55">
+                <Input light label="Pickup" value={quoteForm.pickup_location} onChange={(pickup_location) => setQuoteForm({ ...quoteForm, pickup_location })}/>
+                <Input light label="Delivery" value={quoteForm.delivery_location} onChange={(delivery_location) => setQuoteForm({ ...quoteForm, delivery_location })}/>
+                <Input light label="Equipment" required={false} value={quoteForm.equipment_type} onChange={(equipment_type) => setQuoteForm({ ...quoteForm, equipment_type })}/>
+                <Input light label="Quoted rate" required={false} type="number" value={quoteForm.quoted_rate} onChange={(quoted_rate) => setQuoteForm({ ...quoteForm, quoted_rate })}/>
+              </fieldset>
+              <PendingButton pending={quoteBusy} pendingLabel="Creating quote..." className="h-10 w-full rounded-md border border-black/10 text-sm font-bold disabled:opacity-50">Create quote draft</PendingButton>
+            </form>
+            <div className="mt-5 space-y-2">{detail.data.quotes.map((quote: any) => <QuoteWorkspace key={quote.id} quoteId={quote.id} quote={quote} data={data} api={api} refresh={invalidate} report={report}/>)}</div>
+          </>}
         </section>
       </div>
     </div>
@@ -341,34 +357,101 @@ function CustomerWorkspace({ customerId, api, report }: { customerId: string; ap
   const queryClient = useQueryClient();
   const customer = useQuery({ queryKey: ["brokerage", "customer", customerId], queryFn: async () => responseData<any>(await api("/api/v1/brokerage/customers/" + customerId + "/profile")), staleTime: 15_000 });
   const [comment, setComment] = useState("");
+  const [customerForm, setCustomerForm] = useState({ company_name: "", contact_name: "", contact_email: "", contact_phone: "" });
+  const [selectedShipmentId, setSelectedShipmentId] = useState<string | null>(null);
+  const [showNewShipment, setShowNewShipment] = useState(false);
   const actions = useSingleFlight();
+  const reload = () => {
+    void queryClient.invalidateQueries({ queryKey: ["brokerage", "customer", customerId] });
+    void queryClient.invalidateQueries({ queryKey: ["brokerage", "customers"] });
+    void queryClient.invalidateQueries({ queryKey: ["brokerage", "workspace"] });
+  };
+
+  useEffect(() => {
+    if (customer.data?.customer) {
+      const item = customer.data.customer;
+      setCustomerForm({ company_name: item.company_name ?? "", contact_name: item.contact_name ?? "", contact_email: item.contact_email ?? "", contact_phone: item.contact_phone ?? "" });
+    }
+  }, [customer.data?.customer]);
+
   const postComment = () => void actions.run("comment", async () => {
     if (!comment.trim()) return;
     try {
       await responseData(await api("/api/v1/brokerage/customers/" + customerId + "/comments", { method: "POST", body: JSON.stringify({ body: comment }) }));
       setComment("");
-      void queryClient.invalidateQueries({ queryKey: ["brokerage", "customer", customerId] });
+      reload();
       report("Customer comment added.");
+    } catch (error) {
+      report(message(error), "error");
+    }
+  });
+  const saveCustomer = () => void actions.run("customer", async () => {
+    try {
+      await responseData(await api("/api/v1/brokerage/customers/" + customerId, { method: "PATCH", body: JSON.stringify(customerForm) }));
+      reload();
+      report("Customer profile saved.");
     } catch (error) {
       report(message(error), "error");
     }
   });
 
   if (customer.isLoading) return <div className="rounded-lg border border-black/8 p-5"><LoaderCircle className="animate-spin text-[#f59a18]" size={17}/></div>;
-  if (customer.isError || !customer.data) return null;
+  if (customer.isError || !customer.data) return <Empty title="Customer workspace unavailable" copy={message(customer.error)}/>;
 
-  const customerBusy = actions.isBusy("comment");
   const data = customer.data;
+  const canEdit = Boolean(data.can_edit);
+  const customerBusy = actions.isBusy("customer");
+  const commentBusy = actions.isBusy("comment");
+  const selectedShipment = (data.shipments ?? []).find((shipment: any) => shipment.id === selectedShipmentId);
   return <section className="rounded-lg border border-black/8 p-5">
-    <SectionTitle title="Customer workspace" copy="Contact details, relationship history, shipments, and shared customer notes."/>
-    <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><Info label="Contact" value={data.customer.contact_name || "Not set"}/><Info label="Email" value={data.customer.contact_email || "Not set"}/><Info label="Phone" value={data.customer.contact_phone || "Not set"}/><Info label="Customer since" value={new Date(data.customer.created_at).toLocaleDateString()}/></div>
-    <div className="mt-5"><p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Shipment history</p>{data.shipments.length ? <div className="mt-2 space-y-2">{data.shipments.map((shipment: any) => <div key={shipment.id} className="rounded-md bg-black/[.035] px-3 py-2 text-xs"><b>{shipment.reference_number}</b><span className="ml-2 text-black/50">{shipment.status} · {shipment.pickup_location} to {shipment.delivery_location}</span></div>)}</div> : <p className="mt-2 text-xs text-black/45">No Operations shipment has been created for this customer.</p>}</div>
-    <form onSubmit={(event) => { event.preventDefault(); postComment(); }} className="mt-5 flex gap-2">
-      <input disabled={customerBusy} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add customer comment" className="h-10 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-sm disabled:opacity-55"/>
-      <PendingButton pending={customerBusy} pendingLabel="Posting..." className="h-10 rounded-md border border-black/10 px-3 text-xs font-bold disabled:opacity-50">Post</PendingButton>
-    </form>
-    <CommentList rows={data.comments} empty="No customer comments yet."/>
+    <SectionTitle title="Customer workspace" copy="Maintain the customer profile, commercial shipment lifecycle, follow-ups, and shared customer notes."/>
+    <fieldset disabled={customerBusy || !canEdit} className="mt-4 grid gap-3 disabled:opacity-55 sm:grid-cols-2">
+      <Input light label="Company" value={customerForm.company_name} onChange={(company_name) => setCustomerForm({ ...customerForm, company_name })}/>
+      <Input light label="Contact" required={false} value={customerForm.contact_name} onChange={(contact_name) => setCustomerForm({ ...customerForm, contact_name })}/>
+      <Input light label="Email" type="email" required={false} value={customerForm.contact_email} onChange={(contact_email) => setCustomerForm({ ...customerForm, contact_email })}/>
+      <Input light label="Phone" required={false} value={customerForm.contact_phone} onChange={(contact_phone) => setCustomerForm({ ...customerForm, contact_phone })}/>
+    </fieldset>
+    {canEdit && <PendingButton type="button" pending={customerBusy} pendingLabel="Saving customer..." disabled={actions.isBusy() && !customerBusy} onClick={saveCustomer} className="mt-4 h-9 rounded-md bg-[#191816] px-3 text-xs font-bold text-white disabled:opacity-50">Save customer details</PendingButton>}
+
+    <section className="mt-7 border-t border-black/8 pt-6">
+      <div className="flex flex-wrap items-center justify-between gap-3"><SectionTitle title="Shipment desk" copy="Add and manage the Sales commercial record: reference, route, rate, planned dates, and Quoted to Paid status."/>{canEdit && <button type="button" onClick={() => { setShowNewShipment((value) => !value); setSelectedShipmentId(null); }} className="h-9 cursor-pointer rounded-md border border-black/10 px-3 text-xs font-bold transition hover:border-[#f59a18] hover:bg-[#fff4e4]">{showNewShipment ? "Close shipment form" : data.shipments.length ? "Add another shipment" : "Add shipment"}</button>}</div>
+      {(showNewShipment || !data.shipments.length) && canEdit && <div className="mt-4 rounded-md border border-[#f59a18]/35 bg-[#fffaf1] p-4"><SalesShipmentForm customerId={customerId} api={api} report={report} onSaved={() => { setShowNewShipment(false); reload(); }}/></div>}
+      <div className="mt-4 overflow-hidden rounded-md border border-black/8"><div className="grid grid-cols-[1.2fr_.8fr_.8fr] gap-3 border-b border-black/8 bg-black/[.025] px-3 py-2 text-[10px] font-bold uppercase tracking-[.1em] text-black/45"><span>Shipment</span><span>Status</span><span>Rate</span></div>{data.shipments.length ? data.shipments.map((shipment: any) => <button type="button" key={shipment.id} onClick={() => { setSelectedShipmentId(shipment.id); setShowNewShipment(false); }} className={`grid w-full grid-cols-[1.2fr_.8fr_.8fr] gap-3 px-3 py-3 text-left text-xs transition ${selectedShipmentId === shipment.id ? "bg-[#fff4e4]" : "hover:bg-black/[.025]"}`}><span><b className="block truncate">{shipment.reference_number}</b><span className="mt-1 block truncate text-black/50">{shipment.pickup_location} to {shipment.delivery_location}</span></span><span className="font-bold text-[#a65c00]">{shipment.sales_status ?? shipment.status}</span><span>{money(shipment.amount_quoted)}</span></button>) : <p className="p-5 text-sm text-black/45">No commercial shipments have been added yet.</p>}</div>
+      {selectedShipment && <div className="mt-4 rounded-md border border-black/8 bg-white p-4">{canEdit ? <SalesShipmentForm customerId={customerId} shipment={selectedShipment} api={api} report={report} onSaved={reload} onClose={() => setSelectedShipmentId(null)}/> : <div><p className="text-xs font-bold">Commercial shipment details</p><p className="mt-2 text-sm">{selectedShipment.pickup_location} to {selectedShipment.delivery_location}</p><p className="mt-1 text-xs text-black/50">{selectedShipment.sales_status ?? selectedShipment.status} · {money(selectedShipment.amount_quoted)}</p></div>}</div>}
+    </section>
+
+    <section className="mt-7 grid gap-6 border-t border-black/8 pt-6 xl:grid-cols-2"><div><SectionTitle title="Follow-up history" copy="Calls, callbacks, appointments, and notes recorded for this customer relationship."/><Timeline rows={data.activities ?? []} empty="No customer follow-ups have been recorded."/></div><div><SectionTitle title="Customer notes" copy="Keep account context visible to everyone with access to this customer."/>{canEdit && <form onSubmit={(event) => { event.preventDefault(); postComment(); }} className="mt-4 flex gap-2"><input disabled={commentBusy} value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add customer comment" className="h-10 min-w-0 flex-1 rounded-md border border-black/10 px-3 text-sm disabled:opacity-55"/><PendingButton pending={commentBusy} pendingLabel="Posting..." disabled={actions.isBusy() && !commentBusy} className="h-10 rounded-md border border-black/10 px-3 text-xs font-bold disabled:opacity-50">Post</PendingButton></form>}<CommentList rows={data.comments} empty="No customer comments yet."/></div></section>
   </section>;
+}
+
+function SalesShipmentForm({ customerId, shipment, api, report, onSaved, onClose }: { customerId: string; shipment?: any; api: (path: string, init?: RequestInit) => Promise<Response>; report: (message: string, tone?: "success" | "error") => void; onSaved: () => void; onClose?: () => void }) {
+  const [form, setForm] = useState({ reference_number: "", pickup_location: "", delivery_location: "", equipment_type: "", quoted_rate: "", pickup_date: "", delivery_date: "", status: "QUOTED" });
+  const actions = useSingleFlight();
+  useEffect(() => { setForm({ reference_number: shipment?.reference_number ?? "", pickup_location: shipment?.pickup_location ?? "", delivery_location: shipment?.delivery_location ?? "", equipment_type: shipment?.equipment_type ?? "", quoted_rate: shipment?.amount_quoted ?? "", pickup_date: shipment?.pickup_date ?? "", delivery_date: shipment?.delivery_date ?? "", status: shipment?.sales_status ?? "QUOTED" }); }, [shipment?.id]);
+  const save = () => void actions.run("shipment", async () => {
+    try {
+      const body = { ...form, equipment_type: form.equipment_type || null, quoted_rate: form.quoted_rate === "" ? null : Number(form.quoted_rate), pickup_date: form.pickup_date || null, delivery_date: form.delivery_date || null };
+      const path = shipment ? "/api/v1/brokerage/sales-shipments/" + shipment.id : "/api/v1/brokerage/customers/" + customerId + "/shipments";
+      await responseData(await api(path, { method: shipment ? "PATCH" : "POST", body: JSON.stringify(body) }));
+      onSaved();
+      report(shipment ? "Customer shipment saved." : "Customer shipment added.");
+    } catch (error) {
+      report(message(error), "error");
+    }
+  });
+  const busy = actions.isBusy("shipment");
+  return <div><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-xs font-bold">{shipment ? "Edit commercial shipment" : "New commercial shipment"}</p><p className="mt-1 text-xs text-black/45">Sales controls quote, booking, delivered, and paid milestones. Operations execution remains separate.</p></div>{onClose && <button type="button" onClick={onClose} className="text-xs font-bold text-black/50 hover:text-black">Close</button>}</div><fieldset disabled={busy} className="mt-4 grid gap-3 disabled:opacity-55 sm:grid-cols-2"><Input light label="Reference number" value={form.reference_number} onChange={(reference_number) => setForm({ ...form, reference_number })}/><label className="block text-xs font-bold text-black/55">Commercial status<select value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} className="mt-2 h-10 w-full rounded-md border border-black/10 bg-white px-3 text-sm"><option>QUOTED</option><option>BOOKED</option><option>DELIVERED</option><option>PAID</option></select></label><Input light label="Pickup" value={form.pickup_location} onChange={(pickup_location) => setForm({ ...form, pickup_location })}/><Input light label="Delivery" value={form.delivery_location} onChange={(delivery_location) => setForm({ ...form, delivery_location })}/><Input light label="Equipment" required={false} value={form.equipment_type} onChange={(equipment_type) => setForm({ ...form, equipment_type })}/><Input light label="Quoted rate" required={false} type="number" value={String(form.quoted_rate)} onChange={(quoted_rate) => setForm({ ...form, quoted_rate })}/><Input light label="Pickup date" required={false} type="date" value={form.pickup_date} onChange={(pickup_date) => setForm({ ...form, pickup_date })}/><Input light label="Delivery date" required={false} type="date" value={form.delivery_date} onChange={(delivery_date) => setForm({ ...form, delivery_date })}/></fieldset><PendingButton type="button" pending={busy} pendingLabel={shipment ? "Saving shipment..." : "Adding shipment..."} onClick={save} className="mt-4 h-9 rounded-md bg-[#191816] px-3 text-xs font-bold text-white disabled:opacity-50">{shipment ? "Save shipment details" : "Add shipment"}</PendingButton></div>;
+}
+
+function CustomerDirectory({ api, report }: { api: (path: string, init?: RequestInit) => Promise<Response>; report: (message: string, tone?: "success" | "error") => void }) {
+  const customers = useQuery({ queryKey: ["brokerage", "customers"], queryFn: async () => responseData<any>(await api("/api/v1/brokerage/customers")), staleTime: 20_000 });
+  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  useEffect(() => { if (!selectedCustomer && customers.data?.customers?.[0]?.id) setSelectedCustomer(customers.data.customers[0].id); }, [customers.data, selectedCustomer]);
+  if (customers.isLoading) return <DetailSkeleton/>;
+  if (customers.isError || !customers.data) return <Empty title="Customers unavailable" copy={message(customers.error)}/>;
+  const filtered = customers.data.customers.filter((customer: any) => `${customer.company_name} ${customer.contact_name ?? ""} ${customer.contact_email ?? ""}`.toLowerCase().includes(search.toLowerCase()));
+  return <div className="grid gap-5 xl:grid-cols-[340px_minmax(0,1fr)]"><aside className="overflow-hidden rounded-lg border border-black/8 bg-white"><div className="border-b border-black/8 p-4"><p className="font-semibold">Customer directory</p><p className="mt-1 text-xs text-black/45">Only customers in your permitted Sales scope appear here.</p><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customers" className="mt-4 h-10 w-full rounded-md border border-black/10 px-3 text-sm"/></div><div className="max-h-[680px] divide-y divide-black/6 overflow-auto">{filtered.map((customer: any) => <button key={customer.id} type="button" onClick={() => setSelectedCustomer(customer.id)} className={`w-full px-4 py-4 text-left transition ${selectedCustomer === customer.id ? "bg-[#fff4e4]" : "hover:bg-black/[.025]"}`}><p className="text-sm font-semibold">{customer.company_name}</p><p className="mt-1 truncate text-xs text-black/50">{customer.contact_name || "No contact"}{customer.contact_email ? ` · ${customer.contact_email}` : ""}</p></button>)}{!filtered.length && <p className="p-6 text-sm text-black/45">No customers match this search.</p>}</div></aside><div>{selectedCustomer ? <CustomerWorkspace customerId={selectedCustomer} api={api} report={report}/> : <Empty title="Select a customer" copy="Choose a customer to manage their profile, shipment table, follow-ups, and comments."/>}</div></div>;
 }
 
 function QuoteWorkspace({ quoteId, quote, data, api, refresh, report }: { quoteId: string; quote: any; data: any; api: (path: string, init?: RequestInit) => Promise<Response>; refresh: () => Promise<void>; report: (message: string, tone?: "success" | "error") => void }) {
@@ -501,13 +584,14 @@ function QuoteWorkspace({ quoteId, quote, data, api, refresh, report }: { quoteI
 }
 
 function ReportsWorkspace({ api, report, sales }: { api: (path: string, init?: RequestInit) => Promise<Response>; report: (message: string, tone?: "success" | "error") => void; sales: boolean }) {
-  const [range, setRange] = useState({ from: "", to: "" });
+  const [range, setRange] = useState({ from: "", to: "", agent_id: "" });
   const reports = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<any>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(range).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
   const exportCsv = (title: string, rows: any[]) => { if (!rows.length) return report("There is no data in this report to export.", "error"); const columns = Object.keys(rows[0]); const csv = [columns.join(","), ...rows.map((row) => columns.map((column) => JSON.stringify(row[column] ?? "")).join(","))].join("\n"); const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = `${title.toLowerCase().replaceAll(" ", "-")}.csv`; link.click(); URL.revokeObjectURL(url); report(`${title} exported as CSV.`); };
   if (reports.isLoading) return <DetailSkeleton/>;
   if (reports.isError || !reports.data) return <Empty title="Reports unavailable" copy={message(reports.error)}/>;
   const data = reports.data; const primary = sales ? data.sales : data.operations;
-  return <div><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#a65c00]">Brokerage performance</p><h2 className="mt-2 text-3xl font-semibold">{sales ? "Sales performance" : "Operations and revenue"}</h2></div><div className="flex flex-wrap gap-2"><input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm"/><input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm"/><button onClick={() => exportCsv(sales ? "Sales report" : "Operations report", primary.rows)} className="h-10 rounded-md bg-[#191816] px-3 text-xs font-bold text-white">Export CSV</button></div></div><div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{sales ? <><Metric label="Leads" value={data.sales.totals.leads}/><Metric label="Customers" value={data.sales.totals.customers}/><Metric label="Pipeline value" value={money(data.sales.totals.pipeline_value)}/><Metric label="Quoted value" value={money(data.sales.totals.quoted_value)}/></> : <><Metric label="Shipments" value={data.operations.totals.shipments}/><Metric label="Invoiced" value={money(data.operations.totals.invoiced)}/><Metric label="Paid" value={money(data.operations.totals.paid)}/><Metric label="Outstanding" value={money(data.operations.totals.outstanding)}/></>}</div><div className="mt-7 grid gap-5 xl:grid-cols-2"><ReportTable title={sales ? "Pipeline by stage" : "Shipment status"} values={sales ? data.sales.lead_stages : data.operations.shipment_statuses}/><ReportTable title={sales ? "Quote outcomes" : "Invoice status"} values={sales ? data.sales.quote_stages : data.operations.invoice_statuses}/><ReportTable title={sales ? "Lead ownership" : "Workload by agent"} values={sales ? data.sales.by_agent : data.operations.workload}/><ReportTable title={sales ? "Team performance" : "Customer volume"} values={sales ? data.sales.by_team : data.operations.by_customer}/></div></div>;
+  const exportRows = sales ? primary.shipment_rows : primary.rows;
+  return <div><div className="flex flex-wrap items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[.16em] text-[#a65c00]">Brokerage performance</p><h2 className="mt-2 text-3xl font-semibold">{sales ? "Sales performance" : "Operations and revenue"}</h2></div><div className="flex flex-wrap gap-2"><input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm"/><input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm"/>{sales && (data.sales.agents ?? []).length > 1 && <select value={range.agent_id} onChange={(event) => setRange({ ...range, agent_id: event.target.value })} className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm"><option value="">All permitted agents</option>{data.sales.agents.map((agent: any) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select>}<button onClick={() => exportCsv(sales ? "Sales shipments" : "Operations report", exportRows)} className="h-10 rounded-md bg-[#191816] px-3 text-xs font-bold text-white">Export CSV</button></div></div><div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{sales ? <><Metric label="Leads" value={data.sales.totals.leads}/><Metric label="Customers" value={data.sales.totals.customers}/><Metric label="Shipments" value={data.sales.totals.shipments}/><Metric label="Gross generated" value={money(data.sales.totals.gross_generated)}/><Metric label="Quoted value" value={money(data.sales.totals.quoted_value)}/></> : <><Metric label="Shipments" value={data.operations.totals.shipments}/><Metric label="Invoiced" value={money(data.operations.totals.invoiced)}/><Metric label="Paid" value={money(data.operations.totals.paid)}/><Metric label="Outstanding" value={money(data.operations.totals.outstanding)}/></>}</div><div className="mt-7 grid gap-5 xl:grid-cols-2">{sales ? <><ReportTable title="Pipeline by stage" values={data.sales.lead_stages}/><ReportTable title="Quote outcomes" values={data.sales.quote_stages}/><ReportTable title="Shipment status" values={data.sales.shipment_statuses}/><ReportTable title="Customer outcomes" values={data.sales.customer_outcomes}/><ReportTable title="Opportunities by agent" values={data.sales.by_agent}/><ReportTable title="Team performance" values={data.sales.by_team}/></> : <><ReportTable title="Shipment status" values={data.operations.shipment_statuses}/><ReportTable title="Invoice status" values={data.operations.invoice_statuses}/><ReportTable title="Workload by agent" values={data.operations.workload}/><ReportTable title="Customer volume" values={data.operations.by_customer}/></>}</div></div>;
 }
 
 function NotificationsWorkspace({ data, api, refresh, report }: { data: any[]; api: (path: string, init?: RequestInit) => Promise<Response>; refresh: () => Promise<void>; report: (message: string, tone?: "success" | "error") => void }) {
@@ -553,7 +637,7 @@ function DetailSkeleton() { return <div className="animate-pulse p-5"><div class
 function WorkspaceSkeleton() { return <main className="min-h-screen bg-[#f5f4f0] p-5 lg:p-10"><div className="h-16 animate-pulse rounded-lg bg-white"/><div className="mx-auto mt-8 grid max-w-7xl animate-pulse gap-4 md:grid-cols-3"><div className="h-56 rounded-lg bg-white"/><div className="h-56 rounded-lg bg-white md:col-span-2"/></div></main>; }
 function Toast({ notice, dismiss }: { notice: Exclude<Notice, null>; dismiss: () => void }) { const success = notice.tone === "success"; return <div role="status" className={`fixed right-5 top-5 z-50 flex w-[min(390px,calc(100vw-40px))] items-center gap-3 rounded-lg border p-4 shadow-2xl ${success ? "border-emerald-400/30 bg-[#10231d] text-emerald-50" : "border-red-400/30 bg-[#311718] text-red-50"}`}><span className="grid h-8 w-8 place-items-center rounded-md bg-white/10">{success ? <Check size={16}/> : <X size={16}/>}</span><p className="flex-1 text-sm font-medium">{notice.message}</p><button onClick={dismiss} className="grid h-8 w-8 place-items-center rounded-md hover:bg-white/10"><X size={16}/></button></div>; }
 async function responseData<T>(response: Response): Promise<T> { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body.error ?? "The request could not be completed."); return body as T; }
-function titleFor(section: string, sales: boolean) { return ({ overview: "Brokerage command center", sales: "Sales workspace", operations: "Operations execution", finance: "Invoice ledger", teams: "Teams and Team Leads", access: "Agent access", reports: sales ? "Sales reports" : "Operations reports", notifications: "Notifications" } as Record<string, string>)[section] ?? "Brokerage"; }
+function titleFor(section: string, sales: boolean) { return ({ overview: "Brokerage command center", sales: "Sales workspace", customers: "Customer workspace", operations: "Operations execution", finance: "Invoice ledger", teams: "Teams and Team Leads", access: "Agent access", reports: sales ? "Sales reports" : "Operations reports", notifications: "Notifications" } as Record<string, string>)[section] ?? "Brokerage"; }
 function localInput(value?: string | null) { return value ? new Date(value).toISOString().slice(0, 16) : ""; }
 function money(value: number) { return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(Number(value ?? 0)); }
 function message(error: unknown) { return error instanceof Error ? error.message : "The request could not be completed."; }
