@@ -590,9 +590,19 @@ function QuoteWorkspace({ quoteId, quote, data, api, refresh, report }: { quoteI
 
         {data.capabilities?.canReviewQuotes && quoteStage === "SUBMITTED" && <textarea disabled={anyActionBusy} value={reviewNote} onChange={(event) => setReviewNote(event.target.value)} placeholder="Required reason when returning a quote for rework" className="mt-3 min-h-16 w-full rounded-md border border-black/10 p-3 text-sm disabled:opacity-55"/>}
 
+        {data.capabilities?.canHandoffQuotes && quoteStage === "APPROVED" && handoffOpen && <form id={"handoff-" + quoteId} onSubmit={(event) => { event.preventDefault(); act("handoff", "/api/v1/brokerage/quotes/" + quoteId + "/handoff", "POST", handoff, "Quote handed to Operations."); }} className="mt-4 rounded-md border border-[#f59a18]/45 bg-[#fff4e4] p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-bold">Send approved quote to Operations</p><p className="mt-1 max-w-2xl text-xs leading-5 text-black/60">Choose the receiving Brokerage Operations department. Its manager is notified and assigns the shipment to an Operations Agent or team.</p></div><span className="rounded-md bg-[#f59a18] px-2 py-1 text-[9px] font-bold uppercase tracking-[.1em] text-black">Step 2 of 2</span></div>
+          <div className="mt-4 grid gap-3 lg:grid-cols-3">
+            <label className="grid gap-1 text-xs font-semibold text-black/65"><span>Receiving department</span><select required disabled={anyActionBusy} value={handoff.operations_department_id} onChange={(event) => setHandoff({ ...handoff, operations_department_id: event.target.value })} className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm disabled:opacity-55"><option value="">Choose Brokerage Operations</option>{(data.operationsDepartments ?? []).map((department: any) => <option key={department.id} value={department.id}>{department.name}</option>)}</select></label>
+            <label className="grid gap-1 text-xs font-semibold text-black/65"><span>Shipment reference</span><input required disabled={anyActionBusy} value={handoff.reference_number} onChange={(event) => setHandoff({ ...handoff, reference_number: event.target.value })} placeholder="e.g. DG-2026-001" className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm disabled:opacity-55"/></label>
+            <label className="grid gap-1 text-xs font-semibold text-black/65"><span>Customer name</span><input required disabled={anyActionBusy} value={handoff.customer_name} onChange={(event) => setHandoff({ ...handoff, customer_name: event.target.value })} placeholder="Customer company" className="h-10 rounded-md border border-black/10 bg-white px-3 text-sm disabled:opacity-55"/></label>
+          </div>
+          <PendingButton pending={actions.isBusy("handoff")} pendingLabel="Creating shipment..." disabled={anyActionBusy && !actions.isBusy("handoff")} className="mt-4 h-10 rounded-md bg-[#191816] px-4 text-xs font-bold text-white disabled:opacity-50">Confirm Operations handoff</PendingButton>
+        </form>}
+
         <div className="mt-4 grid gap-4 lg:grid-cols-2">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Attachments</p>
+          <div className="rounded-md border border-black/8 p-3">
+            <div className="flex items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Attachments</p><span className="text-[10px] text-black/40">{detail.data.attachments.length} file{detail.data.attachments.length === 1 ? "" : "s"}</span></div>
             {!managerReview && <label className="mt-2 flex h-9 items-center justify-center rounded-md border border-dashed border-black/20 text-xs font-bold disabled:opacity-50">
               Choose PDF or image
               <input disabled={anyActionBusy} className="hidden" type="file" accept="application/pdf,image/jpeg,image/png" onChange={(event) => setStagedFile(event.target.files?.[0] ?? null)}/>
@@ -604,12 +614,12 @@ function QuoteWorkspace({ quoteId, quote, data, api, refresh, report }: { quoteI
                 <PendingButton type="button" pending={actions.isBusy("attachment")} pendingLabel="Saving..." disabled={anyActionBusy && !actions.isBusy("attachment")} onClick={saveAttachment} className="h-8 rounded-md bg-[#191816] px-2 text-[11px] font-bold text-white disabled:opacity-50">Save attachment</PendingButton>
               </div>
             </div>}
-            <div className="mt-2 space-y-1">
+            <div className="mt-2 max-h-52 space-y-1 overflow-y-auto pr-1">
               {detail.data.attachments.map((attachment: any) => <PendingButton key={attachment.id} type="button" pending={actions.isBusy("download:" + attachment.id)} pendingLabel="Opening..." disabled={anyActionBusy && !actions.isBusy("download:" + attachment.id)} onClick={() => openAttachment(attachment)} className="w-full justify-between rounded-md bg-black/[.035] px-2 py-2 text-left text-xs"><span className="truncate">{attachment.file_name}</span><FileText size={13}/></PendingButton>)}
               {!detail.data.attachments.length && <p className="text-xs text-black/45">No supporting files.</p>}
             </div>
           </div>
-          <div><p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Revision history</p><Timeline rows={detail.data.events} empty="No quote events yet."/></div>
+          <div className="rounded-md border border-black/8 p-3"><div className="flex items-center justify-between gap-3"><p className="text-xs font-bold uppercase tracking-[.12em] text-black/45">Revision history</p><span className="text-[10px] text-black/40">{detail.data.events.length} event{detail.data.events.length === 1 ? "" : "s"}</span></div><div className="mt-2 max-h-52 overflow-y-auto pr-1"><Timeline rows={detail.data.events} empty="No quote events yet."/></div></div>
         </div>
 
         <form onSubmit={(event) => { event.preventDefault(); postComment(); }} className="mt-4 flex gap-2">
@@ -618,15 +628,6 @@ function QuoteWorkspace({ quoteId, quote, data, api, refresh, report }: { quoteI
         </form>
         <CommentList rows={detail.data.comments} empty="No quote comments." onDelete={deleteComment} busy={actions.isBusy}/>
 
-        {data.capabilities?.canHandoffQuotes && quoteStage === "APPROVED" && handoffOpen && <form id={"handoff-" + quoteId} onSubmit={(event) => { event.preventDefault(); act("handoff", "/api/v1/brokerage/quotes/" + quoteId + "/handoff", "POST", handoff, "Quote handed to Operations."); }} className="mt-5 rounded-md bg-[#fff4e4] p-3">
-          <p className="text-xs font-bold">Sales to Operations handoff</p><p className="mt-1 text-xs leading-5 text-black/55">Choose the Brokerage Operations department. Its current department manager is notified and then assigns the shipment to an Operations Agent or team.</p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-3">
-            <select required disabled={anyActionBusy} value={handoff.operations_department_id} onChange={(event) => setHandoff({ ...handoff, operations_department_id: event.target.value })} className="h-9 rounded-md border border-black/10 bg-white px-2 text-xs disabled:opacity-55"><option value="">Brokerage Operations department</option>{(data.operationsDepartments ?? []).map((department: any) => <option key={department.id} value={department.id}>{department.name}</option>)}</select>
-            <input required disabled={anyActionBusy} value={handoff.reference_number} onChange={(event) => setHandoff({ ...handoff, reference_number: event.target.value })} placeholder="Shipment reference" className="h-9 rounded-md border border-black/10 px-2 text-xs disabled:opacity-55"/>
-            <input required disabled={anyActionBusy} value={handoff.customer_name} onChange={(event) => setHandoff({ ...handoff, customer_name: event.target.value })} placeholder="Customer name" className="h-9 rounded-md border border-black/10 px-2 text-xs disabled:opacity-55"/>
-          </div>
-          <PendingButton pending={actions.isBusy("handoff")} pendingLabel="Creating shipment..." disabled={anyActionBusy && !actions.isBusy("handoff")} className="mt-3 h-9 rounded-md bg-[#191816] px-3 text-xs font-bold text-white disabled:opacity-50">Create Operations shipment</PendingButton>
-        </form>}
       </> : <p className="text-sm text-red-600">Quote details could not be loaded.</p>}
     </div>}
   </article>;
