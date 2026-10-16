@@ -1,7 +1,7 @@
 "use client";
 
-import { TeamBuilderPanel } from "@/components/brokerage/team-builder";
+import { TeamsScreen } from "@/components/teams/teams-screens";
 
 export default function TeamsPage() {
-  return <TeamBuilderPanel />;
+  return <TeamsScreen />;
 }

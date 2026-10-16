@@ -1,17 +1,21 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { KeyRound } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useToast } from "@/components/ui/toast";
-import { PasswordField } from "@/components/admin/parts";
+import { useSession } from "@/components/app/session";
+import { Avatar, Card, CardHeader, PageHeader } from "@/components/ui/surface";
+import { Button } from "@/components/ui/button";
+import { PasswordInput } from "@/components/ui/field";
 
 export function SettingsScreen() {
   const supabase = useMemo(() => createClient(), []);
   const notify = useToast();
+  const { profile } = useSession();
   const [form, setForm] = useState({ password: "", confirm: "" });
-  const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
+  const mismatch = form.confirm.length > 0 && form.password !== form.confirm;
 
   async function changePassword(event: FormEvent) {
     event.preventDefault();
@@ -26,5 +30,21 @@ export function SettingsScreen() {
     } finally { setBusy(false); }
   }
 
-  return <form onSubmit={changePassword} className="max-w-lg rounded-lg border border-black/8 bg-white p-6"><h2 className="text-lg font-semibold">Change password</h2><fieldset disabled={busy} className="mt-6 space-y-4 disabled:opacity-50"><PasswordField label="New password" value={form.password} visible={visible} onVisibility={() => setVisible(!visible)} onChange={(password) => setForm({ ...form, password })} /><PasswordField label="Confirm password" value={form.confirm} visible={visible} onVisibility={() => setVisible(!visible)} onChange={(confirm) => setForm({ ...form, confirm })} /><button disabled={busy} className="flex h-11 w-full items-center justify-center gap-2 rounded-md bg-brand text-sm font-bold text-black disabled:opacity-60">{busy && <LoaderCircle size={16} className="animate-spin" />}{busy ? "Saving password..." : "Save new password"}</button></fieldset></form>;
+  return <div className="mx-auto max-w-2xl space-y-6 animate-rise">
+    <PageHeader title="Settings" />
+    <Card className="flex items-center gap-4 p-5">
+      <Avatar name={profile.full_name} className="h-12 w-12 text-sm" />
+      <div className="min-w-0"><p className="truncate font-semibold">{profile.full_name}</p><p className="truncate text-sm text-muted">{profile.email}</p></div>
+    </Card>
+    <Card>
+      <CardHeader title="Change password" />
+      <form onSubmit={changePassword} className="p-5">
+        <fieldset disabled={busy} className="space-y-4">
+          <PasswordInput label="New password" required minLength={8} autoComplete="new-password" hint="At least 8 characters." value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+          <PasswordInput label="Confirm password" required minLength={8} autoComplete="new-password" error={mismatch ? "Passwords don't match." : undefined} value={form.confirm} onChange={(event) => setForm({ ...form, confirm: event.target.value })} />
+        </fieldset>
+        <div className="mt-6 flex justify-end"><Button type="submit" variant="primary" icon={<KeyRound size={16} />} pending={busy} pendingLabel="Saving password…" disabled={!form.password || !form.confirm}>Save new password</Button></div>
+      </form>
+    </Card>
+  </div>;
 }
