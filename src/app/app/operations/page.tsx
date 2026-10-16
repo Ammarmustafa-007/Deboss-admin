@@ -1,9 +1,7 @@
 "use client";
 
-import { useBrokerage } from "@/components/app/brokerage-context";
-import { OperationsBoard } from "@/components/brokerage/operations-board";
+import { ShipmentsScreen } from "@/components/operations/shipments-screen";
 
 export default function OperationsPage() {
-  const { workspace } = useBrokerage();
-  return <OperationsBoard initialWorkspace={workspace} />;
+  return <ShipmentsScreen />;
 }

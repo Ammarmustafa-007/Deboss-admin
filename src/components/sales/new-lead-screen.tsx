@@ -9,7 +9,7 @@ import { Card, EmptyState, PageHeader } from "@/components/ui/surface";
 import { Stepper } from "@/components/ui/navigation";
 import { Button, LinkButton } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
-import { useSalesAction } from "@/components/sales/use-sales-action";
+import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import type { Lead } from "@/components/sales/model";
 
 const blank = { company_name: "", contact_name: "", contact_email: "", contact_phone: "", source: "", estimated_monthly_value: "", next_follow_up_at: "" };
@@ -17,7 +17,7 @@ const blank = { company_name: "", contact_name: "", contact_email: "", contact_p
 export function NewLeadScreen() {
   const router = useRouter();
   const { manager } = useBrokerage();
-  const { run, busy } = useSalesAction();
+  const { run, busy } = useBrokerageAction();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(blank);
   const firstStep = useRef<HTMLFormElement>(null);

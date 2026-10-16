@@ -1,7 +1,7 @@
 "use client";
 
-import { InvoiceLedger } from "@/components/brokerage/invoice-ledger";
+import { InvoicesScreen } from "@/components/operations/invoices-screen";
 
 export default function InvoicesPage() {
-  return <InvoiceLedger embedded />;
+  return <InvoicesScreen />;
 }

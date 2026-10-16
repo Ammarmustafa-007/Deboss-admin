@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/overlay";
 import { SelectField, TextAreaField, TextField } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
-import { useSalesAction } from "@/components/sales/use-sales-action";
+import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { lane, quotePosition, quoteStageLabel, quoteSteps, type Lead, type Quote, type QuoteDetail } from "@/components/sales/model";
 
 function useQuoteDetail(quoteId: string) {
@@ -62,7 +62,7 @@ function QuoteReviewDrawer({ quote, lead, onClose }: { quote: Quote; lead: Lead;
   const { workspace, api, report } = useBrokerage();
   const caps = workspace.capabilities ?? {};
   const queryClient = useQueryClient();
-  const { run, busy, wrap, refresh } = useSalesAction();
+  const { run, busy, wrap, refresh } = useBrokerageAction();
   const [reviewNote, setReviewNote] = useState("");
   const departments = (workspace.operationsDepartments ?? []) as { id: string; name: string }[];
   const [handoff, setHandoff] = useState({ operations_department_id: departments[0]?.id ?? "", reference_number: "", customer_name: lead.company_name ?? "" });
@@ -140,7 +140,7 @@ export function QuoteFile({ quoteId, detail: provided, readOnly = false }: { quo
   const own = useQuoteDetail(quoteId);
   const detail = provided ?? own;
   const { api, report } = useBrokerage();
-  const { run, busy, wrap } = useSalesAction();
+  const { run, busy, wrap } = useBrokerageAction();
 
   if (detail.isLoading) return <div className="space-y-3"><Skeleton className="h-12" /><Skeleton className="h-24" /></div>;
   if (detail.isError || !detail.data) return <p className="text-sm text-[#C4254B]">{errorMessage(detail.error, "Quote details could not be loaded.")}</p>;

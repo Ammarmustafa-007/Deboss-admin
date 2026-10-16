@@ -14,7 +14,7 @@ import { Drawer } from "@/components/ui/overlay";
 import { FilePicker, SelectField, TextField } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { QuoteFile } from "@/components/sales/quote-panel";
-import { useSalesAction } from "@/components/sales/use-sales-action";
+import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { commercialStatuses, lane, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type Quote, type SalesShipment } from "@/components/sales/model";
 
 export function useCustomerProfile(customerId: string) {
@@ -25,7 +25,7 @@ export function useCustomerProfile(customerId: string) {
 /** The customer record with its shipments, follow-ups and notes. Editing happens only from Sales (not readOnly). */
 export function CustomerPanel({ customerId, readOnly = false, onSyncFromLead }: { customerId: string; readOnly?: boolean; onSyncFromLead?: { run: () => void; pending: boolean } }) {
   const profile = useCustomerProfile(customerId);
-  const { run, busy } = useSalesAction();
+  const { run, busy } = useBrokerageAction();
   const [drawer, setDrawer] = useState<{ shipment?: SalesShipment } | null>(null);
 
   if (profile.isLoading) return <div className="space-y-4"><Skeleton className="h-40 rounded-card" /><Skeleton className="h-64 rounded-card" /></div>;
@@ -76,7 +76,7 @@ export function CustomerPanel({ customerId, readOnly = false, onSyncFromLead }: 
 }
 
 function CustomerDetails({ data, canEdit, onSyncFromLead }: { data: CustomerProfile; canEdit: boolean; onSyncFromLead?: { run: () => void; pending: boolean } }) {
-  const { run, busy } = useSalesAction();
+  const { run, busy } = useBrokerageAction();
   const initial = { company_name: data.customer.company_name ?? "", contact_name: data.customer.contact_name ?? "", contact_email: data.customer.contact_email ?? "", contact_phone: data.customer.contact_phone ?? "" };
   const [form, setForm] = useState(initial);
   const dirty = (Object.keys(initial) as (keyof typeof initial)[]).some((key) => form[key] !== initial[key]);
@@ -118,7 +118,7 @@ function shipmentForm(shipment?: SalesShipment) {
 
 function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreated }: { customerId: string; shipment?: SalesShipment; quote?: Quote; canEdit: boolean; onClose: () => void; onCreated: () => void }) {
   const { api, report } = useBrokerage();
-  const { run, busy, refresh, wrap } = useSalesAction();
+  const { run, busy, refresh, wrap } = useBrokerageAction();
   const initial = shipmentForm(shipment);
   const [form, setForm] = useState(initial);
   const [file, setFile] = useState<File | null>(null);

@@ -10,7 +10,7 @@ import { errorMessage, responseData } from "@/lib/api";
  * Runs one Sales mutation at a time, reports the outcome as a toast and refreshes every Brokerage query
  * (workspace, lead, customer, quote). `busy(key)` uses the same key the action ran under.
  */
-export function useSalesAction() {
+export function useBrokerageAction() {
   const { api, report } = useBrokerage();
   const queryClient = useQueryClient();
   const actions = useSingleFlight();

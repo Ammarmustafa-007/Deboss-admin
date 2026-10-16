@@ -14,7 +14,7 @@ import { SelectField, TextField, controlClass } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { CustomerPanel } from "@/components/sales/customer-panel";
 import { QuoteList } from "@/components/sales/quote-panel";
-import { useSalesAction } from "@/components/sales/use-sales-action";
+import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { activityTypes, editableStages, journeyPosition, journeySteps, nextAction, stageLabel, type FeedItem, type Lead, type LeadDetailData } from "@/components/sales/model";
 
 type TabKey = "quotes" | "details" | "activity" | "comments" | "customer";
@@ -38,7 +38,7 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
   const action = nextAction(quotes, manager);
   const reviewWaiting = quotes.some((quote) => quote.stage === "SUBMITTED" || quote.stage === "APPROVED");
   const [tab, setTab] = useState<TabKey>(manager ? (reviewWaiting ? "quotes" : "details") : "details");
-  const { run, busy } = useSalesAction();
+  const { run, busy } = useBrokerageAction();
   const leadPath = `/api/v1/brokerage/leads/${lead.id}`;
   const openActivities = activities.filter((item) => item.activity_type && !item.completed_at).length;
 
@@ -95,7 +95,7 @@ function Journey({ lead, quotes }: { lead: Lead; quotes: LeadDetailData["quotes"
 }
 
 function StageControl({ lead }: { lead: Lead }) {
-  const { run, busy } = useSalesAction();
+  const { run, busy } = useBrokerageAction();
   const [stage, setStage] = useState(lead.stage);
   const pending = busy(`stage:${lead.id}`);
   return <div className="flex items-center gap-2">
@@ -120,7 +120,7 @@ function leadFormState(lead: Lead) {
 }
 
 function LeadForm({ lead }: { lead: Lead }) {
-  const { run, busy } = useSalesAction();
+  const { run, busy } = useBrokerageAction();
   const initial = leadFormState(lead);
   const [form, setForm] = useState(initial);
   const dirty = (Object.keys(initial) as (keyof typeof initial)[]).some((key) => form[key] !== initial[key]);
@@ -188,7 +188,7 @@ function LeadFacts({ lead }: { lead: Lead }) {
 }
 
 function ActivityTab({ lead, activities, manager }: { lead: Lead; activities: FeedItem[]; manager: boolean }) {
-  const { run, busy } = useSalesAction();
+  const { run, busy } = useBrokerageAction();
   const [form, setForm] = useState({ activity_type: "CALL", body: "", due_at: "" });
   const adding = busy(`add-activity:${lead.id}`);
   const add = async (event: FormEvent) => {
@@ -218,7 +218,7 @@ function ActivityTab({ lead, activities, manager }: { lead: Lead; activities: Fe
 }
 
 function CommentsTab({ leadId, comments, manager }: { leadId: string; comments: FeedItem[]; manager: boolean }) {
-  const { run, busy } = useSalesAction();
+  const { run, busy } = useBrokerageAction();
   return <Card className="max-w-3xl">
     <CardHeader title={manager ? "Manager comments" : "Internal comments"} />
     <div className="space-y-6 p-5">
@@ -229,7 +229,7 @@ function CommentsTab({ leadId, comments, manager }: { leadId: string; comments: 
 }
 
 function CustomerTab({ lead, customerId }: { lead: Lead; customerId: string | null }) {
-  const { run, busy } = useSalesAction();
+  const { run, busy } = useBrokerageAction();
   const convert = () => run(`convert:${lead.id}`, `/api/v1/brokerage/leads/${lead.id}/convert`, "POST", undefined, customerId ? "Customer contact details synced from the lead." : "Customer workspace created.");
   if (!customerId) return <Card><EmptyState icon={UserRoundPlus} title="Not a customer yet" body="Convert this lead to open its customer record and start adding shipments." action={<Button variant="primary" pending={busy(`convert:${lead.id}`)} pendingLabel="Creating customer…" onClick={() => void convert()}>Convert to customer</Button>} /></Card>;
   return <CustomerPanel customerId={customerId} onSyncFromLead={{ run: () => void convert(), pending: busy(`convert:${lead.id}`) }} />;
