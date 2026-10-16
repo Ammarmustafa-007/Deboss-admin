@@ -89,3 +89,113 @@ input[type="radio"] {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0s !important; transition-duration: 0s !important; }
 }
+
+/* Login page (ported from DEBOSS_GLOBAL_LOGIN.html) */
+@property --login-angle { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+.login-background {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    radial-gradient(60% 55% at 85% 0%, #f7941d33, transparent 70%),
+    radial-gradient(50% 50% at 0% 100%, #7c5cfc26, transparent 70%),
+    radial-gradient(40% 40% at 55% 110%, #0fb5a622, transparent 70%),
+    #09090a;
+  animation: login-breathe 10s ease-in-out infinite alternate;
+}
+.login-background::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: linear-gradient(#ffffff0a 1px, transparent 1px), linear-gradient(90deg, #ffffff0a 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(70% 70% at 50% 40%, #000, transparent);
+}
+.login-background::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: .07;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@keyframes login-breathe { to { filter: hue-rotate(-12deg) brightness(1.12); } }
+
+.login-globe { animation: login-globe-in 2s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes login-globe-in { from { opacity: 0; transform: scale(.92); } }
+
+.login-headline {
+  filter: drop-shadow(0 4px 30px #000a);
+  background: linear-gradient(180deg, #fff 30%, #a9a59c);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.login-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22a860;
+  animation: login-ping 2s infinite;
+}
+@keyframes login-ping { 0% { box-shadow: 0 0 0 0 #22a86088; } 100% { box-shadow: 0 0 0 9px #22a86000; } }
+
+.login-card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: linear-gradient(160deg, #fffffff4, #f7f2e8f2);
+  backdrop-filter: blur(22px) saturate(1.4);
+  box-shadow: 0 50px 90px -30px #000, 0 0 100px -20px #f7941dcc, 0 0 0 1px #fff7, inset 0 1px #fff;
+}
+.login-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(from var(--login-angle), transparent 0 70%, #f7941d, #7c5cfc, transparent);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: login-spin 6s linear infinite;
+}
+.login-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(300px circle at var(--mx, 70%) var(--my, 0%), #f7941d38, transparent 60%);
+}
+@keyframes login-spin { to { --login-angle: 360deg; } }
+
+.login-submit { position: relative; overflow: hidden; }
+.login-submit::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, #fff8, transparent);
+  transform: skewX(-20deg);
+  transition: left .7s cubic-bezier(.2, .8, .2, 1);
+}
+.login-submit:hover:not(:disabled)::before { left: 130%; }
+
+.login-shake { animation: login-shake .35s; }
+@keyframes login-shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+.login-reveal { opacity: 0; animation: login-reveal .9s cubic-bezier(.2, .8, .2, 1) forwards; animation-delay: calc(var(--k, 0) * 90ms + .1s); transform: translateY(18px); }
+@keyframes login-reveal { to { opacity: 1; transform: none; } }
+
+.login-leave { animation: login-leave .5s forwards; }
+@keyframes login-leave { to { opacity: 0; transform: scale(1.03); filter: blur(6px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .login-background, .login-card::before, .login-reveal, .login-globe, .login-status::before { animation: none; }
+  .login-reveal { opacity: 1; transform: none; }
+}

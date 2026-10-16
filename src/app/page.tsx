@@ -1,31 +1,46 @@
 "use client";
 
 import Image from "next/image";
-import { motion } from "framer-motion";
-import { ArrowRight, Eye, EyeOff, LoaderCircle, LockKeyhole, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { FormEvent, useRef, useState } from "react";
+import { useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { GlobeCanvas } from "@/components/login/globe-canvas";
+import { cn } from "@/lib/cn";
+
+const inputClass = "h-[52px] w-full rounded-control border border-[#DDD6C8] bg-white pl-11 pr-12 text-sm text-ink outline-none transition-[border-color,box-shadow] placeholder:text-[#A39D90] hover:border-[#BFB7A6] focus:border-brand focus:shadow-[0_0_0_4px_rgba(247,148,29,.15),0_8px_24px_-10px_rgba(247,148,29,.5)] focus-visible:outline-none disabled:opacity-60";
 
 export default function SignInPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<{ email?: boolean; password?: boolean }>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
   const signInFlight = useRef(false);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const passwordRef = useRef<HTMLInputElement>(null);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (signInFlight.current) return;
+    const emailOk = /^\S+@\S+\.\S+$/.test(email.trim());
+    const passwordOk = password.length > 0;
+    setFieldErrors({ email: !emailOk, password: !passwordOk });
+    if (!emailOk) return emailRef.current?.focus();
+    if (!passwordOk) return passwordRef.current?.focus();
+
     signInFlight.current = true;
     setError("");
     setLoading(true);
     try {
       const { error: authError } = await createClient().auth.signInWithPassword({ email, password });
       if (authError) return setError(authError.message);
-      router.push("/app");
+      setSuccess(true);
+      window.setTimeout(() => router.push("/app"), 450);
     } catch {
       setError("We could not verify your sign-in. Please try again.");
     } finally {
@@ -34,12 +49,62 @@ export default function SignInPage() {
     }
   }
 
-  return <main className="min-h-screen overflow-hidden bg-[#090909] text-[#f8f7f4] selection:bg-brand selection:text-black">
-    <div className="grid-noise pointer-events-none fixed inset-0 opacity-40" /><div className="pointer-events-none fixed inset-x-0 top-0 h-[560px] bg-[radial-gradient(ellipse_at_72%_0%,rgba(247,148,29,0.2),transparent_52%)]" />
-    <nav className="relative z-10 mx-auto flex max-w-[1440px] items-center justify-between px-6 py-6 lg:px-12"><div className="flex items-center gap-3"><div className="relative h-11 w-11 overflow-hidden rounded-md border border-white/10 bg-black"><Image src="/brand/deboss-mark.png" alt="DEBOSS GLOBAL" fill className="object-cover scale-[1.65]" priority /></div><div><p className="text-sm font-bold tracking-[0.22em]">DEBOSS</p><p className="text-[9px] font-semibold tracking-[0.32em] text-brand">GLOBAL OPERATIONS</p></div></div><p className="hidden text-[11px] font-medium uppercase tracking-[0.14em] text-white/40 sm:block">Secure command center</p></nav>
-    <section className="relative z-10 mx-auto grid min-h-[calc(100vh-92px)] max-w-[1440px] items-center gap-16 px-6 pb-20 lg:grid-cols-[1fr_0.85fr] lg:px-12">
-      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.7 }}><p className="mb-6 flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.2em] text-brand"><span className="h-px w-8 bg-brand" /> Freight intelligence, elevated</p><h1 className="max-w-2xl text-5xl font-semibold leading-[0.98] tracking-tight sm:text-6xl xl:text-7xl">Move the operation with complete clarity.</h1><p className="mt-7 max-w-xl text-base leading-7 text-white/55 sm:text-lg">A focused workspace for the people keeping customers, carriers, dispatch and revenue in motion.</p></motion.div>
-      <motion.div initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.75, delay: 0.12 }} className="border border-white/10 bg-[#111110] p-5 shadow-2xl shadow-black/40 sm:p-8"><div className="mb-8 flex items-start justify-between border-b border-white/10 pb-5"><div><p className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-brand"><Sparkles size={13} /> Secure access</p><h2 className="text-2xl font-semibold">Welcome back.</h2></div><span className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 text-white/60"><LockKeyhole size={16} /></span></div><form className="space-y-5" onSubmit={signIn}><label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.13em] text-white/50">Work email</span><input disabled={loading} required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="h-12 w-full rounded-md border border-white/10 bg-black/30 px-4 text-sm outline-none transition placeholder:text-white/20 focus:border-brand disabled:opacity-55" type="email" placeholder="admin@debossglobal.com" /></label><label className="block"><span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.13em] text-white/50">Password</span><span className="relative block"><input disabled={loading} required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} className="h-12 w-full rounded-md border border-white/10 bg-black/30 px-4 pr-12 text-sm outline-none transition placeholder:text-white/20 focus:border-brand disabled:opacity-55" type={visible ? "text" : "password"} placeholder="Enter your password" /><button disabled={loading} type="button" onClick={() => setVisible(!visible)} aria-label={visible ? "Hide password" : "Show password"} className="absolute inset-y-0 right-0 grid w-12 place-items-center text-white/45 transition hover:text-brand disabled:opacity-45">{visible ? <EyeOff size={17} /> : <Eye size={17} />}</button></span></label>{error && <p role="alert" className="rounded-md border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-200">{error}</p>}<button disabled={loading} aria-busy={loading || undefined} className="group flex h-12 w-full items-center justify-between rounded-md bg-brand px-5 text-sm font-bold text-black transition hover:bg-brand-soft disabled:opacity-60">{loading ? <><span className="flex items-center gap-2"><LoaderCircle size={17} className="animate-spin"/>Verifying access...</span><span className="h-[18px] w-[18px]"/></> : <><span>Enter operations workspace</span><ArrowRight size={18} className="transition-transform group-hover:translate-x-1" /></>}</button></form><p className="mt-5 flex items-center gap-2 text-[10px] leading-4 text-white/35"><ShieldCheck size={13} className="shrink-0" /> Your access is provisioned by DEBOSS administration.</p></motion.div>
-    </section>
+  const trackSpotlight = (event: PointerEvent<HTMLElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    event.currentTarget.style.setProperty("--mx", `${event.clientX - rect.left}px`);
+    event.currentTarget.style.setProperty("--my", `${event.clientY - rect.top}px`);
+  };
+  const trackCaps = (event: KeyboardEvent<HTMLInputElement>) => setCapsLock(event.getModifierState?.("CapsLock") ?? false);
+  const busy = loading || success;
+
+  return <main className="relative min-h-screen overflow-x-hidden bg-[#09090a] text-white">
+    <div className={"login-background"} />
+    <GlobeCanvas className={"login-globe"} />
+    <div className={cn("relative z-10 mx-auto grid min-h-screen max-w-[1440px] gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(380px,.85fr)] lg:gap-14 lg:px-14 lg:py-8", success && "login-leave")}>
+      <header className={cn("flex items-center justify-between lg:col-span-2", "login-reveal")} style={{ ["--k" as string]: 0 }}>
+        <Image src="/brand/deboss-logo-horizontal.png" alt="DEBOSS GLOBAL" width={800} height={186} priority className="h-9 w-auto sm:h-10" />
+        <p className={cn("hidden items-center gap-2.5 rounded-full border border-white/10 bg-white/[.04] px-3.5 py-1.5 text-xs text-[#A8A49B] backdrop-blur-md md:flex", "login-status")}>Secure command center · All systems normal</p>
+      </header>
+
+      <section className="self-center pb-6 pt-2 lg:pb-10">
+        <h1 className={cn("max-w-[12em] text-[clamp(38px,5.4vw,76px)] font-bold leading-[1.02] tracking-[-0.035em]", "login-headline", "login-reveal")} style={{ ["--k" as string]: 1 }}>Move the operation with complete clarity.</h1>
+        <p className={cn("mt-5 max-w-[30em] text-base text-[#A8A49B] sm:text-[17px]", "login-reveal")} style={{ ["--k" as string]: 2 }}>A focused workspace for the people keeping customers, carriers, dispatch and revenue in motion.</p>
+      </section>
+
+      <section onPointerMove={trackSpotlight} className={cn("self-center rounded-[24px] p-6 text-ink sm:p-9", "login-card", "login-reveal")} style={{ ["--k" as string]: 2 }}>
+        <span aria-hidden className="absolute right-6 top-6 grid h-11 w-11 place-items-center rounded-control border border-brand/35 bg-brand/12 text-[#C76A00] sm:right-8 sm:top-8"><LockKeyhole size={20} /></span>
+        <h2 className="text-[28px] font-bold leading-tight tracking-tight sm:text-[30px]">Welcome back.</h2>
+        <p className="mt-1.5 text-sm text-[#6B665C]">Sign in to your operations workspace.</p>
+
+        <form className="mt-7 flex flex-col gap-[18px]" onSubmit={signIn} noValidate>
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="email" className="text-[13px] font-medium text-[#3A372F]">Work email</label>
+            <div className={cn("group relative", fieldErrors.email && "login-shake")}>
+              <Mail size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A8479] transition-colors group-focus-within:text-brand" />
+              <input ref={emailRef} id="email" disabled={busy} autoComplete="email" value={email} onChange={(event) => { setEmail(event.target.value); setFieldErrors((current) => ({ ...current, email: false })); }} type="email" placeholder="admin@debossglobal.com" aria-invalid={fieldErrors.email || undefined} className={cn(inputClass, fieldErrors.email && "border-danger shadow-[0_0_0_4px_rgba(244,63,110,.13)]")} />
+            </div>
+            {fieldErrors.email && <p className="text-xs text-[#D12A55]">Enter your work email, like name@debossglobal.com.</p>}
+          </div>
+
+          <div className="flex flex-col gap-[7px]">
+            <label htmlFor="password" className="flex justify-between text-[13px] font-medium text-[#3A372F]">Password {capsLock && <span className="font-normal text-[#C76A00]">Caps Lock is on</span>}</label>
+            <div className={cn("group relative", fieldErrors.password && "login-shake")}>
+              <KeyRound size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A8479] transition-colors group-focus-within:text-brand" />
+              <input ref={passwordRef} id="password" disabled={busy} autoComplete="current-password" value={password} onKeyUp={trackCaps} onKeyDown={trackCaps} onChange={(event) => { setPassword(event.target.value); setFieldErrors((current) => ({ ...current, password: false })); }} type={visible ? "text" : "password"} placeholder="Enter your password" aria-invalid={fieldErrors.password || undefined} className={cn(inputClass, fieldErrors.password && "border-danger shadow-[0_0_0_4px_rgba(244,63,110,.13)]")} />
+              <button disabled={busy} type="button" onClick={() => setVisible(!visible)} aria-label={visible ? "Hide password" : "Show password"} className={cn("absolute right-1.5 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-control transition-colors hover:bg-black/[.06] hover:text-ink", visible ? "text-brand" : "text-[#8A8479]")}>{visible ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+            </div>
+            {fieldErrors.password && <p className="text-xs text-[#D12A55]">Enter your password.</p>}
+          </div>
+
+          {error && <p role="alert" className="rounded-control border border-danger/30 bg-danger/[.07] px-3.5 py-2.5 text-[13px] text-[#B0173F]">{error}</p>}
+
+          <button disabled={busy} aria-busy={loading || undefined} className={cn("group flex h-[54px] items-center justify-center gap-3 rounded-control text-[15px] font-semibold transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 active:scale-[.98] disabled:hover:translate-y-0", success ? "bg-gradient-to-br from-success to-[#3DDC84] text-white" : "bg-gradient-to-br from-brand to-brand-soft text-ink shadow-[0_14px_30px_-12px_rgba(247,148,29,.8),inset_0_1px_#fff6] hover:shadow-[0_20px_38px_-12px_rgba(247,148,29,.9),inset_0_1px_#fff6]", "login-submit")}>
+            {success ? <><Check size={18} />Welcome back. Opening your workspace…</> : loading ? <><LoaderCircle size={18} className="animate-spin" />Verifying access…</> : <>Enter operations workspace<ArrowRight size={20} className="transition-transform group-hover:translate-x-1" /></>}
+          </button>
+
+          <p className="flex items-center gap-2 text-xs text-[#6B665C]"><ShieldCheck size={14} className="shrink-0" />Your access is provisioned by DEBOSS administration.</p>
+        </form>
+      </section>
+    </div>
   </main>;
 }
