@@ -82,10 +82,10 @@ export function StatusChip({ status, label, className }: { status?: string | nul
 }
 
 export function KpiCard({ label, value, hint, icon: Icon, tone = "brand", className }: { label: string; value: ReactNode; hint?: ReactNode; icon?: LucideIcon; tone?: Tone; className?: string }) {
-  return <div className={cn("min-w-0 rounded-card border border-line border-t-[3px] bg-white p-5", toneBorder[tone], className)}>
+  return <div className={cn("min-w-0 rounded-card border border-line border-t-[3px] bg-white p-4 sm:p-5", toneBorder[tone], className)}>
     {Icon && <span className={cn("mb-3 grid h-9 w-9 place-items-center rounded-control", toneSolid[tone])}><Icon size={18} /></span>}
-    <p className="text-[13px] text-muted">{label}</p>
-    <p className="mt-0.5 text-[28px] font-bold leading-tight tracking-tight">{value}</p>
+    <p className="truncate text-[13px] text-muted">{label}</p>
+    <p className="mt-0.5 text-2xl font-bold leading-tight tracking-tight sm:text-[28px]">{value}</p>
     {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
   </div>;
 }
