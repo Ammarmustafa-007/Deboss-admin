@@ -517,6 +517,19 @@ function QuoteWorkspace({ quoteId, quote, data, api, refresh, report }: { quoteI
     }
   });
 
+  const approve = (openHandoff = false) => void actions.run(openHandoff ? "approve-handoff" : "approve", async () => {
+    try {
+      await responseData(await api("/api/v1/brokerage/quotes/" + quoteId + "/review", { method: "POST", body: JSON.stringify({ action: "APPROVE" }) }));
+      // Reflect the decision immediately; the normal refetch then reconciles the server record.
+      queryClient.setQueryData(["brokerage", "quote", quoteId], (current: any) => current ? { ...current, quote: { ...current.quote, stage: "APPROVED" } } : current);
+      if (openHandoff) setHandoffOpen(true);
+      refreshData();
+      report(openHandoff ? "Quote approved. Choose an Operations department to finish handoff." : "Quote approved and ready for Operations handoff.");
+    } catch (error) {
+      report(message(error), "error");
+    }
+  });
+
   const saveAttachment = () => void actions.run("attachment", async () => {
     if (!stagedFile) return;
     try {
@@ -568,8 +581,9 @@ function QuoteWorkspace({ quoteId, quote, data, api, refresh, report }: { quoteI
         <div className="flex flex-wrap gap-2">
           {!managerReview && <PendingButton type="button" pending={actions.isBusy("submit")} pendingLabel="Submitting..." disabled={anyActionBusy || !["DRAFT", "REJECTED"].includes(quoteStage)} onClick={() => act("submit", "/api/v1/brokerage/quotes/" + quoteId + "/submit", "POST", undefined, "Quote submitted for review.")} className="h-8 rounded-md bg-[#191816] px-3 text-xs font-bold text-white disabled:opacity-35">Submit for review</PendingButton>}
           {managerReview && quoteStage === "SUBMITTED" && <>
-            <PendingButton type="button" pending={actions.isBusy("approve")} pendingLabel="Approving..." disabled={anyActionBusy} onClick={() => act("approve", "/api/v1/brokerage/quotes/" + quoteId + "/review", "POST", { action: "APPROVE" }, "Quote approved.")} className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-bold text-white disabled:opacity-45">Approve</PendingButton>
             <PendingButton type="button" pending={actions.isBusy("reject")} pendingLabel="Returning..." disabled={anyActionBusy || !reviewNote.trim()} onClick={() => act("reject", "/api/v1/brokerage/quotes/" + quoteId + "/review", "POST", { action: "REJECT", note: reviewNote }, "Quote returned for rework.")} className="h-8 rounded-md border border-red-200 px-3 text-xs font-bold text-red-700 disabled:opacity-45">Reject for rework</PendingButton>
+            <PendingButton type="button" pending={actions.isBusy("approve")} pendingLabel="Approving..." disabled={anyActionBusy} onClick={() => approve()} className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-bold text-white disabled:opacity-45">Approve</PendingButton>
+            <PendingButton type="button" pending={actions.isBusy("approve-handoff")} pendingLabel="Approving..." disabled={anyActionBusy} onClick={() => approve(true)} className="h-8 rounded-md bg-[#f59a18] px-3 text-xs font-bold text-black disabled:opacity-45">Approve &amp; hand off</PendingButton>
           </>}
           {data.capabilities?.canHandoffQuotes && quoteStage === "APPROVED" && <button type="button" disabled={anyActionBusy} onClick={() => setHandoffOpen((value) => !value)} className="h-8 cursor-pointer rounded-md bg-[#f59a18] px-3 text-xs font-bold disabled:opacity-45">{handoffOpen ? "Close handoff" : "Send to Operations"}</button>}
         </div>
