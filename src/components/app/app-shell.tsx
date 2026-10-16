@@ -3,13 +3,14 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, ChevronsLeft, ChevronsRight, Compass, LoaderCircle, LogOut, Menu, RefreshCw, X } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Compass, LoaderCircle, LogOut, Menu, RefreshCw, X } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { Avatar, EmptyState, humanize, type Tone } from "@/components/ui/surface";
 import { LinkButton } from "@/components/ui/button";
 import { useSession } from "@/components/app/session";
 import { useOptionalBrokerage } from "@/components/app/brokerage-context";
+import { NotificationBell } from "@/components/app/notification-bell";
 import { activeItem, adminNavigation, brokerageNavigation, type NavGroup } from "@/components/app/navigation";
 
 const iconTone: Record<Tone, string> = {
@@ -36,7 +37,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     sales: brokerage.sales,
     manager: brokerage.manager,
     canMarkInvoiceReady: Boolean(brokerage.workspace.capabilities?.canMarkInvoiceReady),
-    unread: brokerage.unread,
   });
   const current = activeItem(groups, pathname);
   const roleLabel = isSuperAdmin ? "Super Admin" : brokerage?.manager ? "Department manager" : brokerage?.teamLead ? "Team lead" : "Agent";
@@ -48,7 +48,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {!compact && <div className="min-w-0 leading-tight"><p className="text-[15px] font-bold tracking-wide">DEBOSS</p><p className="text-[10px] font-medium tracking-[0.3em] text-brand">GLOBAL</p></div>}
     </div>
     <nav aria-label="Main" className="flex flex-1 flex-col gap-5 overflow-y-auto">
-      {groups.map((group) => <div key={group.label}>
+      {groups.map((group) => ({ ...group, items: group.items.filter((item) => !item.hidden) })).filter((group) => group.items.length).map((group) => <div key={group.label}>
         {!compact && <p className="mb-1.5 px-3 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/35">{group.label}</p>}
         <div className="flex flex-col gap-1">
           {group.items.map((item) => {
@@ -92,7 +92,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
         {brokerage && <>
           <button type="button" onClick={() => void brokerage.refresh()} disabled={brokerage.isFetching} aria-label="Refresh workspace" title="Refresh workspace" className="grid h-10 w-10 place-items-center rounded-control border border-line bg-white text-ink/70 transition hover:border-brand hover:text-ink disabled:opacity-60"><RefreshCw size={16} className={brokerage.isFetching ? "animate-spin" : ""} /></button>
-          <Link href="/app/notifications" aria-label={`Notifications${brokerage.unread ? `, ${brokerage.unread} unread` : ""}`} className="relative grid h-10 w-10 place-items-center rounded-control border border-line bg-white text-ink/70 transition hover:border-brand hover:text-ink"><Bell size={16} />{brokerage.unread > 0 && <span className="absolute right-2 top-2 h-2.5 w-2.5 rounded-full border-2 border-white bg-danger" />}</Link>
+          <NotificationBell />
         </>}
         <div className="hidden items-center gap-2.5 border-l border-line pl-3 sm:flex">
           <Avatar name={profile.full_name} />

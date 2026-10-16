@@ -1,29 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { AlertTriangle, Bell, CheckCheck, ClipboardCheck, FileText, Hourglass, MessageSquare, ReceiptText, Truck, type LucideIcon } from "lucide-react";
+import { Bell, CheckCheck } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
 import { dateTimeLabel } from "@/lib/format";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
-import { Card, EmptyState, IconTile, PageHeader, humanize, type Tone } from "@/components/ui/surface";
+import { Card, EmptyState, IconTile, PageHeader, humanize } from "@/components/ui/surface";
 import { Tabs } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
 import type { Quote } from "@/components/sales/model";
-
-type Item = { id: string; title: string; body?: string | null; kind: string; created_at: string; read_at?: string | null; entity_type?: string | null; entity_id?: string | null };
-
-function kindStyle(kind: string): { icon: LucideIcon; tone: Tone } {
-  if (kind.includes("COMMENT")) return { icon: MessageSquare, tone: "info" };
-  if (kind.includes("SUBMITTED") || kind.includes("REVIEW")) return { icon: Hourglass, tone: "brand" };
-  if (kind.includes("APPROVED") || kind.includes("VERIFIED")) return { icon: ClipboardCheck, tone: "success" };
-  if (kind.includes("EXCEPTION") || kind.includes("REJECT") || kind.includes("OVERDUE")) return { icon: AlertTriangle, tone: "danger" };
-  if (kind.includes("INVOICE")) return { icon: ReceiptText, tone: "accent" };
-  if (kind.includes("DOCUMENT")) return { icon: FileText, tone: "aqua" };
-  if (kind.includes("SHIPMENT") || kind.includes("ASSIGN") || kind.includes("HANDOFF")) return { icon: Truck, tone: "aqua" };
-  return { icon: Bell, tone: "neutral" };
-}
+import { kindStyle, notificationHref, type NotificationItem as Item } from "@/components/dashboard/notification-meta";
 
 export function NotificationsScreen() {
   const { notifications, workspace, sales } = useBrokerage();
@@ -34,18 +22,7 @@ export function NotificationsScreen() {
   const visible = filter === "unread" ? unread : items;
   const quotes = (workspace.quotes ?? []) as Quote[];
 
-  // Where a notification's record lives in the app, when the viewer can open it.
-  const hrefFor = (item: Item) => {
-    if (!item.entity_id) return null;
-    switch (item.entity_type) {
-      case "LEAD": return sales ? `/app/sales/leads/${item.entity_id}` : null;
-      case "CUSTOMER": return sales ? `/app/customers/${item.entity_id}` : null;
-      case "QUOTE": { const quote = quotes.find((candidate) => candidate.id === item.entity_id); return quote ? `/app/sales/leads/${quote.lead_id}` : null; }
-      case "SHIPMENT": return sales ? null : `/app/operations/${item.entity_id}`;
-      case "INVOICE": return sales ? null : "/app/invoices";
-      default: return null;
-    }
-  };
+  const hrefFor = (item: Item) => notificationHref(item, sales, quotes);
 
   return <div className="mx-auto max-w-4xl space-y-6 animate-rise">
     <PageHeader title="Notifications" subtitle={unread.length ? `${unread.length} unread` : "You're up to date"} />

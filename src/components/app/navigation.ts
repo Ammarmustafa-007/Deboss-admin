@@ -1,7 +1,8 @@
 import { BarChart3, Bell, Building2, Contact, LayoutDashboard, ReceiptText, Settings, ShieldCheck, TrendingUp, Truck, UsersRound, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/surface";
 
-export type NavItem = { href: string; label: string; icon: LucideIcon; tone: Tone; badge?: number };
+/** `hidden` items stay routable (title, access check) but are not listed in the sidebar. */
+export type NavItem = { href: string; label: string; icon: LucideIcon; tone: Tone; badge?: number; hidden?: boolean };
 export type NavGroup = { label: string; items: NavItem[] };
 
 export const adminNavigation: NavGroup[] = [
@@ -13,10 +14,10 @@ export const adminNavigation: NavGroup[] = [
   { label: "Account", items: [{ href: "/app/settings", label: "Settings", icon: Settings, tone: "info" }] },
 ];
 
-type BrokerageAccess = { sales: boolean; manager: boolean; canMarkInvoiceReady: boolean; unread: number };
+type BrokerageAccess = { sales: boolean; manager: boolean; canMarkInvoiceReady: boolean };
 
 /** Mirrors the permission rules of the original section switcher. */
-export function brokerageNavigation({ sales, manager, canMarkInvoiceReady, unread }: BrokerageAccess): NavGroup[] {
+export function brokerageNavigation({ sales, manager, canMarkInvoiceReady }: BrokerageAccess): NavGroup[] {
   const work: NavItem[] = [{ href: "/app", label: "Dashboard", icon: LayoutDashboard, tone: "brand" }];
   if (sales) work.push({ href: "/app/sales", label: "Sales", icon: TrendingUp, tone: "aqua" }, { href: "/app/customers", label: "Customers", icon: Contact, tone: "accent" });
   else work.push({ href: "/app/operations", label: "Operations", icon: Truck, tone: "aqua" });
@@ -29,7 +30,8 @@ export function brokerageNavigation({ sales, manager, canMarkInvoiceReady, unrea
   ] });
   groups.push({ label: "Insights", items: [
     { href: "/app/reports", label: "Reports", icon: BarChart3, tone: "info" },
-    { href: "/app/notifications", label: "Notifications", icon: Bell, tone: "danger", badge: unread || undefined },
+    // Opened from the header bell rather than the sidebar.
+    { href: "/app/notifications", label: "Notifications", icon: Bell, tone: "danger", hidden: true },
   ] });
   return groups;
 }
