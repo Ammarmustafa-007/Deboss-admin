@@ -23,7 +23,7 @@ type Access = "partial" | "full";
 const accessPresets: Record<"sales" | "operations", Record<Access, { label: string; summary: string[]; keys: string[] }>> = {
   sales: {
     partial: { label: "Partial access", summary: ["View the team's leads, customers and activity", "Edit the team's leads", "Team reports"], keys: ["sales.leads.view_team", "sales.leads.edit_team", "sales.activities.view_team", "sales.reports.view_team"] },
-    full: { label: "Full managerial access", summary: ["Everything in partial access", "Approve or return quotes for rework", "Hand approved quotes off to Operations", "Assign leads and follow-ups"], keys: ["sales.leads.view_team", "sales.leads.edit_team", "sales.activities.view_team", "sales.reports.view_team", "sales.leads.assign", "sales.activities.assign", "sales.quotes.review", "sales.quotes.handoff"] },
+    full: { label: "Full managerial access", summary: ["Everything in partial access", "Approve or return quotes for rework", "Hand approved quotes off to Operations"], keys: ["sales.leads.view_team", "sales.leads.edit_team", "sales.activities.view_team", "sales.reports.view_team", "sales.quotes.review", "sales.quotes.handoff"] },
   },
   operations: {
     partial: { label: "Partial access", summary: ["View the team's shipments", "Update the team's shipments", "Team reports"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team"] },
