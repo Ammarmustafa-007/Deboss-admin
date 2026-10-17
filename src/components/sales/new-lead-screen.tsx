@@ -52,7 +52,7 @@ export function NewLeadScreen() {
 
       {step === 0 && <form ref={firstStep} onSubmit={next} className="p-6">
         <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Company name" required autoFocus value={form.company_name} onChange={(event) => set("company_name")(event.target.value)} wrapperClassName="sm:col-span-2" />
+          <TextField label="Company name" required minLength={2} autoFocus value={form.company_name} onChange={(event) => set("company_name")(event.target.value)} wrapperClassName="sm:col-span-2" />
           <TextField label="Contact name" required value={form.contact_name} onChange={(event) => set("contact_name")(event.target.value)} />
           <TextField label="Contact email" type="email" value={form.contact_email} onChange={(event) => set("contact_email")(event.target.value)} />
           <TextField label="Phone" value={form.contact_phone} onChange={(event) => set("contact_phone")(event.target.value)} />

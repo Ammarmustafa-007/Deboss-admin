@@ -99,7 +99,7 @@ function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; 
     <div className="rounded-[12px] border border-line-soft bg-[#FBFAF7] p-4"><Stepper steps={quoteSteps.map((label) => ({ label }))} current={current} tone={blocked ? "danger" : "brand"} /></div>
 
     {caps.canReviewQuotes && stage === "SUBMITTED" && <DecisionCard step={1} title="Review & decide" icon={<Hourglass size={16} />}>
-      <TextAreaField label="Reason for returning" hint="Required only when returning the quote for rework." value={reviewNote} disabled={anyBusy} onChange={(event) => setReviewNote(event.target.value)} className="min-h-20" />
+      <TextAreaField label="Reason for returning" maxLength={1000} hint="Required only when returning the quote for rework." value={reviewNote} disabled={anyBusy} onChange={(event) => setReviewNote(event.target.value)} className="min-h-20" />
       <div className="mt-4 flex flex-wrap gap-2">
         <Button variant="success" icon={<CheckCircle2 size={15} />} pending={busy("approve")} pendingLabel="Approving…" disabled={anyBusy} onClick={() => approve(false)}>Approve</Button>
         {caps.canHandoffQuotes && <Button variant="primary" icon={<Send size={15} />} pending={busy("approve-handoff")} pendingLabel="Approving…" disabled={anyBusy} onClick={() => approve(true)}>Approve & hand off</Button>}
@@ -110,8 +110,8 @@ function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; 
     {caps.canHandoffQuotes && stage === "APPROVED" && <DecisionCard step={2} title="Hand off to Operations" icon={<Truck size={16} />}>
       <form onSubmit={submitHandoff} className="grid gap-4 sm:grid-cols-2">
         <SelectField label="Receiving department" required wrapperClassName="sm:col-span-2" value={handoff.operations_department_id} disabled={anyBusy} placeholder="Choose Brokerage Operations" onChange={(event) => setHandoff({ ...handoff, operations_department_id: event.target.value })} options={departments.map((department) => ({ value: department.id, label: department.name }))} />
-        <TextField label="Shipment reference" required placeholder="e.g. DG-2026-001" value={referenceNumber} disabled={anyBusy} onChange={(event) => setTypedReference(event.target.value)} />
-        <TextField label="Customer name" required value={handoff.customer_name} disabled={anyBusy} onChange={(event) => setHandoff({ ...handoff, customer_name: event.target.value })} />
+        <TextField label="Shipment reference" required minLength={3} maxLength={64} placeholder="e.g. DG-2026-001" value={referenceNumber} disabled={anyBusy} onChange={(event) => setTypedReference(event.target.value)} />
+        <TextField label="Customer name" required minLength={2} value={handoff.customer_name} disabled={anyBusy} onChange={(event) => setHandoff({ ...handoff, customer_name: event.target.value })} />
         <div className="sm:col-span-2"><Button type="submit" variant="primary" pending={busy("handoff")} pendingLabel="Creating shipment…" disabled={anyBusy && !busy("handoff")} icon={<Send size={15} />}>Confirm handoff</Button></div>
       </form>
     </DecisionCard>}

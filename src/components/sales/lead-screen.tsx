@@ -169,7 +169,7 @@ function LeadForm({ lead }: { lead: Lead }) {
       <CardHeader title="Lead information" />
       <form onSubmit={save} className="p-5">
         <fieldset disabled={pending} className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Company" required value={form.company_name} onChange={(event) => set("company_name")(event.target.value)} />
+          <TextField label="Company" required minLength={2} value={form.company_name} onChange={(event) => set("company_name")(event.target.value)} />
           <TextField label="Contact" value={form.contact_name} onChange={(event) => set("contact_name")(event.target.value)} />
           <TextField label="Email" type="email" value={form.contact_email} onChange={(event) => set("contact_email")(event.target.value)} />
           <TextField label="Phone" value={form.contact_phone} onChange={(event) => set("contact_phone")(event.target.value)} />
@@ -226,7 +226,7 @@ function ActivityTab({ lead, activities, manager }: { lead: Lead; activities: Fe
       <form onSubmit={add} className="space-y-4 p-5">
         <fieldset disabled={adding} className="space-y-4">
           <SelectField label="Type" required value={form.activity_type} onChange={(event) => setForm({ ...form, activity_type: event.target.value })} options={activityTypes.map((type) => ({ value: type, label: type.replaceAll("_", " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase()) }))} />
-          <TextField label="What happened or what's next" required value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} />
+          <TextField label="What happened or what's next" required maxLength={3000} value={form.body} onChange={(event) => setForm({ ...form, body: event.target.value })} />
           <TextField label="Due" type="datetime-local" value={form.due_at} onChange={(event) => setForm({ ...form, due_at: event.target.value })} />
         </fieldset>
         <Button type="submit" variant="ink" pending={adding} pendingLabel="Adding…" icon={<Plus size={15} />} className="w-full">Add activity</Button>

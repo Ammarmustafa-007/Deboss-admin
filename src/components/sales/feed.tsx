@@ -72,7 +72,7 @@ export function Composer({ placeholder, onSubmit, pending, disabled }: { placeho
     if (await onSubmit(value)) setValue("");
   };
   return <form onSubmit={submit} className="flex gap-2">
-    <input value={value} disabled={disabled || pending} onChange={(event) => setValue(event.target.value)} placeholder={placeholder} aria-label={placeholder} className={cn(controlClass, "flex-1")} />
+    <input value={value} disabled={disabled || pending} onChange={(event) => setValue(event.target.value)} placeholder={placeholder} aria-label={placeholder} maxLength={3000} className={cn(controlClass, "flex-1")} />
     <Button type="submit" variant="ink" pending={pending} disabled={disabled || !value.trim()} icon={<Send size={15} />} className="h-11">Post</Button>
   </form>;
 }

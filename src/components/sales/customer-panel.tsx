@@ -92,10 +92,10 @@ function CustomerDetails({ data, canEdit, onSyncFromLead }: { data: CustomerProf
     <CardHeader title="Customer details" actions={onSyncFromLead && <Button size="sm" variant="ghost" icon={<RefreshCw size={13} />} pending={onSyncFromLead.pending} onClick={onSyncFromLead.run} title="Copy company and contact details from the lead">Sync from lead</Button>} />
     <form onSubmit={save} className="p-5">
       <fieldset disabled={pending} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <TextField label="Company" required value={form.company_name} onChange={(event) => setForm({ ...form, company_name: event.target.value })} />
-        <TextField label="Contact" value={form.contact_name} onChange={(event) => setForm({ ...form, contact_name: event.target.value })} />
+        <TextField label="Company" required minLength={2} maxLength={180} value={form.company_name} onChange={(event) => setForm({ ...form, company_name: event.target.value })} />
+        <TextField label="Contact" maxLength={160} value={form.contact_name} onChange={(event) => setForm({ ...form, contact_name: event.target.value })} />
         <TextField label="Email" type="email" value={form.contact_email} onChange={(event) => setForm({ ...form, contact_email: event.target.value })} />
-        <TextField label="Phone" value={form.contact_phone} onChange={(event) => setForm({ ...form, contact_phone: event.target.value })} />
+        <TextField label="Phone" maxLength={80} value={form.contact_phone} onChange={(event) => setForm({ ...form, contact_phone: event.target.value })} />
       </fieldset>
       {dirty && <div className="mt-5 flex justify-end gap-2"><Button variant="ghost" onClick={() => setForm(initial)} disabled={pending}>Discard</Button><Button type="submit" variant="ink" pending={pending} pendingLabel="Saving…">Save customer</Button></div>}
     </form>
@@ -159,10 +159,10 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
   const { current, blocked } = quotePosition(quote?.stage);
 
   const lanes = <div className="grid gap-4 sm:grid-cols-2">
-    <TextField label="Reference number" required value={form.reference_number} onChange={(event) => set("reference_number")(event.target.value)} wrapperClassName="sm:col-span-2" />
-    <TextField label="Pickup" required value={form.pickup_location} onChange={(event) => set("pickup_location")(event.target.value)} />
-    <TextField label="Delivery" required value={form.delivery_location} onChange={(event) => set("delivery_location")(event.target.value)} />
-    <TextField label="Equipment" value={form.equipment_type} onChange={(event) => set("equipment_type")(event.target.value)} wrapperClassName="sm:col-span-2" />
+    <TextField label="Reference number" required minLength={3} maxLength={64} value={form.reference_number} onChange={(event) => set("reference_number")(event.target.value)} wrapperClassName="sm:col-span-2" />
+    <TextField label="Pickup" required minLength={2} maxLength={180} value={form.pickup_location} onChange={(event) => set("pickup_location")(event.target.value)} />
+    <TextField label="Delivery" required minLength={2} maxLength={180} value={form.delivery_location} onChange={(event) => set("delivery_location")(event.target.value)} />
+    <TextField label="Equipment" maxLength={120} value={form.equipment_type} onChange={(event) => set("equipment_type")(event.target.value)} wrapperClassName="sm:col-span-2" />
   </div>;
   const rates = <div className="grid gap-4 sm:grid-cols-2">
     <TextField label="Quoted rate" type="number" min="0" value={form.quoted_rate} onChange={(event) => set("quoted_rate")(event.target.value)} />

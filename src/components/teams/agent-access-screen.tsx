@@ -83,9 +83,9 @@ function AddAgent({ onClose }: { onClose: () => void }) {
     footer={<><Button variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button><Button type="submit" form="add-agent-form" variant="primary" icon={<UserPlus size={15} />} pending={pending} pendingLabel="Creating…">Create agent</Button></>}>
     <form id="add-agent-form" onSubmit={submit}>
       <fieldset disabled={pending} className="space-y-4">
-        <TextField label="Full name" required minLength={2} value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} />
+        <TextField label="Full name" required minLength={2} maxLength={100} value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} />
         <TextField label="Work email" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-        <PasswordInput label="Temporary password" required minLength={8} autoComplete="new-password" hint="At least 8 characters. Share it with the agent securely." value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+        <PasswordInput label="Temporary password" required minLength={8} maxLength={128} autoComplete="new-password" hint="At least 8 characters. Share it with the agent securely." value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
       </fieldset>
     </form>
   </Modal>;
