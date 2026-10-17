@@ -7,6 +7,7 @@ import { errorMessage, useApi } from "@/lib/api";
 import { loadOverview, overviewKey } from "@/lib/loaders";
 import { dateTimeLabel } from "@/lib/format";
 import { useSession } from "@/components/app/session";
+import { FinanceOverview } from "@/components/finance/finance-overview";
 import { Card, CardHeader, EmptyState, IconTile, KpiCard, Skeleton, humanize, type Tone } from "@/components/ui/surface";
 
 type Overview = {
@@ -45,6 +46,8 @@ export function AdminDashboard() {
 
   return <div className="space-y-6 animate-rise">
     {header}
+    <FinanceOverview />
+    <div><h2 className="text-lg font-bold">Brokerage activity</h2><p className="text-sm text-muted">Live workflow across Sales and Operations</p></div>
     <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
       <KpiCard label="Brokerage departments" value={data.departments.length} icon={Building2} tone="brand" />
       <KpiCard label="Sales leads" value={data.leads.length} icon={TrendingUp} tone="aqua" />

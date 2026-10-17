@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Building2, Contact, LayoutDashboard, ReceiptText, Settings, ShieldCheck, TrendingUp, Truck, UsersRound, type LucideIcon } from "lucide-react";
+import { BadgePercent, BarChart3, Bell, Building2, Contact, LayoutDashboard, ReceiptText, Settings, ShieldCheck, TrendingUp, Truck, UsersRound, Wallet, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/surface";
 
 /** `hidden` items stay routable (title, access check) but are not listed in the sidebar. */
@@ -10,6 +10,10 @@ export const adminNavigation: NavGroup[] = [
   { label: "Administration", items: [
     { href: "/app/admin/departments", label: "Departments", icon: Building2, tone: "aqua" },
     { href: "/app/admin/users", label: "Users", icon: UsersRound, tone: "accent" },
+  ] },
+  { label: "Finance", items: [
+    { href: "/app/admin/payroll", label: "Payroll", icon: Wallet, tone: "brand" },
+    { href: "/app/admin/compensation", label: "Compensation", icon: BadgePercent, tone: "success" },
   ] },
   { label: "Account", items: [{ href: "/app/settings", label: "Settings", icon: Settings, tone: "info" }] },
 ];
