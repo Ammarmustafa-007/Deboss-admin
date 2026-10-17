@@ -14,10 +14,11 @@ import { controlClass } from "@/components/ui/field";
 
 type Row = Record<string, string | number | null | undefined> & { id: string };
 type Counts = Record<string, number>;
+type OpsAgentRow = { agent_id: string | null; name: string; shipments: number; delivered: number; invoiced: number; collected: number };
 type AgentRow = { agent_id: string; name: string; leads: number; customers: number; shipments: number; gross_generated: number };
 type ReportData = {
   sales: { totals: Record<string, number>; agent_breakdown?: AgentRow[]; agents?: { id: string; full_name: string }[]; shipment_rows: Row[]; lead_stages: Counts; quote_stages: Counts; shipment_statuses: Counts; customer_outcomes: Counts; by_agent: Counts; by_team: Counts };
-  operations: { totals: Record<string, number>; rows: Row[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Counts; by_customer: Counts };
+  operations: { totals: Record<string, number>; agent_breakdown?: OpsAgentRow[]; rows: Row[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Counts; by_customer: Counts };
 };
 
 const barTones: Tone[] = ["brand", "aqua", "accent", "info", "success", "danger"];
@@ -85,7 +86,7 @@ export function ReportsScreen() {
         {sales && !canViewTeamPerformance ? <div className="space-y-6">
           <ShipmentTable rows={data.sales.shipment_rows} />
           <Breakdown title="Shipment status" values={data.sales.shipment_statuses} />
-        </div> : <>{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}<div className="grid gap-6 xl:grid-cols-2">
+        </div> : <>{!sales && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}<div className="grid gap-6 xl:grid-cols-2">
           {sales ? <>
             <Breakdown title="Pipeline by stage" values={data.sales.lead_stages} />
             <Breakdown title="Quote outcomes" values={data.sales.quote_stages} />
@@ -102,6 +103,22 @@ export function ReportsScreen() {
         </div></>}
       </>}
   </div>;
+}
+
+function OpsAgentTable({ rows }: { rows: OpsAgentRow[] }) {
+  const total = rows.reduce((sum, row) => ({ shipments: sum.shipments + row.shipments, delivered: sum.delivered + row.delivered, invoiced: sum.invoiced + row.invoiced, collected: sum.collected + row.collected }), { shipments: 0, delivered: 0, invoiced: 0, collected: 0 });
+  return <Card>
+    <CardHeader title="By agent" subtitle="Shipment progress and revenue per agent" />
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[620px] text-sm">
+        <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Agent</th><th className="px-3 py-2.5 text-right font-medium">Shipments</th><th className="px-3 py-2.5 text-right font-medium">Delivered</th><th className="px-3 py-2.5 text-right font-medium">Invoiced</th><th className="px-5 py-2.5 text-right font-medium">Collected</th></tr></thead>
+        <tbody>
+          {rows.map((row) => <tr key={row.agent_id ?? "unassigned"} className="border-t border-line-soft"><td className={cn("px-5 py-3 font-semibold", !row.agent_id && "text-muted")}>{row.name}</td><td className="px-3 py-3 text-right tabular-nums">{row.shipments}</td><td className="px-3 py-3 text-right tabular-nums">{row.delivered}</td><td className="px-3 py-3 text-right tabular-nums">{money(row.invoiced)}</td><td className="px-5 py-3 text-right font-semibold tabular-nums">{money(row.collected)}</td></tr>)}
+          <tr className="border-t-2 border-line bg-[#FBFAF7] font-semibold"><td className="px-5 py-3">Total</td><td className="px-3 py-3 text-right tabular-nums">{total.shipments}</td><td className="px-3 py-3 text-right tabular-nums">{total.delivered}</td><td className="px-3 py-3 text-right tabular-nums">{money(total.invoiced)}</td><td className="px-5 py-3 text-right tabular-nums">{money(total.collected)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </Card>;
 }
 
 function AgentTable({ rows, onPick }: { rows: AgentRow[]; onPick: (id: string) => void }) {

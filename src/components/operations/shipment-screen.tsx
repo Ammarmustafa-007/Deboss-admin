@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, CheckCircle2, ExternalLink, FileCheck2, FileSearch, FileText, ReceiptText, RotateCcw, ShieldAlert, Upload } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, ExternalLink, FileCheck2, FileSearch, FileText, ReceiptText, RotateCcw, ShieldAlert, Upload } from "lucide-react";
 import { use, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
@@ -14,7 +15,7 @@ import { Stepper, Tabs } from "@/components/ui/navigation";
 import { Button, LinkButton } from "@/components/ui/button";
 import { FilePicker, SelectField, TextAreaField, TextField, controlClass } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
-import { documentTypes, exceptionOpen, paymentStatuses, progressStatuses, shipmentStatuses, statusLabel, useOperationsDirectory, type Directory, type Shipment, type ShipmentDetail } from "@/components/operations/model";
+import { documentTypes, exceptionOpen, nextStatus, paymentStatuses, progressStatuses, shipmentStatuses, statusLabel, useOperationsDirectory, type Directory, type Shipment, type ShipmentDetail } from "@/components/operations/model";
 
 type TabKey = "details" | "documents" | "exception" | "activity";
 
@@ -45,7 +46,9 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
       title={<span className="flex flex-wrap items-center gap-3">{shipment.reference_number}<StatusChip status={shipment.status} label={statusLabel[shipment.status]} className="text-[13px]" />{shipment.invoice_ready && <Chip tone="success">Invoice-ready</Chip>}</span>}
       subtitle={<>{shipment.customer_name || "—"} · {shipment.pickup_location || "—"} <span className="text-brand">→</span> {shipment.delivery_location || "—"}</>}
       actions={<>
-        {invoice?.invoice_number && <Chip tone="info" className="h-8 px-3 text-[13px]"><ReceiptText size={13} />{invoice.invoice_number}{invoice.status ? ` · ${humanize(invoice.status)}` : ""}</Chip>}
+        {invoice?.invoice_number
+          ? (manager || caps.canMarkInvoiceReady ? <Link href="/app/invoices"><Chip tone="info" className="h-8 px-3 text-[13px] hover:brightness-95"><ReceiptText size={13} />{invoice.invoice_number}{invoice.status ? ` · ${humanize(invoice.status)}` : ""}</Chip></Link> : <Chip tone="info" className="h-8 px-3 text-[13px]"><ReceiptText size={13} />{invoice.invoice_number}{invoice.status ? ` · ${humanize(invoice.status)}` : ""}</Chip>)
+          : manager && ["DELIVERED", "COMPLETED"].includes(shipment.status) && <GenerateInvoice shipmentId={shipment.id} />}
         <StatusControl shipment={shipment} />
       </>}
     />
@@ -71,7 +74,7 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
     <div key={tab} className="animate-fade">
       {tab === "details" && <FinanceForm shipment={shipment} canMarkInvoiceReady={Boolean(caps.canMarkInvoiceReady)} />}
       {tab === "documents" && <Documents data={data} canReview={Boolean(caps.canReviewDocuments)} />}
-      {tab === "exception" && <ExceptionPanel data={data} canResolve={Boolean(caps.canResolveExceptions)} />}
+      {tab === "exception" && <ExceptionPanel data={data} canResolve={Boolean(caps.canResolveExceptions)} directory={directory.data} />}
       {tab === "activity" && <ActivityPanel shipmentId={shipment.id} events={events} comments={comments} directory={directory.data} />}
     </div>
   </div>;
@@ -84,15 +87,24 @@ function Signal({ ok, label, value }: { ok: boolean; label: string; value: strin
   </div>;
 }
 
+/** Primary "next step" action plus a status menu for corrections. */
 function StatusControl({ shipment }: { shipment: Shipment }) {
   const { run, busy } = useBrokerageAction();
   const pending = busy(`status:${shipment.id}`);
-  return <label className="flex items-center gap-2 text-[13px] text-muted">
-    <span className="hidden sm:inline">Status</span>
-    <select value={shipment.status} disabled={pending} onChange={(event) => void run(`status:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}`, "PATCH", { status: event.target.value }, "Shipment status updated.")} className={cn(controlClass, "h-10 w-auto min-w-44 font-medium text-ink", pending && "opacity-60")}>
+  const step = nextStatus[shipment.status];
+  const move = (status: string) => void run(`status:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}`, "PATCH", { status }, ["DELIVERED", "COMPLETED"].includes(status) ? `${statusLabel[status]}. Invoice created for billing.` : `Status: ${statusLabel[status]}.`);
+  return <div className="flex flex-wrap items-center gap-2">
+    {step && <Button variant="primary" icon={<ArrowRight size={15} />} pending={pending} pendingLabel="Updating…" onClick={() => move(step.status)}>{step.action}</Button>}
+    <label className="sr-only" htmlFor={`status-${shipment.id}`}>Change status</label>
+    <select id={`status-${shipment.id}`} value={shipment.status} disabled={pending} onChange={(event) => move(event.target.value)} title="Change status" className={cn(controlClass, "h-10 w-auto min-w-40 text-[13px] font-medium text-ink", pending && "opacity-60")}>
       {shipmentStatuses.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}
     </select>
-  </label>;
+  </div>;
+}
+
+function GenerateInvoice({ shipmentId }: { shipmentId: string }) {
+  const { run, busy } = useBrokerageAction();
+  return <Button variant="outline" icon={<ReceiptText size={15} />} pending={busy("generate-invoice")} pendingLabel="Creating…" onClick={() => void run("generate-invoice", `/api/v1/brokerage/shipments/${shipmentId}/invoice`, "POST", {}, "Invoice created.")}>Generate invoice</Button>;
 }
 
 function Assignment({ shipment, directory }: { shipment: Shipment; directory?: Directory }) {
@@ -225,7 +237,7 @@ function Documents({ data, canReview }: { data: ShipmentDetail; canReview: boole
   </div>;
 }
 
-function ExceptionPanel({ data, canResolve }: { data: ShipmentDetail; canResolve: boolean }) {
+function ExceptionPanel({ data, canResolve, directory }: { data: ShipmentDetail; canResolve: boolean; directory?: Directory }) {
   const { run, busy } = useBrokerageAction();
   const { shipment, events } = data;
   const initial = { exception_note: shipment.exception_note ?? "", exception_resolution: shipment.exception_resolution ?? "" };
@@ -233,13 +245,16 @@ function ExceptionPanel({ data, canResolve }: { data: ShipmentDetail; canResolve
   const dirty = form.exception_note !== initial.exception_note || form.exception_resolution !== initial.exception_resolution;
   const pending = busy(`exception:${shipment.id}`);
   const history = events.filter((event) => event.event_type.includes("EXCEPTION"));
+  // Where the shipment was before the exception, so resolving puts it back on track.
+  const previous = events.find((event) => event.to_status === "EXCEPTION")?.from_status ?? (shipment.status === "EXCEPTION" ? "IN_TRANSIT" : shipment.status);
+  const ownerName = directory?.users.find((user) => user.id === shipment.exception_owner_id)?.full_name;
 
   const save = (event: FormEvent) => {
     event.preventDefault();
     void run(`exception:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}`, "PATCH", canResolve
-      ? { exception_note: form.exception_note || null, exception_resolution: form.exception_resolution || null, status: form.exception_note ? "EXCEPTION" : shipment.status }
-      : { exception_note: form.exception_note || null, status: form.exception_note ? "EXCEPTION" : shipment.status },
-    canResolve ? "Exception updated." : "Exception reported to your manager.");
+      ? { exception_note: form.exception_note || null, exception_resolution: form.exception_resolution || null, status: form.exception_note && !form.exception_resolution ? "EXCEPTION" : previous }
+      : { exception_note: form.exception_note || null, status: form.exception_note ? "EXCEPTION" : previous },
+    canResolve ? (form.exception_resolution ? `Exception resolved. Back to ${statusLabel[previous] ?? previous}.` : "Exception updated.") : "Exception reported to your manager.");
   };
 
   return <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -248,7 +263,7 @@ function ExceptionPanel({ data, canResolve }: { data: ShipmentDetail; canResolve
       <form onSubmit={save} className="space-y-4 p-5">
         <fieldset disabled={pending} className="space-y-4">
           <TextAreaField label="What went wrong" value={form.exception_note} onChange={(event) => setForm({ ...form, exception_note: event.target.value })} />
-          {canResolve && <TextAreaField label="Resolution" value={form.exception_resolution} onChange={(event) => setForm({ ...form, exception_resolution: event.target.value })} />}
+          {canResolve && <TextAreaField label="Resolution" hint={exceptionOpen(shipment) ? `Saving a resolution moves the shipment back to ${statusLabel[previous] ?? previous}.` : undefined} value={form.exception_resolution} onChange={(event) => setForm({ ...form, exception_resolution: event.target.value })} />}
         </fieldset>
         <div className="flex justify-end gap-2">
           {dirty && <Button variant="ghost" onClick={() => setForm(initial)} disabled={pending}>Discard</Button>}
@@ -256,10 +271,16 @@ function ExceptionPanel({ data, canResolve }: { data: ShipmentDetail; canResolve
         </div>
       </form>
     </Card>
+    <div className="space-y-6">
+    {canResolve && directory && <Card className="h-fit">
+      <CardHeader title="Exception owner" subtitle="Who is fixing it" />
+      <div className="p-5"><SelectField label="Owner" value={shipment.exception_owner_id ?? ""} placeholder="No owner" disabled={busy(`owner:${shipment.id}`)} onChange={(event) => void run(`owner:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}`, "PATCH", { exception_owner_id: event.target.value || null }, event.target.value ? "Exception owner assigned." : "Exception owner cleared.")} options={directory.users.map((user) => ({ value: user.id, label: user.full_name }))} />{ownerName && <p className="mt-2 text-xs text-muted">{ownerName} is notified.</p>}</div>
+    </Card>}
     <Card className="h-fit">
       <CardHeader title="Exception history" />
       <div className="p-5"><ActivityFeed rows={history} empty="No exception activity." /></div>
     </Card>
+    </div>
   </div>;
 }
 
