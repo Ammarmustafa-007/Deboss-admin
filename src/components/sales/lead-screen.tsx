@@ -75,7 +75,7 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
     ]} />
 
     <div key={tab} className="animate-fade">
-      {tab === "quotes" && <QuoteList quotes={quotes} lead={lead} />}
+      {tab === "quotes" && <QuoteList quotes={quotes} lead={lead} customerId={customer?.id} />}
       {tab === "details" && (manager ? <LeadFacts lead={lead} /> : <LeadForm lead={lead} />)}
       {tab === "activity" && <ActivityTab lead={lead} activities={activities} manager={manager} />}
       {tab === "comments" && <CommentsTab leadId={lead.id} comments={comments} manager={manager} />}

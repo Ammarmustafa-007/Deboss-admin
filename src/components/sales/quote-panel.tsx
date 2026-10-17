@@ -14,7 +14,7 @@ import { Drawer } from "@/components/ui/overlay";
 import { SelectField, TextAreaField, TextField } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
-import { lane, quotePosition, quoteStageLabel, quoteSteps, type Lead, type Quote, type QuoteDetail } from "@/components/sales/model";
+import { lane, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type Lead, type Quote, type QuoteDetail } from "@/components/sales/model";
 
 function useQuoteDetail(quoteId: string) {
   const { api } = useBrokerage();
@@ -30,7 +30,11 @@ const decisionHint: Record<string, string> = {
 };
 
 /** Manager view: every quote on the lead, ordered by what needs attention first. */
-export function QuoteList({ quotes, lead }: { quotes: Quote[]; lead: Lead }) {
+export function QuoteList({ quotes, lead, customerId }: { quotes: Quote[]; lead: Lead; customerId?: string | null }) {
+  const { api } = useBrokerage();
+  // The Sales shipment behind each quote already has a reference number; handoff reuses it by default.
+  const customer = useQuery({ queryKey: ["brokerage", "customer", customerId], queryFn: async () => responseData<CustomerProfile>(await api(`/api/v1/brokerage/customers/${customerId}/profile`)), enabled: Boolean(customerId), staleTime: 15_000 });
+  const referenceFor = (quoteId: string) => customer.data?.shipments.find((shipment) => shipment.quote_id === quoteId)?.reference_number;
   const [openId, setOpenId] = useState<string | null>(null);
   const order: Record<string, number> = { SUBMITTED: 0, APPROVED: 1, REJECTED: 2, DRAFT: 3, HANDED_OFF: 4 };
   const sorted = [...quotes].sort((a, b) => (order[a.stage] ?? 9) - (order[b.stage] ?? 9));
@@ -54,18 +58,20 @@ export function QuoteList({ quotes, lead }: { quotes: Quote[]; lead: Lead }) {
         </button>;
       })}
     </div>
-    {open && <QuoteReviewDrawer quote={open} lead={lead} onClose={() => setOpenId(null)} />}
+    {open && <QuoteReviewDrawer quote={open} lead={lead} reference={referenceFor(open.id)} onClose={() => setOpenId(null)} />}
   </>;
 }
 
-function QuoteReviewDrawer({ quote, lead, onClose }: { quote: Quote; lead: Lead; onClose: () => void }) {
+function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; lead: Lead; reference?: string; onClose: () => void }) {
   const { workspace, api, report } = useBrokerage();
   const caps = workspace.capabilities ?? {};
   const queryClient = useQueryClient();
   const { run, busy, wrap, refresh } = useBrokerageAction();
   const [reviewNote, setReviewNote] = useState("");
   const departments = (workspace.operationsDepartments ?? []) as { id: string; name: string }[];
-  const [handoff, setHandoff] = useState({ operations_department_id: departments[0]?.id ?? "", reference_number: "", customer_name: lead.company_name ?? "" });
+  const [handoff, setHandoff] = useState({ operations_department_id: departments[0]?.id ?? "", customer_name: lead.company_name ?? "" });
+  const [typedReference, setTypedReference] = useState<string | null>(null);
+  const referenceNumber = typedReference ?? reference ?? "";
   const detail = useQuoteDetail(quote.id);
   const stage = detail.data?.quote.stage ?? quote.stage;
   const { current, blocked } = quotePosition(stage);
@@ -86,7 +92,7 @@ function QuoteReviewDrawer({ quote, lead, onClose }: { quote: Quote; lead: Lead;
 
   const submitHandoff = async (event: FormEvent) => {
     event.preventDefault();
-    await run("handoff", `${path}/handoff`, "POST", handoff, "Quote handed to Operations.");
+    await run("handoff", `${path}/handoff`, "POST", { ...handoff, reference_number: referenceNumber }, "Quote handed to Operations.");
   };
 
   return <Drawer open onClose={onClose} dismissible={!anyBusy} className="max-w-2xl" title={lane(quote)} subtitle={`${quote.equipment_type || "Equipment not specified"} · ${quote.quoted_rate ? money(quote.quoted_rate) : "Rate pending"}`}>
@@ -104,7 +110,7 @@ function QuoteReviewDrawer({ quote, lead, onClose }: { quote: Quote; lead: Lead;
     {caps.canHandoffQuotes && stage === "APPROVED" && <DecisionCard step={2} title="Hand off to Operations" icon={<Truck size={16} />}>
       <form onSubmit={submitHandoff} className="grid gap-4 sm:grid-cols-2">
         <SelectField label="Receiving department" required wrapperClassName="sm:col-span-2" value={handoff.operations_department_id} disabled={anyBusy} placeholder="Choose Brokerage Operations" onChange={(event) => setHandoff({ ...handoff, operations_department_id: event.target.value })} options={departments.map((department) => ({ value: department.id, label: department.name }))} />
-        <TextField label="Shipment reference" required placeholder="e.g. DG-2026-001" value={handoff.reference_number} disabled={anyBusy} onChange={(event) => setHandoff({ ...handoff, reference_number: event.target.value })} />
+        <TextField label="Shipment reference" required placeholder="e.g. DG-2026-001" value={referenceNumber} disabled={anyBusy} onChange={(event) => setTypedReference(event.target.value)} />
         <TextField label="Customer name" required value={handoff.customer_name} disabled={anyBusy} onChange={(event) => setHandoff({ ...handoff, customer_name: event.target.value })} />
         <div className="sm:col-span-2"><Button type="submit" variant="primary" pending={busy("handoff")} pendingLabel="Creating shipment…" disabled={anyBusy && !busy("handoff")} icon={<Send size={15} />}>Confirm handoff</Button></div>
       </form>
