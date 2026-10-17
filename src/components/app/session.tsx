@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { WorkspaceLoadError } from "@/components/app/workspace-load-error";
-import { WorkspaceSplash } from "@/components/app/workspace-splash";
+import { IntroBackdrop, RevealIntro } from "@/components/app/intro";
 
 export type Profile = {
   id: string;
@@ -91,8 +91,8 @@ export function SessionGate({ children }: { children: ReactNode }) {
   const profile = session.data;
   const value = useMemo<Session | null>(() => profile ? { profile, isSuperAdmin: profile.role === "SUPER_ADMIN", signOut, signingOut } : null, [profile, signOut, signingOut]);
 
-  if (session.isPending || (session.isFetching && !profile) || session.data === null) return <WorkspaceSplash />;
-  if (session.isError || !value) return <WorkspaceLoadError message={session.error?.message || "Your account profile is unavailable."} onRetry={() => void session.refetch()} onSignOut={() => void signOut()} />;
+  if (session.isPending || (session.isFetching && !profile) || session.data === null) return <IntroBackdrop />;
+  if (session.isError || !value) return <><RevealIntro /><WorkspaceLoadError message={session.error?.message || "Your account profile is unavailable."} onRetry={() => void session.refetch()} onSignOut={() => void signOut()} /></>;
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

@@ -47,8 +47,22 @@ function buildArcs(): Vec[][] {
 }
 
 /** Rotating dotted globe with animated freight lanes, ported from the DEBOSS login prototype. */
-export function GlobeCanvas({ className }: { className?: string }) {
+export type GlobeLayout = "side" | "center" | "dive";
+
+const SLOW = 0.0013;
+const FAST = 0.0075;
+// Survives client-side navigation, so the globe keeps its rotation from login into the app.
+const shared = { rot: 1.4 };
+
+/**
+ * `side`: login hero position. `center`: centered intro. `dive`: zooms past the viewer.
+ * Changing `layout` or `fast` glides to the new position and speed instead of jumping.
+ */
+export function GlobeCanvas({ className, layout = "side", fast = false }: { className?: string; layout?: GlobeLayout; fast?: boolean }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const layoutRef = useRef(layout);
+  const fastRef = useRef(fast);
+  useEffect(() => { layoutRef.current = layout; fastRef.current = fast; }, [layout, fast]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,7 +71,15 @@ export function GlobeCanvas({ className }: { className?: string }) {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const land = buildLand();
     const arcs = buildArcs();
-    let W = 0, H = 0, R = 0, cx0 = 0, cy = 0, cx = 0, rot = 1.4, mx = 0.5, my = 0.5, frame = 0;
+    let W = 0, H = 0, R = 0, cx0 = 0, cy = 0, cx = 0, rot = shared.rot, mx = 0.5, my = 0.5, frame = 0, last = 0, placed = false;
+    let side = layoutRef.current === "side" ? 1 : 0, speed = fastRef.current ? FAST : SLOW;
+
+    const target = (layout: GlobeLayout) => {
+      if (layout === "center") return { cx: W * 0.5, cy: H * 0.5, R: Math.min(W, H) * 0.34 };
+      if (layout === "dive") return { cx: W * 0.5, cy: H * 0.5, R: Math.max(W, H) * 1.8 };
+      const wide = W > 960;
+      return wide ? { cx: W * 0.58, cy: H * 0.56, R: Math.min(H * 0.52, W * 0.34) } : { cx: W * 0.5, cy: H * 0.28, R: W * 0.55 };
+    };
 
     const project = ([x, y, z]: Vec): Vec => {
       const x1 = x * Math.cos(rot) + z * Math.sin(rot), z1 = -x * Math.sin(rot) + z * Math.cos(rot), tilt = 0.38 + (my - 0.5) * 0.12;
@@ -66,7 +88,7 @@ export function GlobeCanvas({ className }: { className?: string }) {
     };
 
     const draw = (ts: number) => {
-      cx = cx0 - (mx - 0.5) * 26;
+      cx = cx0 - (mx - 0.5) * 26 * side;
       g.clearRect(0, 0, W, H);
       const halo = g.createRadialGradient(cx, cy, R * 0.95, cx, cy, R * 1.28);
       halo.addColorStop(0, "#f7941d77"); halo.addColorStop(0.4, "#7c5cfc22"); halo.addColorStop(1, "#f7941d00");
@@ -80,7 +102,7 @@ export function GlobeCanvas({ className }: { className?: string }) {
       for (let lat = -60; lat <= 60; lat += 30) { g.beginPath(); let on = false; for (let lon = -180; lon <= 180; lon += 6) { const p = project(toVec(lon, lat)); if (p[2] > 0) { if (on) g.lineTo(p[0], p[1]); else g.moveTo(p[0], p[1]); on = true; } else on = false; } g.stroke(); }
 
       g.fillStyle = "#ffe6c4";
-      for (const v of land) { const p = project(v); if (p[2] <= 0) continue; const fade = 0.4 + 0.6 * Math.min(1, Math.max(0, (p[0] / W - 0.2) / 0.4)); g.globalAlpha = (0.12 + 0.6 * p[2]) * fade; g.fillRect(p[0] - 1, p[1] - 1, 2, 2); }
+      for (const v of land) { const p = project(v); if (p[2] <= 0) continue; const fade = 1 - side + side * (0.4 + 0.6 * Math.min(1, Math.max(0, (p[0] / W - 0.2) / 0.4))); g.globalAlpha = (0.12 + 0.6 * p[2]) * fade; g.fillRect(p[0] - 1, p[1] - 1, 2, 2); }
       g.globalAlpha = 1;
 
       g.lineCap = "round";
@@ -137,20 +159,28 @@ export function GlobeCanvas({ className }: { className?: string }) {
       W = window.innerWidth; H = window.innerHeight;
       canvas.width = W * ratio; canvas.height = H * ratio;
       g.setTransform(ratio, 0, 0, ratio, 0, 0);
-      const wide = W > 960;
-      R = wide ? Math.min(H * 0.52, W * 0.34) : W * 0.55;
-      cx0 = W * (wide ? 0.58 : 0.5); cy = H * (wide ? 0.56 : 0.28);
-      if (reduced) draw(0);
+      if (!placed) { const start = target(layoutRef.current); cx0 = start.cx; cy = start.cy; R = start.R; placed = true; }
     };
     const onPointer = (event: PointerEvent) => { mx = event.clientX / window.innerWidth; my = event.clientY / window.innerHeight; };
-    let last = 0;
-    // Rotation follows elapsed time, so a dropped frame doesn't make the globe lurch.
-    const loop = (ts: number) => { rot -= 0.0013 * Math.min(3, last ? (ts - last) / 16.67 : 1); last = ts; draw(ts); frame = requestAnimationFrame(loop); };
+    // Position, size and speed ease toward the current layout; everything follows elapsed time, so dropped frames don't lurch.
+    const loop = (ts: number) => {
+      const dt = Math.min(50, last ? ts - last : 16.67);
+      last = ts;
+      const goal = target(layoutRef.current);
+      const ease = reduced ? 1 : 1 - Math.exp(-dt / (layoutRef.current === "dive" ? 300 : 240));
+      cx0 += (goal.cx - cx0) * ease; cy += (goal.cy - cy) * ease; R += (goal.R - R) * ease;
+      side += ((layoutRef.current === "side" ? 1 : 0) - side) * ease;
+      speed += ((fastRef.current ? FAST : SLOW) - speed) * (1 - Math.exp(-dt / 400));
+      if (!reduced) rot -= speed * (dt / 16.67);
+      shared.rot = rot;
+      draw(reduced ? 0 : ts);
+      frame = requestAnimationFrame(loop);
+    };
 
     size();
     window.addEventListener("resize", size);
     window.addEventListener("pointermove", onPointer);
-    if (!reduced) frame = requestAnimationFrame(loop);
+    frame = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", size);

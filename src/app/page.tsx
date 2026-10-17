@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { GlobeCanvas } from "@/components/login/globe-canvas";
+import { introKey } from "@/components/app/intro";
 import { cn } from "@/lib/cn";
 
 const inputClass = "h-[52px] w-full rounded-control border border-[#DDD6C8] bg-white pl-11 pr-12 text-sm text-ink outline-none transition-[border-color,box-shadow] placeholder:text-[#A39D90] hover:border-[#BFB7A6] focus:border-brand focus:shadow-[0_0_0_4px_rgba(247,148,29,.15),0_8px_24px_-10px_rgba(247,148,29,.5)] focus-visible:outline-none disabled:opacity-60";
@@ -40,7 +41,9 @@ export default function SignInPage() {
       const { error: authError } = await createClient().auth.signInWithPassword({ email, password });
       if (authError) return setError(authError.message);
       setSuccess(true);
-      window.setTimeout(() => router.push("/app"), 450);
+      // The /app frame reads this once to play the globe intro instead of a plain loading fade.
+      try { window.sessionStorage.setItem(introKey, "1"); } catch { /* storage unavailable */ }
+      window.setTimeout(() => router.push("/app"), 750);
     } catch {
       setError("We could not verify your sign-in. Please try again.");
     } finally {
@@ -59,7 +62,7 @@ export default function SignInPage() {
 
   return <main className="relative min-h-screen overflow-x-hidden bg-[#09090a] text-white">
     <div className={"login-background"} />
-    <GlobeCanvas className={"login-globe"} />
+    <GlobeCanvas className="login-globe" layout={success ? "center" : "side"} fast={success} />
     <div className={cn("relative z-10 mx-auto grid min-h-screen max-w-[1440px] gap-6 px-5 py-6 sm:px-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(380px,.85fr)] lg:gap-14 lg:px-14 lg:py-8", success && "login-leave")}>
       <header className={cn("flex items-center justify-between lg:col-span-2", "login-reveal")} style={{ ["--k" as string]: 0 }}>
         <Image src="/brand/deboss-logo-horizontal.png" alt="DEBOSS GLOBAL" width={800} height={186} priority className="h-9 w-auto sm:h-10" />

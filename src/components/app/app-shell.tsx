@@ -11,6 +11,7 @@ import { LinkButton } from "@/components/ui/button";
 import { useSession } from "@/components/app/session";
 import { useOptionalBrokerage } from "@/components/app/brokerage-context";
 import { NotificationBell } from "@/components/app/notification-bell";
+import { RevealIntro, useIntro } from "@/components/app/intro";
 import { activeItem, adminNavigation, brokerageNavigation, type NavGroup } from "@/components/app/navigation";
 
 const iconTone: Record<Tone, string> = {
@@ -27,6 +28,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     try { return typeof window !== "undefined" && window.localStorage.getItem(collapseKey) === "1"; } catch { return false; }
   });
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { entering } = useIntro();
 
   const toggleCollapsed = () => setCollapsed((value) => {
     try { window.localStorage.setItem(collapseKey, value ? "0" : "1"); } catch { /* storage unavailable */ }
@@ -69,7 +71,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     </div>
   </div>;
 
-  return <div className="min-h-screen bg-canvas text-ink">
+  return <div className={cn("min-h-screen bg-canvas text-ink", entering && "app-intro")}>
+    <RevealIntro />
     <aside className={cn("fixed inset-y-0 left-0 z-30 hidden transition-[width] duration-200 lg:block", collapsed ? "w-[76px]" : "w-[248px]")}>
       {sidebar(collapsed)}
       <button type="button" onClick={toggleCollapsed} aria-label={collapsed ? "Expand navigation" : "Collapse navigation"} title={collapsed ? "Expand navigation" : "Collapse navigation"} className="absolute -right-3 top-7 grid h-6 w-6 place-items-center rounded-full border border-line bg-white text-ink/60 shadow-sm hover:text-ink">{collapsed ? <ChevronsRight size={13} /> : <ChevronsLeft size={13} />}</button>

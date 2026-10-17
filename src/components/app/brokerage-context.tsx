@@ -6,7 +6,8 @@ import { createContext, useCallback, useContext, useMemo, type ReactNode } from 
 import { responseData, useApi, type Api } from "@/lib/api";
 import { useToast, type ToastTone } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
-import { EmptyState, Skeleton } from "@/components/ui/surface";
+import { EmptyState } from "@/components/ui/surface";
+import { IntroBackdrop, RevealIntro } from "@/components/app/intro";
 
 export type Capabilities = {
   sales?: boolean;
@@ -86,8 +87,9 @@ export function BrokerageGate({ children }: { children: ReactNode }) {
     };
   }, [workspace.data, workspace.isFetching, notifications.data, notifications.isFetching, api, refresh, report]);
 
-  if (workspace.isLoading) return <div className="min-h-screen bg-canvas p-5 lg:p-10"><BrokerageSkeleton /></div>;
+  if (workspace.isLoading) return <IntroBackdrop />;
   if (workspace.isError || !value) return <div className="grid min-h-screen place-items-center bg-canvas p-6">
+    <RevealIntro />
     <EmptyState icon={ShieldAlert} title="Brokerage workspace unavailable" body={workspace.error instanceof Error ? workspace.error.message : "We could not load your permitted Brokerage data."} action={<Button variant="ink" icon={<RefreshCw size={15} />} onClick={() => void workspace.refetch()}>Try again</Button>} />
   </div>;
   return <BrokerageContext.Provider value={value}>{children}</BrokerageContext.Provider>;
@@ -102,12 +104,4 @@ export function useBrokerage(): Brokerage {
 /** Returns null for Super Admins, who have no Brokerage workspace. */
 export function useOptionalBrokerage(): Brokerage | null {
   return useContext(BrokerageContext);
-}
-
-function BrokerageSkeleton() {
-  return <div className="space-y-6" aria-busy="true" aria-label="Loading workspace">
-    <Skeleton className="h-9 w-64" />
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, index) => <Skeleton key={index} className="h-32 rounded-card" />)}</div>
-    <Skeleton className="h-80 rounded-card" />
-  </div>;
 }
