@@ -42,6 +42,8 @@ export type SalesShipment = {
   delivery_date?: string | null;
   sales_status?: string | null;
   status?: string | null;
+  operations_department_id?: string | null;
+  brokerage_invoices?: { invoice_number?: string; status?: string } | { invoice_number?: string; status?: string }[] | null;
 };
 
 export type Customer = {
@@ -126,4 +128,16 @@ export function quotePosition(stage?: string | null): { current: number; blocked
 
 export function lane(item: { pickup_location?: string | null; delivery_location?: string | null }) {
   return `${item.pickup_location || "—"} → ${item.delivery_location || "—"}`;
+}
+
+export const operationsSteps = ["Booked", "Picked up", "Delivered", "Invoiced", "Closed"];
+
+/** Where a handed-off shipment is in Operations, read from the same shipment record and its invoice. */
+export function operationsPosition(shipment: SalesShipment): { current: number; exception: boolean; invoice?: { invoice_number?: string; status?: string } } {
+  const invoice = Array.isArray(shipment.brokerage_invoices) ? shipment.brokerage_invoices[0] : shipment.brokerage_invoices ?? undefined;
+  const reached: Record<string, number> = { BOOKED: 0, CARRIER_ASSIGNED: 0, PICKED_UP: 1, IN_TRANSIT: 1, DELIVERED: 2, COMPLETED: 2, EXCEPTION: 0 };
+  let step = reached[shipment.status ?? "BOOKED"] ?? 0;
+  if (invoice) step = Math.max(step, 3);
+  if (invoice?.status === "PAID") step = 4;
+  return { current: step + 1, exception: shipment.status === "EXCEPTION", invoice };
 }

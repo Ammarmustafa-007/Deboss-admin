@@ -15,7 +15,7 @@ import { FilePicker, SelectField, TextField } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { QuoteFile } from "@/components/sales/quote-panel";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
-import { commercialStatuses, lane, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type Quote, type SalesShipment } from "@/components/sales/model";
+import { commercialStatuses, lane, operationsPosition, operationsSteps, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type Quote, type SalesShipment } from "@/components/sales/model";
 
 export function useCustomerProfile(customerId: string) {
   const { api } = useBrokerage();
@@ -194,6 +194,8 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
       {quote.stage === "REJECTED" && <p className="mt-4 rounded-lg bg-danger/[.07] px-3.5 py-2.5 text-sm text-[#A5183F]"><b>Returned for rework.</b>{quote.rejection_note ? ` ${quote.rejection_note}` : ""}</p>}
     </div>}
 
+    {shipment!.operations_department_id && <OperationsProgress shipment={shipment!} />}
+
     {canEdit ? <form id="shipment-form" onSubmit={save}>
       <fieldset disabled={saving} className="space-y-6">
         <section><h3 className="mb-3 text-sm font-semibold">Lane</h3>{lanes}</section>
@@ -208,4 +210,18 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
       <QuoteFile quoteId={quote.id} readOnly={!canEdit} />
     </div>}
   </Drawer>;
+}
+
+function OperationsProgress({ shipment }: { shipment: SalesShipment }) {
+  const { current, exception, invoice } = operationsPosition(shipment);
+  return <div className="mb-6 rounded-[12px] border border-line-soft bg-[#FBFAF7] p-4">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <h3 className="flex items-center gap-2 text-sm font-semibold"><Truck size={15} className="text-aqua" />Operations progress</h3>
+      <span className="flex flex-wrap gap-1.5">
+        {exception && <Chip tone="danger">Exception in Operations</Chip>}
+        {invoice?.invoice_number && <Chip tone={toneFor(invoice.status)}>{invoice.invoice_number}{invoice.status ? ` · ${invoice.status.charAt(0) + invoice.status.slice(1).toLowerCase()}` : ""}</Chip>}
+      </span>
+    </div>
+    <Stepper steps={operationsSteps.map((label) => ({ label }))} current={current} tone={exception ? "danger" : "brand"} />
+  </div>;
 }
