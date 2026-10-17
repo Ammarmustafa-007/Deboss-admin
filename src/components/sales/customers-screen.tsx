@@ -13,6 +13,7 @@ import { Avatar, Card, EmptyState, PageHeader, Skeleton } from "@/components/ui/
 import { LinkButton } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
 import { CustomerPanel, useCustomerProfile } from "@/components/sales/customer-panel";
+import { useTeamDirectory } from "@/components/sales/directory";
 import type { Customer } from "@/components/sales/model";
 
 export function CustomersScreen() {
@@ -20,15 +21,20 @@ export function CustomersScreen() {
   const { api } = useBrokerage();
   const customers = useQuery({ queryKey: ["brokerage", "customers"], queryFn: async () => responseData<{ customers: Customer[] }>(await api("/api/v1/brokerage/customers")), staleTime: 20_000 });
   const [search, setSearch] = useState("");
+  const { manager } = useBrokerage();
+  const directory = useTeamDirectory(manager);
+  const [owner, setOwner] = useState("");
+  const ownerName = (id?: string | null) => directory.data?.users.find((user) => user.id === id)?.full_name;
 
   const list = customers.data?.customers ?? [];
   const term = search.trim().toLowerCase();
-  const visible = list.filter((customer) => !term || `${customer.company_name} ${customer.contact_name ?? ""} ${customer.contact_email ?? ""}`.toLowerCase().includes(term));
+  const visible = list.filter((customer) => (!owner || customer.owner_id === owner) && (!term || `${customer.company_name} ${customer.contact_name ?? ""} ${customer.contact_email ?? ""}`.toLowerCase().includes(term)));
 
   return <div className="space-y-6 animate-rise">
     <PageHeader title="Customers" subtitle={customers.data ? `${list.length} customer${list.length === 1 ? "" : "s"} in your scope` : undefined} />
     <Card>
-      <div className="flex items-center justify-end border-b border-line px-5 py-3">
+      <div className="flex flex-col items-stretch justify-end gap-2 border-b border-line px-5 py-3 sm:flex-row sm:items-center">
+        {manager && <select value={owner} onChange={(event) => setOwner(event.target.value)} aria-label="Filter by agent" className={cn(controlClass, "h-10 sm:w-48")}><option value="">All agents</option>{(directory.data?.users ?? []).filter((user) => user.role === "AGENT").map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select>}
         <label className="relative block w-full sm:w-72">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search customers" aria-label="Search customers" className={cn(controlClass, "h-10 pl-9")} />
@@ -38,9 +44,10 @@ export function CustomersScreen() {
         : customers.isError ? <EmptyState title="Customers unavailable" body={errorMessage(customers.error)} />
         : visible.length ? <>
           <table className="hidden w-full text-sm md:table">
-            <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Company</th><th className="px-3 py-2.5 font-medium">Email</th><th className="px-3 py-2.5 font-medium">Phone</th><th className="px-3 py-2.5 font-medium">Updated</th><th className="w-10" /></tr></thead>
+            <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Company</th>{manager && <th className="px-3 py-2.5 font-medium">Owner</th>}<th className="px-3 py-2.5 font-medium">Email</th><th className="px-3 py-2.5 font-medium">Phone</th><th className="px-3 py-2.5 font-medium">Updated</th><th className="w-10" /></tr></thead>
             <tbody>{visible.map((customer) => <tr key={customer.id} onClick={() => router.push(`/app/customers/${customer.id}`)} className="group cursor-pointer border-t border-line-soft transition-colors hover:bg-[#FAF8F4]">
               <td className="px-5 py-3"><div className="flex items-center gap-3"><Avatar name={customer.company_name} /><div className="min-w-0"><Link href={`/app/customers/${customer.id}`} onClick={(event) => event.stopPropagation()} className="font-semibold hover:text-brand-deep">{customer.company_name}</Link><p className="text-xs text-muted">{customer.contact_name || "No contact"}</p></div></div></td>
+              {manager && <td className="px-3 py-3 text-[13px] text-ink/75">{ownerName(customer.owner_id) ?? "—"}</td>}
               <td className="px-3 py-3 text-[13px] text-ink/75">{customer.contact_email || "—"}</td>
               <td className="px-3 py-3 text-[13px] text-ink/75">{customer.contact_phone || "—"}</td>
               <td className="px-3 py-3 text-[13px] text-ink/75">{dateLabel(customer.updated_at)}</td>

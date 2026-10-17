@@ -14,8 +14,9 @@ import { controlClass } from "@/components/ui/field";
 
 type Row = Record<string, string | number | null | undefined> & { id: string };
 type Counts = Record<string, number>;
+type AgentRow = { agent_id: string; name: string; leads: number; customers: number; shipments: number; gross_generated: number };
 type ReportData = {
-  sales: { totals: Record<string, number>; agents?: { id: string; full_name: string }[]; shipment_rows: Row[]; lead_stages: Counts; quote_stages: Counts; shipment_statuses: Counts; customer_outcomes: Counts; by_agent: Counts; by_team: Counts };
+  sales: { totals: Record<string, number>; agent_breakdown?: AgentRow[]; agents?: { id: string; full_name: string }[]; shipment_rows: Row[]; lead_stages: Counts; quote_stages: Counts; shipment_statuses: Counts; customer_outcomes: Counts; by_agent: Counts; by_team: Counts };
   operations: { totals: Record<string, number>; rows: Row[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Counts; by_customer: Counts };
 };
 
@@ -84,7 +85,7 @@ export function ReportsScreen() {
         {sales && !canViewTeamPerformance ? <div className="space-y-6">
           <ShipmentTable rows={data.sales.shipment_rows} />
           <Breakdown title="Shipment status" values={data.sales.shipment_statuses} />
-        </div> : <div className="grid gap-6 xl:grid-cols-2">
+        </div> : <>{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}<div className="grid gap-6 xl:grid-cols-2">
           {sales ? <>
             <Breakdown title="Pipeline by stage" values={data.sales.lead_stages} />
             <Breakdown title="Quote outcomes" values={data.sales.quote_stages} />
@@ -98,9 +99,31 @@ export function ReportsScreen() {
             <Breakdown title="Workload by agent" values={data.operations.workload} />
             <Breakdown title="Customer volume" values={data.operations.by_customer} />
           </>}
-        </div>}
+        </div></>}
       </>}
   </div>;
+}
+
+function AgentTable({ rows, onPick }: { rows: AgentRow[]; onPick: (id: string) => void }) {
+  const total = rows.reduce((sum, row) => ({ leads: sum.leads + row.leads, customers: sum.customers + row.customers, shipments: sum.shipments + row.shipments, gross: sum.gross + row.gross_generated }), { leads: 0, customers: 0, shipments: 0, gross: 0 });
+  return <Card>
+    <CardHeader title="By agent" subtitle="Click an agent to open their individual report" />
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[620px] text-sm">
+        <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Agent</th><th className="px-3 py-2.5 text-right font-medium">Leads</th><th className="px-3 py-2.5 text-right font-medium">Customers</th><th className="px-3 py-2.5 text-right font-medium">Shipments</th><th className="px-5 py-2.5 text-right font-medium">Gross generated</th></tr></thead>
+        <tbody>
+          {rows.map((row) => <tr key={row.agent_id} onClick={() => onPick(row.agent_id)} className="cursor-pointer border-t border-line-soft hover:bg-[#FAF8F4]">
+            <td className="px-5 py-3 font-semibold">{row.name}</td>
+            <td className="px-3 py-3 text-right tabular-nums">{row.leads}</td>
+            <td className="px-3 py-3 text-right tabular-nums">{row.customers}</td>
+            <td className="px-3 py-3 text-right tabular-nums">{row.shipments}</td>
+            <td className="px-5 py-3 text-right font-semibold tabular-nums">{money(row.gross_generated)}</td>
+          </tr>)}
+          <tr className="border-t-2 border-line bg-[#FBFAF7] font-semibold"><td className="px-5 py-3">Total</td><td className="px-3 py-3 text-right tabular-nums">{total.leads}</td><td className="px-3 py-3 text-right tabular-nums">{total.customers}</td><td className="px-3 py-3 text-right tabular-nums">{total.shipments}</td><td className="px-5 py-3 text-right tabular-nums">{money(total.gross)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </Card>;
 }
 
 /** A count breakdown shown as proportional bars. */

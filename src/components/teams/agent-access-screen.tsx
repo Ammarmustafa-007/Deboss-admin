@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LockKeyhole, Search, ShieldCheck, Unlock } from "lucide-react";
-import { useState } from "react";
+import { LockKeyhole, Search, ShieldCheck, Unlock, UserPlus } from "lucide-react";
+import { useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
 import { useBrokerage } from "@/components/app/brokerage-context";
@@ -11,7 +11,7 @@ import { Avatar, Card, Chip, EmptyState, PageHeader, Skeleton } from "@/componen
 import { Tabs } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/overlay";
-import { controlClass } from "@/components/ui/field";
+import { PasswordInput, TextField, controlClass } from "@/components/ui/field";
 
 type DepartmentUser = { id: string; full_name: string; email: string; role: string; is_active: boolean };
 type Filter = "all" | "active" | "revoked";
@@ -23,6 +23,7 @@ export function AgentAccessScreen() {
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [confirming, setConfirming] = useState<DepartmentUser | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const agents = (data.data?.users ?? []).filter((user) => user.role === "AGENT");
   const term = search.trim().toLowerCase();
@@ -34,7 +35,7 @@ export function AgentAccessScreen() {
   };
 
   return <div className="space-y-6 animate-rise">
-    <PageHeader title="Agent access" subtitle="Every active agent gets the standard workflow for this department" />
+    <PageHeader title="Agent access" subtitle="Every active agent gets the standard workflow for this department" actions={<Button variant="primary" icon={<UserPlus size={16} />} onClick={() => setAdding(true)}>Add agent</Button>} />
     <Card>
       <div className="flex flex-col gap-3 px-5 pt-4 sm:flex-row sm:items-end sm:justify-between">
         <Tabs<Filter> value={filter} onChange={setFilter} className="-mb-px border-b-0" items={[
@@ -62,9 +63,30 @@ export function AgentAccessScreen() {
       </div>
     </Card>
 
+    {adding && <AddAgent onClose={() => setAdding(false)} />}
     <Modal open={Boolean(confirming)} onClose={() => setConfirming(null)} dismissible={!busy()} title="Revoke login?"
       footer={<><Button variant="ghost" onClick={() => setConfirming(null)} disabled={busy()}>Cancel</Button><Button variant="danger" icon={<LockKeyhole size={15} />} pending={confirming ? busy(`access:${confirming.id}`) : false} pendingLabel="Revoking…" onClick={() => confirming && void setActive(confirming, false)}>Revoke login</Button></>}>
       <p className="text-sm text-muted"><b className="text-ink">{confirming?.full_name}</b> won&apos;t be able to sign in until their access is restored.</p>
     </Modal>
   </div>;
+}
+
+function AddAgent({ onClose }: { onClose: () => void }) {
+  const { run, busy } = useBrokerageAction();
+  const [form, setForm] = useState({ full_name: "", email: "", password: "" });
+  const pending = busy("add-agent");
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (await run("add-agent", "/api/v1/brokerage/department-users", "POST", form, "Agent created and ready to sign in.") !== undefined) onClose();
+  };
+  return <Modal open onClose={onClose} dismissible={!pending} title="Add agent" subtitle="Joins your department with standard agent access"
+    footer={<><Button variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button><Button type="submit" form="add-agent-form" variant="primary" icon={<UserPlus size={15} />} pending={pending} pendingLabel="Creating…">Create agent</Button></>}>
+    <form id="add-agent-form" onSubmit={submit}>
+      <fieldset disabled={pending} className="space-y-4">
+        <TextField label="Full name" required minLength={2} value={form.full_name} onChange={(event) => setForm({ ...form, full_name: event.target.value })} />
+        <TextField label="Work email" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
+        <PasswordInput label="Temporary password" required minLength={8} autoComplete="new-password" hint="At least 8 characters. Share it with the agent securely." value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
+      </fieldset>
+    </form>
+  </Modal>;
 }

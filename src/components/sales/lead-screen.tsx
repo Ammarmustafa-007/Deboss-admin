@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, CalendarClock, FileSearch, Mail, Phone, Plus, UserRound, UserRoundPlus, XCircle } from "lucide-react";
+import { Archive, ArchiveRestore, Crown, CalendarClock, FileSearch, Mail, Phone, Plus, UserRound, UserRoundPlus, XCircle } from "lucide-react";
 import { use, useState, type FormEvent, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { responseData } from "@/lib/api";
@@ -15,6 +15,7 @@ import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { CustomerPanel } from "@/components/sales/customer-panel";
 import { QuoteList } from "@/components/sales/quote-panel";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
+import { useTeamDirectory, type DirectoryPerson, type DirectoryTeam } from "@/components/sales/directory";
 import { activityTypes, editableStages, journeyPosition, journeySteps, nextAction, stageLabel, type FeedItem, type Lead, type LeadDetailData } from "@/components/sales/model";
 
 type TabKey = "quotes" | "details" | "activity" | "comments" | "customer";
@@ -35,9 +36,15 @@ export function LeadScreen({ leadId }: { leadId: string }) {
 
 function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean }) {
   const { lead, quotes, activities, comments, customer } = data;
-  const action = nextAction(quotes, manager);
+  const { workspace } = useBrokerage();
+  const caps = workspace.capabilities ?? {};
+  // Department managers, and Team Leads with full managerial access, review and hand off quotes.
+  const reviewer = manager || Boolean(caps.canReviewQuotes || caps.canHandoffQuotes);
+  const action = nextAction(quotes, reviewer);
   const reviewWaiting = quotes.some((quote) => quote.stage === "SUBMITTED" || quote.stage === "APPROVED");
-  const [tab, setTab] = useState<TabKey>(manager ? (reviewWaiting ? "quotes" : "details") : "details");
+  const [tab, setTab] = useState<TabKey>(reviewer && reviewWaiting ? "quotes" : "details");
+  const directory = useTeamDirectory(manager);
+  const ownerName = directory.data?.users.find((user) => user.id === lead.owner_id)?.full_name;
   const { run, busy } = useBrokerageAction();
   const leadPath = `/api/v1/brokerage/leads/${lead.id}`;
   const openActivities = activities.filter((item) => item.activity_type && !item.completed_at).length;
@@ -50,12 +57,13 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
       title={<span className="flex flex-wrap items-center gap-3">{lead.company_name}<StatusChip status={lead.stage} label={stageLabel[lead.stage] ?? undefined} className="text-[13px]" />{lead.archived_at && <Chip>Archived</Chip>}</span>}
       subtitle={<span className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span className="inline-flex items-center gap-1.5"><UserRound size={14} />{lead.contact_name || "No contact"}</span>
+        {manager && <span className="inline-flex items-center gap-1.5"><Crown size={14} className="text-brand" />Owner: {ownerName ?? "—"}</span>}
         {lead.contact_email && <a href={`mailto:${lead.contact_email}`} className="inline-flex items-center gap-1.5 hover:text-ink"><Mail size={14} />{lead.contact_email}</a>}
         {lead.contact_phone && <a href={`tel:${lead.contact_phone}`} className="inline-flex items-center gap-1.5 hover:text-ink"><Phone size={14} />{lead.contact_phone}</a>}
       </span>}
       actions={<>
         {action.key !== "none" && <Chip tone={action.tone} className="h-8 px-3 text-[13px]">{action.label}</Chip>}
-        {!manager && lead.stage !== "CUSTOMER" && <StageControl lead={lead} />}
+        {lead.stage !== "CUSTOMER" && <StageControl lead={lead} />}
         <Button variant="outline" icon={lead.archived_at ? <ArchiveRestore size={15} /> : <Archive size={15} />} pending={busy(`archive:${lead.id}`)} onClick={() => void toggleArchive()}>{lead.archived_at ? "Restore" : "Archive"}</Button>
       </>}
     />
@@ -68,6 +76,7 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
       { value: "activity", label: "Activity", count: activities.length },
       { value: "comments", label: "Comments", count: comments.length },
     ] : [
+      ...(reviewer ? [{ value: "quotes" as const, label: "Quotes & approval", count: quotes.length }] : []),
       { value: "details", label: "Lead details" },
       { value: "activity", label: "Activity", count: openActivities || undefined },
       { value: "comments", label: "Comments", count: comments.length || undefined },
@@ -76,7 +85,7 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
 
     <div key={tab} className="animate-fade">
       {tab === "quotes" && <QuoteList quotes={quotes} lead={lead} customerId={customer?.id} />}
-      {tab === "details" && (manager ? <LeadFacts lead={lead} /> : <LeadForm lead={lead} />)}
+      {tab === "details" && (manager ? <div className="space-y-6"><Assignment lead={lead} directory={directory.data} /><LeadFacts lead={lead} /></div> : <LeadForm lead={lead} />)}
       {tab === "activity" && <ActivityTab lead={lead} activities={activities} manager={manager} />}
       {tab === "comments" && <CommentsTab leadId={lead.id} comments={comments} manager={manager} />}
       {tab === "customer" && <CustomerTab lead={lead} customerId={customer?.id ?? null} />}
@@ -91,6 +100,21 @@ function Journey({ lead, quotes }: { lead: Lead; quotes: LeadDetailData["quotes"
   return <Card className="px-4 py-5 sm:px-6">
     <div className="overflow-x-auto"><Stepper steps={journeySteps.map((label, index) => ({ label, hint: blocked && index === current ? "Returned for rework" : undefined }))} current={current} tone={blocked ? "danger" : "brand"} className="min-w-[620px]" /></div>
     {blocked && rejected?.rejection_note && <p className="mt-4 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm text-[#A5183F]"><b>Manager note:</b> {rejected.rejection_note}</p>}
+  </Card>;
+}
+
+function Assignment({ lead, directory }: { lead: Lead; directory?: { users: DirectoryPerson[]; teams: DirectoryTeam[] } }) {
+  const { run, busy } = useBrokerageAction();
+  const pending = busy(`assign:${lead.id}`);
+  const assign = (patch: { owner_id?: string; team_id?: string | null }, success: string) => void run(`assign:${lead.id}`, `/api/v1/brokerage/leads/${lead.id}`, "PATCH", patch, success);
+  const agents = (directory?.users ?? []).filter((user) => user.role === "AGENT" && user.is_active !== false);
+  const teams = (directory?.teams ?? []).filter((team) => team.is_active);
+  return <Card>
+    <CardHeader title="Assignment" subtitle="Who owns this lead and which team it belongs to" />
+    <div className="grid gap-4 p-5 sm:grid-cols-2">
+      <SelectField label="Owner" required value={lead.owner_id ?? ""} disabled={pending || !directory} onChange={(event) => event.target.value && assign({ owner_id: event.target.value }, "Lead owner updated.")} options={agents.map((user) => ({ value: user.id, label: user.full_name }))} />
+      <SelectField label="Team" required value={lead.team_id ?? ""} placeholder="No team" disabled={pending || !directory} onChange={(event) => assign({ team_id: event.target.value || null }, "Lead team updated.")} options={teams.map((team) => ({ value: team.id, label: team.name + (team.team_lead_id ? ` · Lead: ${directory?.users.find((user) => user.id === team.team_lead_id)?.full_name ?? "—"}` : "") }))} />
+    </div>
   </Card>;
 }
 

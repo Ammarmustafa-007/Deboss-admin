@@ -2,31 +2,38 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, ChevronRight, Crown, Plus, ShieldCheck, UsersRound } from "lucide-react";
 import { use, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
-import { errorMessage, responseData } from "@/lib/api";
+import { errorMessage } from "@/lib/api";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { Avatar, Card, Chip, EmptyState, PageHeader, Skeleton } from "@/components/ui/surface";
 import { Stepper } from "@/components/ui/navigation";
 import { Button, LinkButton } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
+import { useTeamDirectory, type DirectoryPerson, type DirectoryTeam } from "@/components/sales/directory";
 
-type Person = { id: string; full_name: string; email?: string; role?: string; is_active?: boolean };
-type Team = { id: string; name: string; team_lead_id?: string | null; is_active: boolean; team_members?: { user_id: string }[]; team_lead_permissions?: { permission_key: string }[] };
-type TeamDirectory = { users: Person[]; teams: Team[] };
+type Person = DirectoryPerson;
+type Team = DirectoryTeam;
 
-const permissionGroups = [
-  { title: "Sales", items: [["sales.leads.view_team", "View team leads"], ["sales.leads.edit_team", "Edit team leads"], ["sales.leads.assign", "Assign team leads"], ["sales.activities.view_team", "View team activity"], ["sales.activities.assign", "Assign follow-ups"], ["sales.quotes.review", "Review quotes"], ["sales.quotes.handoff", "Approve Operations handoff"]] },
-  { title: "Operations", items: [["operations.shipments.view_team", "View team shipments"], ["operations.shipments.assign", "Assign shipments"], ["operations.shipments.update_team", "Update team shipments"], ["operations.documents.review", "Review documents"], ["operations.exceptions.resolve", "Resolve exceptions"], ["operations.billing.mark_invoice_ready", "Mark invoice-ready"]] },
-  { title: "Reporting", items: [["sales.reports.view_team", "Sales team reports"], ["operations.reports.view_team", "Operations team reports"]] },
-] as const;
+type Access = "partial" | "full";
 
-function useTeamDirectory() {
-  const { api } = useBrokerage();
-  return useQuery({ queryKey: ["brokerage", "team-directory"], queryFn: async () => responseData<TeamDirectory>(await api("/api/v1/brokerage/team-directory")), staleTime: 20_000 });
+/** Team Lead access presets, mapped onto the existing permission keys for each department function. */
+const accessPresets: Record<"sales" | "operations", Record<Access, { label: string; summary: string[]; keys: string[] }>> = {
+  sales: {
+    partial: { label: "Partial access", summary: ["View the team's leads, customers and activity", "Edit the team's leads", "Team reports"], keys: ["sales.leads.view_team", "sales.leads.edit_team", "sales.activities.view_team", "sales.reports.view_team"] },
+    full: { label: "Full managerial access", summary: ["Everything in partial access", "Approve or return quotes for rework", "Hand approved quotes off to Operations", "Assign leads and follow-ups"], keys: ["sales.leads.view_team", "sales.leads.edit_team", "sales.activities.view_team", "sales.reports.view_team", "sales.leads.assign", "sales.activities.assign", "sales.quotes.review", "sales.quotes.handoff"] },
+  },
+  operations: {
+    partial: { label: "Partial access", summary: ["View the team's shipments", "Update the team's shipments", "Team reports"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team"] },
+    full: { label: "Full managerial access", summary: ["Everything in partial access", "Assign shipments to agents", "Verify documents and resolve exceptions", "Mark shipments invoice-ready"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team", "operations.shipments.assign", "operations.documents.review", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready"] },
+  },
+};
+
+/** Existing teams may carry any mix of keys; anything with an approval-level key counts as full access. */
+function accessFrom(keys: string[]): Access {
+  return keys.some((key) => ["sales.quotes.review", "sales.quotes.handoff", "operations.shipments.assign", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready", "operations.documents.review"].includes(key)) ? "full" : "partial";
 }
 
 export function TeamsScreen() {
@@ -78,21 +85,22 @@ export function TeamWizard({ teamId }: { teamId?: string }) {
 
 function TeamForm({ team, users }: { team?: Team; users: Person[] }) {
   const router = useRouter();
-  const { report } = useBrokerage();
+  const { report, sales } = useBrokerage();
+  const presets = accessPresets[sales ? "sales" : "operations"];
   const { run, busy } = useBrokerageAction();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     name: team?.name ?? "",
     team_lead_id: team?.team_lead_id ?? "",
     member_ids: (team?.team_members ?? []).map((member) => member.user_id),
-    permissions: (team?.team_lead_permissions ?? []).map((permission) => permission.permission_key),
+    access: accessFrom((team?.team_lead_permissions ?? []).map((permission) => permission.permission_key)),
     is_active: team?.is_active ?? true,
   });
   const saving = busy("save-team");
-  const toggle = (key: "member_ids" | "permissions", value: string) => setForm((current) => {
-    const list = current[key].includes(value) ? current[key].filter((item) => item !== value) : [...current[key], value];
+  const toggleMember = (id: string) => setForm((current) => {
+    const member_ids = current.member_ids.includes(id) ? current.member_ids.filter((item) => item !== id) : [...current.member_ids, id];
     // Removing the lead from the members also clears the lead choice.
-    return key === "member_ids" && !list.includes(current.team_lead_id) ? { ...current, member_ids: list, team_lead_id: "" } : { ...current, [key]: list };
+    return { ...current, member_ids, team_lead_id: member_ids.includes(current.team_lead_id) ? current.team_lead_id : "" };
   });
 
   const next = (event: FormEvent) => {
@@ -103,7 +111,9 @@ function TeamForm({ team, users }: { team?: Team; users: Person[] }) {
   const save = async () => {
     if (!form.member_ids.length) return report("Select at least one Agent before saving the team.", "error");
     if (form.team_lead_id && !form.member_ids.includes(form.team_lead_id)) return report("The Team Lead must be selected as a team member.", "error");
-    const result = await run("save-team", team ? `/api/v1/brokerage/teams/${team.id}` : "/api/v1/brokerage/teams", team ? "PATCH" : "POST", form, team ? "Team updated." : "Team created.");
+    const { access, ...rest } = form;
+    const payload = { ...rest, permissions: form.team_lead_id ? presets[access].keys : [] };
+    const result = await run("save-team", team ? `/api/v1/brokerage/teams/${team.id}` : "/api/v1/brokerage/teams", team ? "PATCH" : "POST", payload, team ? "Team updated." : "Team created.");
     if (result !== undefined) router.push("/app/teams");
   };
 
@@ -113,7 +123,7 @@ function TeamForm({ team, users }: { team?: Team; users: Person[] }) {
   return <div className="mx-auto max-w-3xl space-y-6 animate-rise">
     <PageHeader crumbs={[{ label: "Teams", href: "/app/teams" }, { label: team ? team.name : "New team" }]} title={team ? team.name : "New team"} />
     <Card className="overflow-hidden">
-      <div className="border-b border-line-soft bg-[#FBFAF7] px-6 py-5"><Stepper steps={[{ label: "Name & members" }, { label: "Team Lead" }, { label: "Delegated rights" }]} current={step} className="mx-auto max-w-lg" /></div>
+      <div className="border-b border-line-soft bg-[#FBFAF7] px-6 py-5"><Stepper steps={[{ label: "Name & members" }, { label: "Team Lead" }, { label: "Lead access" }]} current={step} className="mx-auto max-w-lg" /></div>
 
       <form onSubmit={step < 2 ? next : (event) => { event.preventDefault(); void save(); }}>
         <fieldset disabled={saving} className="p-6">
@@ -124,7 +134,7 @@ function TeamForm({ team, users }: { team?: Team; users: Person[] }) {
               {users.length ? <ul className="max-h-80 divide-y divide-line-soft overflow-y-auto rounded-control border border-line">{users.map((user) => {
                 const checked = form.member_ids.includes(user.id);
                 return <li key={user.id}><label className={cn("flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-[#FAF8F4]", checked && "bg-brand-tint/60")}>
-                  <input type="checkbox" checked={checked} onChange={() => toggle("member_ids", user.id)} className="h-4 w-4" />
+                  <input type="checkbox" checked={checked} onChange={() => toggleMember(user.id)} className="h-4 w-4" />
                   <Avatar name={user.full_name} className="h-8 w-8 text-[11px]" />
                   <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{user.full_name}</span><span className="block truncate text-xs text-muted">{user.email}</span></span>
                   {user.role && <Chip>{user.role.charAt(0) + user.role.slice(1).toLowerCase()}</Chip>}
@@ -136,23 +146,22 @@ function TeamForm({ team, users }: { team?: Team; users: Person[] }) {
           {step === 1 && <div>
             <p className="mb-3 text-sm text-muted">Optional. The Team Lead receives the rights you choose in the next step.</p>
             <ul className="space-y-2">
-              <LeadOption label="No Team Lead" checked={!form.team_lead_id} onChange={() => setForm({ ...form, team_lead_id: "", permissions: [] })} />
+              <LeadOption label="No Team Lead" checked={!form.team_lead_id} onChange={() => setForm({ ...form, team_lead_id: "" })} />
               {members.map((user) => <LeadOption key={user.id} label={user.full_name} hint={user.email} checked={form.team_lead_id === user.id} onChange={() => setForm({ ...form, team_lead_id: user.id })} />)}
             </ul>
           </div>}
 
-          {step === 2 && (lead ? <div className="space-y-6">
-            <p className="flex items-center gap-2 text-sm"><Crown size={15} className="text-brand" /><b>{lead.full_name}</b><span className="text-muted">will be able to:</span></p>
-            {permissionGroups.map((group) => <div key={group.title}>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted">{group.title}</p>
-              <div className="grid gap-2 sm:grid-cols-2">{group.items.map(([key, label]) => {
-                const checked = form.permissions.includes(key);
-                return <label key={key} className={cn("flex cursor-pointer items-center gap-3 rounded-control border px-3.5 py-3 text-sm transition-colors", checked ? "border-brand bg-brand-tint/60" : "border-line hover:border-[#CFC8BA]")}>
-                  <input type="checkbox" checked={checked} onChange={() => toggle("permissions", key)} className="h-4 w-4" />{label}
-                </label>;
-              })}</div>
-            </div>)}
-          </div> : <EmptyState icon={ShieldCheck} title="No Team Lead selected" body="Delegated rights apply only to a Team Lead. Members keep their standard agent access." />)}
+          {step === 2 && (lead ? <div className="space-y-4">
+            <p className="flex items-center gap-2 text-sm"><Crown size={15} className="text-brand" /><b>{lead.full_name}</b><span className="text-muted">gets:</span></p>
+            <div className="grid gap-3 sm:grid-cols-2">{(["partial", "full"] as const).map((mode) => {
+              const preset = presets[mode];
+              const checked = form.access === mode;
+              return <label key={mode} className={cn("flex cursor-pointer flex-col gap-3 rounded-[14px] border p-4 transition-colors", checked ? "border-brand bg-brand-tint/60 shadow-[0_0_0_3px_rgba(247,148,29,.15)]" : "border-line hover:border-[#CFC8BA]")}>
+                <span className="flex items-center gap-2.5"><input type="radio" name="team-access" checked={checked} onChange={() => setForm({ ...form, access: mode })} className="h-4 w-4" /><span className="font-semibold">{preset.label}</span></span>
+                <ul className="space-y-1.5 pl-6 text-[13px] text-ink/75">{preset.summary.map((line) => <li key={line} className="flex gap-2"><Check size={14} className="mt-0.5 shrink-0 text-success" />{line}</li>)}</ul>
+              </label>;
+            })}</div>
+          </div> : <EmptyState icon={ShieldCheck} title="No Team Lead selected" body="Members keep their standard agent access." />)}
 
           {step === 2 && team && <label className="mt-6 flex w-fit cursor-pointer items-center gap-3 rounded-control border border-line px-4 py-3 text-sm font-medium">
             <input type="checkbox" checked={form.is_active} onChange={(event) => setForm({ ...form, is_active: event.target.checked })} className="h-4 w-4" />Team is active

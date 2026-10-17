@@ -8,7 +8,7 @@ import { useSession } from "@/components/app/session";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { Card, CardHeader, Chip, EmptyState, IconTile, KpiCard, StatusChip, type Tone } from "@/components/ui/surface";
 import { LinkButton } from "@/components/ui/button";
-import { nextAction, type Lead, type Quote } from "@/components/sales/model";
+import { nextAction, stageLabel, type Lead, type Quote } from "@/components/sales/model";
 import { exceptionOpen, statusLabel, type Shipment } from "@/components/operations/model";
 
 type Attention = { href: string; icon: LucideIcon; tone: Tone; title: string; detail: string };
@@ -75,7 +75,7 @@ function SalesDashboard({ unread }: { unread: number }) {
           const action = nextAction(quotesFor(lead), manager);
           return <li key={lead.id}><Link href={`/app/sales/leads/${lead.id}`} className="group flex items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]">
             <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{lead.company_name}</p><p className="truncate text-xs text-muted">{lead.contact_name || "No contact"} · {money(lead.estimated_monthly_value)}</p></div>
-            <span className="hidden gap-1.5 sm:flex"><StatusChip status={lead.stage} />{action.key !== "none" && <Chip tone={action.tone}>{action.label}</Chip>}</span>
+            <span className="hidden gap-1.5 sm:flex"><StatusChip status={lead.stage} label={stageLabel[lead.stage]} />{action.key !== "none" && <Chip tone={action.tone}>{action.label}</Chip>}</span>
             <ChevronRight size={16} className="text-muted transition-transform group-hover:translate-x-0.5" />
           </Link></li>;
         })}</ul> : <EmptyState icon={ClipboardList} title="No leads yet" action={!manager && <LinkButton href="/app/sales/new" variant="primary">Create a lead</LinkButton>} />}

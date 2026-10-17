@@ -12,6 +12,8 @@ export type Lead = {
   notes?: string | null;
   stage: string;
   archived_at?: string | null;
+  owner_id?: string | null;
+  team_id?: string | null;
   updated_at?: string;
 };
 
@@ -45,6 +47,7 @@ export type SalesShipment = {
 export type Customer = {
   id: string;
   lead_id?: string | null;
+  owner_id?: string | null;
   company_name: string;
   contact_name?: string | null;
   contact_email?: string | null;
@@ -73,9 +76,9 @@ export type QuoteDetail = { quote: Quote; attachments: Attachment[]; events: Fee
 export const pipelineStages = ["NEW", "CONTACTED", "QUALIFIED", "CUSTOMER", "LOST"] as const;
 export const editableStages = ["NEW", "CONTACTED", "QUALIFIED", "LOST"];
 export const commercialStatuses = ["QUOTED", "BOOKED", "DELIVERED", "PAID"];
-export const activityTypes = ["CALL", "EMAIL", "NOTE", "FOLLOW_UP", "APPOINTMENT"];
+export const activityTypes = ["CALL", "CALLBACK", "EMAIL", "NOTE", "FOLLOW_UP", "APPOINTMENT"];
 
-export const stageLabel: Record<string, string> = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified", CUSTOMER: "Customer", LOST: "Lost" };
+export const stageLabel: Record<string, string> = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified", CUSTOMER: "Customer", LOST: "Not interested" };
 
 export type NextAction = { key: "review" | "handoff" | "rework" | "operations" | "draft" | "none"; label: string; tone: Tone };
 
