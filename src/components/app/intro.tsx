@@ -33,18 +33,18 @@ export function IntroProvider({ children }: { children: ReactNode }) {
     if (fromLogin) {
       setDive(true);
       setEntering(true);
-      later(150, () => setPhase("leaving"));
-      later(1100, () => setPhase("done"));
-      later(2200, () => setEntering(false));
+      later(60, () => setPhase("leaving"));
+      later(700, () => setPhase("done"));
+      later(1500, () => setEntering(false));
     } else {
       setPhase("leaving");
-      later(450, () => setPhase("done"));
+      later(350, () => setPhase("done"));
     }
   }, []);
 
   return <IntroContext.Provider value={{ reveal, entering }}>
     {children}
-    {phase !== "done" && <div aria-hidden={phase === "leaving"} className={cn("fixed inset-0 z-[70] overflow-hidden bg-[#09090a] transition-opacity ease-out", phase === "leaving" ? (dive ? "pointer-events-none opacity-0 duration-[900ms]" : "pointer-events-none opacity-0 duration-[400ms]") : "opacity-100")}>
+    {phase !== "done" && <div aria-hidden={phase === "leaving"} className={cn("fixed inset-0 z-[70] overflow-hidden bg-[#09090a] transition-opacity ease-out", phase === "leaving" ? (dive ? "pointer-events-none opacity-0 duration-[600ms]" : "pointer-events-none opacity-0 duration-300") : "opacity-100")}>
       <div className="login-background" />
       <GlobeCanvas layout={dive ? "dive" : "center"} fast />
       <p className={cn("absolute inset-x-0 bottom-10 z-10 text-center text-[11px] font-medium uppercase tracking-[0.2em] text-white/45 transition-opacity duration-300", dive && "opacity-0")}>Opening your workspace</p>

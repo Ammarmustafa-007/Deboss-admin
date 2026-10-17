@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Activity, AlertTriangle, Building2, CheckCircle2, ChevronRight, ClipboardCheck, Send, TrendingUp, Truck, UsersRound, type LucideIcon } from "lucide-react";
-import { errorMessage, responseData, useApi } from "@/lib/api";
+import { errorMessage, useApi } from "@/lib/api";
+import { loadOverview, overviewKey } from "@/lib/loaders";
 import { dateTimeLabel } from "@/lib/format";
 import { useSession } from "@/components/app/session";
 import { Card, CardHeader, EmptyState, IconTile, KpiCard, Skeleton, humanize, type Tone } from "@/components/ui/surface";
@@ -21,8 +22,8 @@ export function AdminDashboard() {
   const api = useApi();
   const { profile } = useSession();
   const overview = useQuery({
-    queryKey: ["brokerage-overview"],
-    queryFn: async () => responseData<Overview>(await api("/api/v1/brokerage/overview")),
+    queryKey: overviewKey,
+    queryFn: () => loadOverview<Overview>(api),
   });
 
   const header = <header>

@@ -4,7 +4,10 @@ import Image from "next/image";
 import { ArrowRight, Check, Eye, EyeOff, KeyRound, LoaderCircle, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { useApi } from "@/lib/api";
+import { warmWorkspace } from "@/lib/loaders";
 import { GlobeCanvas } from "@/components/login/globe-canvas";
 import { introKey } from "@/components/app/intro";
 import { cn } from "@/lib/cn";
@@ -13,6 +16,8 @@ const inputClass = "h-[52px] w-full rounded-control border border-[#DDD6C8] bg-w
 
 export default function SignInPage() {
   const router = useRouter();
+  const queryClient = useQueryClient();
+  const api = useApi();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [visible, setVisible] = useState(false);
@@ -38,12 +43,17 @@ export default function SignInPage() {
     setError("");
     setLoading(true);
     try {
-      const { error: authError } = await createClient().auth.signInWithPassword({ email, password });
+      const supabase = createClient();
+      const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
       if (authError) return setError(authError.message);
       setSuccess(true);
       // The /app frame reads this once to play the globe intro instead of a plain loading fade.
       try { window.sessionStorage.setItem(introKey, "1"); } catch { /* storage unavailable */ }
-      window.setTimeout(() => router.push("/app"), 750);
+      // Load the profile and first screen's data while the globe moves to the center,
+      // so /app opens with everything cached. At least 0.5 s so the move is visible; never more than 2.5 s.
+      const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+      await Promise.all([wait(500), Promise.race([warmWorkspace(queryClient, supabase, api), wait(2500)])]);
+      router.push("/app");
     } catch {
       setError("We could not verify your sign-in. Please try again.");
     } finally {

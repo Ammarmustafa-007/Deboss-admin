@@ -3,7 +3,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { RefreshCw, ShieldAlert } from "lucide-react";
 import { createContext, useCallback, useContext, useMemo, type ReactNode } from "react";
-import { responseData, useApi, type Api } from "@/lib/api";
+import { useApi, type Api } from "@/lib/api";
+import { loadNotifications, loadWorkspace, notificationsKey, workspaceKey } from "@/lib/loaders";
 import { useToast, type ToastTone } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/surface";
@@ -49,14 +50,14 @@ export function BrokerageGate({ children }: { children: ReactNode }) {
   const notify = useToast();
 
   const workspace = useQuery({
-    queryKey: ["brokerage", "workspace"],
-    queryFn: async () => responseData<Workspace>(await api("/api/v1/brokerage/workspace")),
+    queryKey: workspaceKey,
+    queryFn: () => loadWorkspace<Workspace>(api),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
   const notifications = useQuery({
-    queryKey: ["brokerage", "notifications"],
-    queryFn: async () => responseData<{ notifications: Notification[] }>(await api("/api/v1/brokerage/notifications")),
+    queryKey: notificationsKey,
+    queryFn: () => loadNotifications<{ notifications: Notification[] }>(api),
     staleTime: 20_000,
     refetchOnWindowFocus: false,
   });

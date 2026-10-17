@@ -167,7 +167,7 @@ export function GlobeCanvas({ className, layout = "side", fast = false }: { clas
       const dt = Math.min(50, last ? ts - last : 16.67);
       last = ts;
       const goal = target(layoutRef.current);
-      const ease = reduced ? 1 : 1 - Math.exp(-dt / (layoutRef.current === "dive" ? 300 : 240));
+      const ease = reduced ? 1 : 1 - Math.exp(-dt / (layoutRef.current === "dive" ? 170 : 200));
       cx0 += (goal.cx - cx0) * ease; cy += (goal.cy - cy) * ease; R += (goal.R - R) * ease;
       side += ((layoutRef.current === "side" ? 1 : 0) - side) * ease;
       speed += ((fastRef.current ? FAST : SLOW) - speed) * (1 - Math.exp(-dt / 400));
