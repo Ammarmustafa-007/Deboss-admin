@@ -14,11 +14,12 @@ import { controlClass } from "@/components/ui/field";
 
 type Row = Record<string, string | number | null | undefined> & { id: string };
 type Counts = Record<string, number>;
+type RollupRow = { name: string; shipments: number; delivered: number; invoiced: number; collected: number; outstanding: number };
 type OpsAgentRow = { agent_id: string | null; name: string; shipments: number; delivered: number; invoiced: number; collected: number };
 type AgentRow = { agent_id: string; name: string; leads: number; customers: number; shipments: number; gross_generated: number };
 type ReportData = {
   sales: { totals: Record<string, number>; agent_breakdown?: AgentRow[]; agents?: { id: string; full_name: string }[]; shipment_rows: Row[]; lead_stages: Counts; quote_stages: Counts; shipment_statuses: Counts; customer_outcomes: Counts; by_agent: Counts; by_team: Counts };
-  operations: { totals: Record<string, number>; agent_breakdown?: OpsAgentRow[]; rows: Row[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Counts; by_customer: Counts };
+  operations: { totals: Record<string, number>; agent_breakdown?: OpsAgentRow[]; team_breakdown?: RollupRow[]; customer_breakdown?: RollupRow[]; rows: Row[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Counts; by_customer: Counts };
 };
 
 const barTones: Tone[] = ["brand", "aqua", "accent", "info", "success", "danger"];
@@ -86,7 +87,7 @@ export function ReportsScreen() {
         {sales && !canViewTeamPerformance ? <div className="space-y-6">
           <ShipmentTable rows={data.sales.shipment_rows} />
           <Breakdown title="Shipment status" values={data.sales.shipment_statuses} />
-        </div> : <>{!sales && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}<div className="grid gap-6 xl:grid-cols-2">
+        </div> : <>{!sales && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{!sales && (data.operations.team_breakdown?.length ?? 0) > 0 && <RollupTable title="By team" label="Team" rows={data.operations.team_breakdown!} />}{!sales && (data.operations.customer_breakdown?.length ?? 0) > 0 && <RollupTable title="By customer" label="Customer" rows={data.operations.customer_breakdown!} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}<div className="grid gap-6 xl:grid-cols-2">
           {sales ? <>
             <Breakdown title="Pipeline by stage" values={data.sales.lead_stages} />
             <Breakdown title="Quote outcomes" values={data.sales.quote_stages} />
@@ -103,6 +104,22 @@ export function ReportsScreen() {
         </div></>}
       </>}
   </div>;
+}
+
+function RollupTable({ title, label, rows }: { title: string; label: string; rows: RollupRow[] }) {
+  const total = rows.reduce((sum, row) => ({ shipments: sum.shipments + row.shipments, invoiced: sum.invoiced + row.invoiced, collected: sum.collected + row.collected, outstanding: sum.outstanding + row.outstanding }), { shipments: 0, invoiced: 0, collected: 0, outstanding: 0 });
+  return <Card>
+    <CardHeader title={title} subtitle="Invoiced, collected and outstanding" />
+    <div className="max-h-[420px] overflow-auto">
+      <table className="w-full min-w-[620px] text-sm">
+        <thead className="sticky top-0 bg-white"><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">{label}</th><th className="px-3 py-2.5 text-right font-medium">Shipments</th><th className="px-3 py-2.5 text-right font-medium">Invoiced</th><th className="px-3 py-2.5 text-right font-medium">Collected</th><th className="px-5 py-2.5 text-right font-medium">Outstanding</th></tr></thead>
+        <tbody>
+          {rows.map((row) => <tr key={row.name} className="border-t border-line-soft"><td className="px-5 py-3 font-semibold">{row.name}</td><td className="px-3 py-3 text-right tabular-nums">{row.shipments}</td><td className="px-3 py-3 text-right tabular-nums">{money(row.invoiced)}</td><td className="px-3 py-3 text-right tabular-nums">{money(row.collected)}</td><td className={cn("px-5 py-3 text-right font-semibold tabular-nums", row.outstanding > 0 && "text-[#A5183F]")}>{money(row.outstanding)}</td></tr>)}
+          <tr className="border-t-2 border-line bg-[#FBFAF7] font-semibold"><td className="px-5 py-3">Total</td><td className="px-3 py-3 text-right tabular-nums">{total.shipments}</td><td className="px-3 py-3 text-right tabular-nums">{money(total.invoiced)}</td><td className="px-3 py-3 text-right tabular-nums">{money(total.collected)}</td><td className="px-5 py-3 text-right tabular-nums">{money(total.outstanding)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </Card>;
 }
 
 function OpsAgentTable({ rows }: { rows: OpsAgentRow[] }) {

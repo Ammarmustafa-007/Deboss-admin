@@ -27,13 +27,13 @@ const accessPresets: Record<"sales" | "operations", Record<Access, { label: stri
   },
   operations: {
     partial: { label: "Partial access", summary: ["View the team's shipments", "Update the team's shipments", "Team reports"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team"] },
-    full: { label: "Full managerial access", summary: ["Everything in partial access", "Assign shipments to agents", "Verify documents and resolve exceptions", "Mark shipments invoice-ready"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team", "operations.shipments.assign", "operations.documents.review", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready"] },
+    full: { label: "Full managerial access", summary: ["Everything in partial access", "Verify or return documents", "Resolve exceptions and set their owner", "Mark shipments invoice-ready"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team", "operations.documents.review", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready"] },
   },
 };
 
 /** Existing teams may carry any mix of keys; anything with an approval-level key counts as full access. */
 function accessFrom(keys: string[]): Access {
-  return keys.some((key) => ["sales.quotes.review", "sales.quotes.handoff", "operations.shipments.assign", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready", "operations.documents.review"].includes(key)) ? "full" : "partial";
+  return keys.some((key) => ["sales.quotes.review", "sales.quotes.handoff", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready", "operations.documents.review"].includes(key)) ? "full" : "partial";
 }
 
 export function TeamsScreen() {
