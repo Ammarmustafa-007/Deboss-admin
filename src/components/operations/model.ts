@@ -49,7 +49,8 @@ export const nextStatus: Record<string, { status: string; action: string }> = {
   DELIVERED: { status: "COMPLETED", action: "Mark completed" },
 };
 
-export const exceptionOpen = (shipment: Shipment) => Boolean(shipment.exception_note && !shipment.exception_resolution);
+/** Open when the shipment is in Exception status, or has an unresolved exception note. */
+export const exceptionOpen = (shipment: Shipment) => shipment.status === "EXCEPTION" || Boolean(shipment.exception_note && !shipment.exception_resolution);
 
 /** Agents and teams the manager can assign to. Only loaded for department managers, as before. */
 export function useOperationsDirectory(enabled: boolean) {
