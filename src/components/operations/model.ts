@@ -22,12 +22,13 @@ export type Shipment = {
   payment_status?: string | null;
   exception_note?: string | null;
   exception_resolution?: string | null;
+  exception_owner_id?: string | null;
   invoice_ready?: boolean | null;
   updated_at?: string;
 };
 
 export type ShipmentDocument = { id: string; document_type: string; is_verified?: boolean; review_note?: string | null; created_at?: string };
-export type ShipmentEvent = { id: string; event_type: string; body?: string | null; created_at: string };
+export type ShipmentEvent = { id: string; event_type: string; body?: string | null; from_status?: string | null; to_status?: string | null; created_at: string };
 export type ShipmentComment = { id: string; body: string; author_id?: string | null; created_at: string };
 export type ShipmentDetail = { shipment: Shipment; documents: ShipmentDocument[]; events: ShipmentEvent[]; comments: ShipmentComment[]; invoice?: { invoice_number?: string; status?: string } | null };
 export type Directory = { users: { id: string; full_name: string; email?: string; role?: string }[]; teams: { id: string; name: string }[] };
@@ -39,7 +40,17 @@ export const documentTypes = ["BOL", "POD", "RATE_CONFIRMATION", "INVOICE", "OTH
 
 export const statusLabel: Record<string, string> = { BOOKED: "Booked", CARRIER_ASSIGNED: "Carrier assigned", PICKED_UP: "Picked up", IN_TRANSIT: "In transit", DELIVERED: "Delivered", COMPLETED: "Completed", EXCEPTION: "Exception" };
 
-export const exceptionOpen = (shipment: Shipment) => Boolean(shipment.exception_note && !shipment.exception_resolution);
+/** The single forward step an agent takes next, as a clear action. */
+export const nextStatus: Record<string, { status: string; action: string }> = {
+  BOOKED: { status: "CARRIER_ASSIGNED", action: "Mark carrier assigned" },
+  CARRIER_ASSIGNED: { status: "PICKED_UP", action: "Mark picked up" },
+  PICKED_UP: { status: "IN_TRANSIT", action: "Mark in transit" },
+  IN_TRANSIT: { status: "DELIVERED", action: "Mark delivered" },
+  DELIVERED: { status: "COMPLETED", action: "Mark completed" },
+};
+
+/** Open when the shipment is in Exception status, or has an unresolved exception note. */
+export const exceptionOpen = (shipment: Shipment) => shipment.status === "EXCEPTION" || Boolean(shipment.exception_note && !shipment.exception_resolution);
 
 /** Agents and teams the manager can assign to. Only loaded for department managers, as before. */
 export function useOperationsDirectory(enabled: boolean) {

@@ -22,7 +22,8 @@ export function useBrokerageAction() {
     await actions.run(key, async () => {
       try {
         result = await responseData<T>(await api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) }));
-        void refresh();
+        // Keep the action busy until fresh data is on screen, so nothing shows the old value in between.
+        await refresh().catch(() => undefined);
         if (success) report(success);
       } catch (error) {
         report(errorMessage(error), "error");

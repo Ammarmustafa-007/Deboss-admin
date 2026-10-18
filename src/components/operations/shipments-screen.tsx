@@ -22,6 +22,7 @@ export function ShipmentsScreen() {
   const { run, busy } = useBrokerageAction();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
+  const [agent, setAgent] = useState("");
 
   const users = directory.data?.users ?? [];
   const teams = directory.data?.teams ?? [];
@@ -46,6 +47,7 @@ export function ShipmentsScreen() {
 
   const term = search.trim().toLowerCase();
   const visible = shipments.filter((shipment) => {
+    if (agent && shipment.assigned_to !== agent) return false;
     if (filter === "unassigned" && shipment.assigned_to) return false;
     if (filter === "exceptions" && !exceptionOpen(shipment)) return false;
     if (filter === "active" && !active(shipment)) return false;
@@ -69,10 +71,13 @@ export function ShipmentsScreen() {
     <Card>
       <div className="flex flex-col gap-3 px-5 pt-4 lg:flex-row lg:items-end lg:justify-between">
         <Tabs items={tabs} value={filter} onChange={setFilter} className="-mb-px border-b-0 lg:flex-1" />
-        <label className="relative mb-3 block lg:w-72">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row">
+        {manager && <select value={agent} onChange={(event) => setAgent(event.target.value)} aria-label="Filter by agent" className={cn(controlClass, "h-10 sm:w-48")}><option value="">All agents</option>{users.map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}</select>}
+        <label className="relative block lg:w-72">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search shipments" aria-label="Search shipments" className={cn(controlClass, "h-10 pl-9")} />
         </label>
+        </div>
       </div>
       <div className="border-t border-line">
         {visible.length ? <>
