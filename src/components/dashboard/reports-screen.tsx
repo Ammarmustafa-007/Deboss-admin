@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Download } from "lucide-react";
+import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
@@ -16,11 +17,12 @@ type Row = Record<string, string | number | null | undefined> & { id: string };
 type Counts = Record<string, number>;
 type RollupRow = { name: string; shipments: number; delivered: number; invoiced: number; collected: number; outstanding: number };
 type OpsAgentRow = { agent_id: string | null; name: string; shipments: number; in_progress: number; delivered: number; exceptions: number; invoiced: number; collected: number; outstanding: number };
+type Workload = { agents: { agent_id: string; name: string; active: number; exceptions: number }[]; unassigned: number };
 type OutcomeRow = { agent_id: string | null; agent: string; customer: string; opportunities: number; statuses: Record<string, number>; gross_generated: number };
 type AgentRow = { agent_id: string; name: string; leads: number; customers: number; shipments: number; gross_generated: number };
 type ReportData = {
   sales: { totals: Record<string, number>; agent_breakdown?: AgentRow[]; agents?: { id: string; full_name: string }[]; shipment_rows: Row[]; lead_stages: Counts; quote_stages: Counts; shipment_statuses: Counts; customer_outcomes: Counts; agent_outcomes?: OutcomeRow[]; by_agent: Counts; by_team: Counts };
-  operations: { totals: Record<string, number>; agent_breakdown?: OpsAgentRow[]; team_breakdown?: RollupRow[]; customer_breakdown?: RollupRow[]; rows: OpsRow[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Counts; by_customer: Counts };
+  operations: { totals: Record<string, number>; agent_breakdown?: OpsAgentRow[]; team_breakdown?: RollupRow[]; customer_breakdown?: RollupRow[]; rows: OpsRow[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Workload | null; by_customer: Counts };
 };
 
 const barTones: Tone[] = ["brand", "aqua", "accent", "info", "success", "danger"];
@@ -105,7 +107,7 @@ export function ReportsScreen() {
           </> : <>
             <Breakdown title="Shipment status" values={data.operations.shipment_statuses} />
             <Breakdown title="Invoice status" values={data.operations.invoice_statuses} />
-            {canViewTeamPerformance && <Breakdown title="Workload by agent" values={data.operations.workload} />}
+            {canViewTeamPerformance && data.operations.workload && <WorkloadCard workload={data.operations.workload} />}
           </>}
         </div></>}
       </>}
@@ -272,6 +274,26 @@ function OutcomeTable({ rows }: { rows: OutcomeRow[] }) {
         <tbody className="border-t-2 border-line"><tr className="bg-[#FBFAF7] font-semibold"><td className="px-5 py-3">Total</td><td />{cells(grand.opportunities, grand.status, grand.gross)}</tr></tbody>
       </table>
     </div>
+  </Card>;
+}
+
+/** Open shipments each agent is handling right now (BO-5). Unassigned work is a call to action, not an agent. */
+function WorkloadCard({ workload }: { workload: Workload }) {
+  const max = Math.max(1, ...workload.agents.map((agent) => agent.active));
+  const total = workload.agents.reduce((sum, agent) => sum + agent.active, 0);
+  return <Card>
+    <CardHeader title="Workload by agent" subtitle={`Open shipments right now · ${total} assigned across ${workload.agents.length} agent${workload.agents.length === 1 ? "" : "s"}`} />
+    {workload.agents.length ? <ul className="space-y-3.5 p-5">{workload.agents.map((agent) => <li key={agent.agent_id}>
+      <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
+        <span className="truncate text-ink/75">{agent.name}{agent.exceptions > 0 && <span className="ml-2 text-xs font-semibold text-[#A5183F]">{agent.exceptions} exception{agent.exceptions === 1 ? "" : "s"}</span>}</span>
+        <b className="tabular-nums">{agent.active}<span className="ml-1 text-xs font-normal text-muted">open</span></b>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-line-soft"><div className="h-full rounded-full bg-brand" style={{ width: `${(agent.active / max) * 100}%` }} /></div>
+    </li>)}</ul> : <p className="p-6 text-center text-sm text-muted">No active agents in this department.</p>}
+    {workload.unassigned > 0 && <Link href="/app/operations" className="flex items-center justify-between gap-3 border-t border-line-soft px-5 py-3.5 text-sm hover:bg-[#FAF8F4]">
+      <span className="font-medium text-accent">{workload.unassigned} open shipment{workload.unassigned === 1 ? "" : "s"} waiting for an agent</span>
+      <span className="text-xs font-semibold text-brand-deep">Assign →</span>
+    </Link>}
   </Card>;
 }
 
