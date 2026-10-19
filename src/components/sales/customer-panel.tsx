@@ -11,6 +11,7 @@ import { Card, CardHeader, Chip, EmptyState, Skeleton, StatusChip, toneFor } fro
 import { Stepper } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/overlay";
+import { documentAccept, documentProblem } from "@/lib/documents";
 import { FilePicker, SelectField, TextField } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { QuoteFile } from "@/components/sales/quote-panel";
@@ -122,6 +123,8 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
   const initial = shipmentForm(shipment);
   const [form, setForm] = useState(initial);
   const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string>();
+  const pick = (picked: File | null) => { const problem = documentProblem(picked); setFileError(problem); setFile(problem ? null : picked); };
   const [step, setStep] = useState(0);
   const isNew = !shipment;
   const dirty = Boolean(file) || (Object.keys(initial) as (keyof typeof initial)[]).some((key) => form[key] !== initial[key]);
@@ -140,7 +143,7 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
         const quoteId = shipment?.quote_id ?? result?.shipment?.quote_id;
         if (file) {
           if (!quoteId) throw new Error("The linked quote was not available for this shipment.");
-          const signed = await responseData<{ signed_url: string; path: string }>(await api(`/api/v1/brokerage/quotes/${quoteId}/upload-url`, { method: "POST", body: JSON.stringify({ file_name: file.name, content_type: file.type }) }));
+          const signed = await responseData<{ signed_url: string; path: string }>(await api(`/api/v1/brokerage/quotes/${quoteId}/upload-url`, { method: "POST", body: JSON.stringify({ file_name: file.name, content_type: file.type, file_size: file.size }) }));
           const uploaded = await fetch(signed.signed_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
           if (!uploaded.ok) throw new Error("Supporting document upload failed.");
           await responseData(await api(`/api/v1/brokerage/quotes/${quoteId}/attachments`, { method: "POST", body: JSON.stringify({ file_name: file.name, storage_path: signed.path }) }));
@@ -170,7 +173,7 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
     <TextField label="Pickup date" type="date" value={form.pickup_date} onChange={(event) => set("pickup_date")(event.target.value)} />
     <TextField label="Delivery date" type="date" value={form.delivery_date} onChange={(event) => set("delivery_date")(event.target.value)} />
     <SelectField label="Commercial status" required value={form.status} onChange={(event) => set("status")(event.target.value)} options={commercialStatuses.map((status) => ({ value: status, label: status.charAt(0) + status.slice(1).toLowerCase() }))} wrapperClassName="sm:col-span-2" />
-    <div className="sm:col-span-2"><FilePicker label="Supporting document" file={file} onFile={setFile} accept="application/pdf,image/jpeg,image/png" hint={file ? "Uploads when you save." : "Optional · PDF or image"} /></div>
+    <div className="sm:col-span-2"><FilePicker label="Supporting document" file={file} onFile={pick} accept={documentAccept} error={fileError} placeholder="Choose a PDF, JPG or PNG" hint={file ? "Uploads when you save." : "Optional · PDF, JPG or PNG · up to 10 MB"} /></div>
   </div>;
 
   if (isNew) return <Drawer open onClose={onClose} dismissible={!saving} title="New shipment" subtitle={step === 0 ? "Step 1 of 2 · Lane" : "Step 2 of 2 · Rates & dates"}

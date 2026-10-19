@@ -60,15 +60,15 @@ export function TextAreaField({ label, hint, error, wrapperClassName, className,
 }
 
 /** Keyboard-accessible file picker: the native input stays focusable, styled as a drop zone. */
-export function FilePicker({ label, file, onFile, accept, disabled, hint }: { label: ReactNode; file: File | null; onFile: (file: File | null) => void; accept?: string; disabled?: boolean; hint?: ReactNode }) {
+export function FilePicker({ label, file, onFile, accept, disabled, hint, error, placeholder = "Choose a file" }: { label: ReactNode; file: File | null; onFile: (file: File | null) => void; accept?: string; disabled?: boolean; hint?: ReactNode; error?: ReactNode; placeholder?: string }) {
   const id = useId();
   return <div className="flex flex-col gap-1.5">
     <span className="text-[13px] font-medium text-ink/80">{label}</span>
-    <label htmlFor={id} className={cn("flex min-h-11 items-center gap-3 rounded-control border border-dashed border-[#CFC8BA] bg-white px-3 py-2 text-sm transition focus-within:border-brand focus-within:shadow-[0_0_0_4px_rgba(247,148,29,.18)] hover:border-brand", disabled && "opacity-50")}>
+    <label htmlFor={id} className={cn("flex min-h-11 items-center gap-3 rounded-control border border-dashed bg-white px-3 py-2 text-sm transition focus-within:border-brand focus-within:shadow-[0_0_0_4px_rgba(247,148,29,.18)] hover:border-brand", error ? "border-[#C4254B]" : "border-[#CFC8BA]", disabled && "opacity-50")}>
       <Upload size={16} className="shrink-0 text-brand" />
-      <span className="min-w-0 flex-1 truncate">{file ? file.name : "Choose a PDF or image"}</span>
-      <input id={id} type="file" accept={accept} disabled={disabled} onChange={(event) => onFile(event.target.files?.[0] ?? null)} className="sr-only" />
+      <span className="min-w-0 flex-1 truncate">{file ? file.name : placeholder}</span>
+      <input id={id} type="file" accept={accept} disabled={disabled} onChange={(event) => { onFile(event.target.files?.[0] ?? null); event.target.value = ""; }} className="sr-only" />
     </label>
-    {hint && <p className="text-xs text-muted">{hint}</p>}
+    {error ? <p className="text-xs text-[#C4254B]">{error}</p> : hint && <p className="text-xs text-muted">{hint}</p>}
   </div>;
 }

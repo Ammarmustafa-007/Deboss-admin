@@ -15,7 +15,8 @@ import { Stepper, Tabs } from "@/components/ui/navigation";
 import { Button, LinkButton } from "@/components/ui/button";
 import { FilePicker, SelectField, TextAreaField, TextField, controlClass } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
-import { documentTypes, exceptionOpen, nextStatus, paymentStatuses, progressStatuses, shipmentStatuses, statusLabel, useOperationsDirectory, type Directory, type Shipment, type ShipmentDetail } from "@/components/operations/model";
+import { documentAccept, documentProblem } from "@/lib/documents";
+import { allowedStatuses, documentTypes, exceptionOpen, nextStatus, paymentStatuses, progressStatuses, statusLabel, useOperationsDirectory, type Directory, type Shipment, type ShipmentDetail } from "@/components/operations/model";
 
 type TabKey = "details" | "documents" | "exception" | "activity";
 
@@ -96,8 +97,8 @@ function StatusControl({ shipment }: { shipment: Shipment }) {
   return <div className="flex flex-wrap items-center gap-2">
     {step && <Button variant="primary" icon={<ArrowRight size={15} />} pending={pending} pendingLabel="Updating…" onClick={() => move(step.status)}>{step.action}</Button>}
     <label className="sr-only" htmlFor={`status-${shipment.id}`}>Change status</label>
-    <select id={`status-${shipment.id}`} value={shipment.status} disabled={pending} onChange={(event) => move(event.target.value)} title="Change status" className={cn(controlClass, "h-10 w-auto min-w-40 text-[13px] font-medium text-ink", pending && "opacity-60")}>
-      {shipmentStatuses.map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}
+    <select id={`status-${shipment.id}`} value={shipment.status} disabled={pending || shipment.status === "EXCEPTION" || shipment.status === "COMPLETED"} onChange={(event) => move(event.target.value)} title={shipment.status === "EXCEPTION" ? "Resolve the exception to continue" : "Change status"} className={cn(controlClass, "h-10 w-auto min-w-40 text-[13px] font-medium text-ink", pending && "opacity-60")}>
+      {allowedStatuses(shipment.status).map((status) => <option key={status} value={status}>{statusLabel[status]}</option>)}
     </select>
   </div>;
 }
@@ -136,8 +137,14 @@ function FinanceForm({ shipment, canMarkInvoiceReady }: { shipment: Shipment; ca
   const number = (value: string) => value === "" ? null : Number(value);
   const set = (field: keyof typeof initial) => (value: string) => setForm((current) => ({ ...current, [field]: value }));
 
+  // Amounts must be numbers of 0 or more (BO-3); shown under each field before anything is sent.
+  const amountError = (value: string) => value === "" ? undefined : !Number.isFinite(Number(value)) ? "Enter a number." : Number(value) < 0 ? "Cannot be negative." : undefined;
+  const errors = { amount_quoted: amountError(form.amount_quoted), amount_invoiced: amountError(form.amount_invoiced), amount_paid: amountError(form.amount_paid) };
+  const invalid = Object.values(errors).some(Boolean);
+
   const save = (event: FormEvent) => {
     event.preventDefault();
+    if (invalid) return;
     void run(`finance:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}`, "PATCH", {
       carrier_name: form.carrier_name || null,
       pickup_date: form.pickup_date || null,
@@ -159,9 +166,9 @@ function FinanceForm({ shipment, canMarkInvoiceReady }: { shipment: Shipment; ca
           <TextField label="Delivery date" type="date" value={form.delivery_date} onChange={(event) => set("delivery_date")(event.target.value)} />
         </div></section>
         <section className="p-5"><h3 className="mb-4 text-sm font-semibold">Finance</h3><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <TextField label="Quoted amount" type="number" min="0" value={form.amount_quoted} onChange={(event) => set("amount_quoted")(event.target.value)} />
-          <TextField label="Invoiced amount" type="number" min="0" value={form.amount_invoiced} onChange={(event) => set("amount_invoiced")(event.target.value)} />
-          <TextField label="Paid amount" type="number" min="0" value={form.amount_paid} onChange={(event) => set("amount_paid")(event.target.value)} />
+          <TextField label="Quoted amount" type="number" min="0" step="0.01" inputMode="decimal" error={errors.amount_quoted} value={form.amount_quoted} onChange={(event) => set("amount_quoted")(event.target.value)} />
+          <TextField label="Invoiced amount" type="number" min="0" step="0.01" inputMode="decimal" error={errors.amount_invoiced} value={form.amount_invoiced} onChange={(event) => set("amount_invoiced")(event.target.value)} />
+          <TextField label="Paid amount" type="number" min="0" step="0.01" inputMode="decimal" error={errors.amount_paid} value={form.amount_paid} onChange={(event) => set("amount_paid")(event.target.value)} />
           <SelectField label="Payment status" required value={form.payment_status} onChange={(event) => set("payment_status")(event.target.value)} options={paymentStatuses.map((status) => ({ value: status, label: humanize(status) }))} />
         </div>
         {canMarkInvoiceReady && <label className="mt-5 flex w-fit cursor-pointer items-center gap-3 rounded-control border border-line px-4 py-3 text-sm font-medium hover:border-brand">
@@ -170,7 +177,7 @@ function FinanceForm({ shipment, canMarkInvoiceReady }: { shipment: Shipment; ca
       </fieldset>
       <div className="flex justify-end gap-2 border-t border-line-soft px-5 py-4">
         {dirty && <Button variant="ghost" onClick={() => setForm(initial)} disabled={pending}>Discard</Button>}
-        <Button type="submit" variant="ink" pending={pending} pendingLabel="Saving…" disabled={!dirty}>Save changes</Button>
+        <Button type="submit" variant="ink" pending={pending} pendingLabel="Saving…" disabled={!dirty || invalid}>Save changes</Button>
       </div>
     </form>
   </Card>;
@@ -185,10 +192,18 @@ function Documents({ data, canReview }: { data: ShipmentDetail; canReview: boole
   const [reviewNote, setReviewNote] = useState("");
   const uploading = busy("document");
 
+  // Same rules the API and storage enforce (BO-4), checked as soon as a file is picked.
+  const [fileError, setFileError] = useState<string>();
+  const pick = (picked: File | null) => {
+    const problem = documentProblem(picked);
+    setFileError(problem);
+    setFile(problem ? null : picked);
+  };
+
   const upload = () => void wrap("document", async () => {
     if (!file) return;
     try {
-      const signed = await responseData<{ signed_url: string; path: string }>(await api(`/api/v1/brokerage/shipments/${shipment.id}/upload-url`, { method: "POST", body: JSON.stringify({ file_name: file.name, content_type: file.type }) }));
+      const signed = await responseData<{ signed_url: string; path: string }>(await api(`/api/v1/brokerage/shipments/${shipment.id}/upload-url`, { method: "POST", body: JSON.stringify({ file_name: file.name, content_type: file.type, file_size: file.size }) }));
       const put = await fetch(signed.signed_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
       if (!put.ok) throw new Error("Document upload failed.");
       await responseData(await api(`/api/v1/brokerage/shipments/${shipment.id}/documents`, { method: "POST", body: JSON.stringify({ document_type: documentType, storage_path: signed.path }) }));
@@ -214,7 +229,7 @@ function Documents({ data, canReview }: { data: ShipmentDetail; canReview: boole
       <CardHeader title="Upload paperwork" />
       <div className="space-y-4 p-5">
         <SelectField label="Document type" required value={documentType} disabled={uploading} onChange={(event) => setDocumentType(event.target.value)} options={documentTypes.map((type) => ({ value: type, label: type.replaceAll("_", " ") }))} />
-        <FilePicker label="File" file={file} onFile={setFile} disabled={uploading} accept="application/pdf,image/jpeg,image/png" hint="PDF or image" />
+        <FilePicker label="File" file={file} onFile={pick} disabled={uploading} accept={documentAccept} hint="PDF, JPG or PNG · up to 10 MB" error={fileError} placeholder="Choose a PDF, JPG or PNG" />
         <div className="flex gap-2">
           {file && <Button variant="ghost" onClick={() => setFile(null)} disabled={uploading}>Discard</Button>}
           <Button variant="ink" icon={<Upload size={15} />} pending={uploading} pendingLabel="Saving…" disabled={!file} onClick={upload} className="flex-1">Save document</Button>
@@ -262,7 +277,7 @@ function ExceptionPanel({ data, canResolve, directory }: { data: ShipmentDetail;
       <CardHeader title={exceptionOpen(shipment) ? "Open exception" : shipment.exception_resolution ? "Resolved exception" : "Report an exception"} actions={exceptionOpen(shipment) ? <Chip tone="danger">Needs resolution</Chip> : shipment.exception_resolution ? <Chip tone="success">Resolved</Chip> : undefined} />
       <form onSubmit={save} className="space-y-4 p-5">
         <fieldset disabled={pending} className="space-y-4">
-          <TextAreaField label="What went wrong" value={form.exception_note} onChange={(event) => setForm({ ...form, exception_note: event.target.value })} />
+          <TextAreaField label="What went wrong" required maxLength={3000} value={form.exception_note} onChange={(event) => setForm({ ...form, exception_note: event.target.value })} />
           {canResolve && <TextAreaField label="Resolution" hint={exceptionOpen(shipment) ? `Saving a resolution moves the shipment back to ${statusLabel[previous] ?? previous}.` : undefined} value={form.exception_resolution} onChange={(event) => setForm({ ...form, exception_resolution: event.target.value })} />}
         </fieldset>
         <div className="flex justify-end gap-2">

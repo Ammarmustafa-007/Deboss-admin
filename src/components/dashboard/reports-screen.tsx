@@ -26,11 +26,18 @@ type ReportData = {
 const barTones: Tone[] = ["brand", "aqua", "accent", "info", "success", "danger"];
 const barColor: Record<Tone, string> = { brand: "bg-brand", aqua: "bg-aqua", accent: "bg-accent", info: "bg-info", success: "bg-success", danger: "bg-danger", neutral: "bg-ink/30" };
 
+/** Reports open on the current month (local dates), matching the monthly reporting cycle. */
+function thisMonth() {
+  const now = new Date();
+  const day = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return { from: day(new Date(now.getFullYear(), now.getMonth(), 1)), to: day(now), agent_id: "" };
+}
+
 export function ReportsScreen() {
   const { profile } = useSession();
   const { api, report, sales, manager } = useBrokerage();
   const canViewTeamPerformance = manager || profile.role === "SUPER_ADMIN";
-  const [range, setRange] = useState({ from: "", to: "", agent_id: "" });
+  const [range, setRange] = useState(thisMonth);
   const reports = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(range).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
 
   const exportCsv = (title: string, rows: Row[]) => {
@@ -58,7 +65,8 @@ export function ReportsScreen() {
       <label className="flex flex-col text-xs font-medium text-muted">From<input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
       <label className="flex flex-col text-xs font-medium text-muted">To<input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
       {sales && canViewTeamPerformance && (data?.sales.agents ?? []).length > 1 && <label className="flex flex-col text-xs font-medium text-muted">Agent<select value={range.agent_id} onChange={(event) => setRange({ ...range, agent_id: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-52")}><option value="">All permitted agents</option>{data!.sales.agents!.map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select></label>}
-      {(range.from || range.to || range.agent_id) && <Button variant="ghost" onClick={() => setRange({ from: "", to: "", agent_id: "" })}>Clear filters</Button>}
+      {(range.from !== thisMonth().from || range.to !== thisMonth().to || range.agent_id) && <Button variant="ghost" onClick={() => setRange(thisMonth())}>This month</Button>}
+      {(range.from || range.to) && <Button variant="ghost" onClick={() => setRange({ ...range, from: "", to: "" })}>All time</Button>}
     </Card>
 
     {reports.isLoading ? <><div className="grid grid-cols-2 gap-4 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-card" />)}</div><Skeleton className="h-80 rounded-card" /></>

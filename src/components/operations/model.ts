@@ -49,6 +49,18 @@ export const nextStatus: Record<string, { status: string; action: string }> = {
   DELIVERED: { status: "COMPLETED", action: "Mark completed" },
 };
 
+/**
+ * Statuses the menu offers (BO-2): the current one, one step forward or back, and never backwards once delivered.
+ * Exception is reported and resolved from the Exception tab, never picked here.
+ */
+export function allowedStatuses(status: string) {
+  const index = progressStatuses.indexOf(status);
+  if (index < 0) return [status];
+  const back = index > 0 && index < progressStatuses.indexOf("DELIVERED") ? [progressStatuses[index - 1]] : [];
+  const forward = index < progressStatuses.length - 1 ? [progressStatuses[index + 1]] : [];
+  return [...back, status, ...forward];
+}
+
 /** Open when the shipment is in Exception status, or has an unresolved exception note. */
 export const exceptionOpen = (shipment: Shipment) => shipment.status === "EXCEPTION" || Boolean(shipment.exception_note && !shipment.exception_resolution);
 
