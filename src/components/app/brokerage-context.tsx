@@ -53,13 +53,16 @@ export function BrokerageGate({ children }: { children: ReactNode }) {
     queryKey: workspaceKey,
     queryFn: () => loadWorkspace<Workspace>(api),
     staleTime: 30_000,
-    refetchOnWindowFocus: false,
+    // Work assigned by someone else must appear without a manual reload.
+    refetchOnWindowFocus: true,
+    refetchInterval: 60_000,
   });
   const notifications = useQuery({
     queryKey: notificationsKey,
     queryFn: () => loadNotifications<{ notifications: Notification[] }>(api),
     staleTime: 20_000,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
   });
 
   const refresh = useCallback(async () => {
