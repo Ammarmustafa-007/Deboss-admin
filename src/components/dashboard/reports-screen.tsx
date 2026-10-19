@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Download } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
 import { dateLabel, money } from "@/lib/format";
@@ -15,12 +15,12 @@ import { controlClass } from "@/components/ui/field";
 type Row = Record<string, string | number | null | undefined> & { id: string };
 type Counts = Record<string, number>;
 type RollupRow = { name: string; shipments: number; delivered: number; invoiced: number; collected: number; outstanding: number };
-type OpsAgentRow = { agent_id: string | null; name: string; shipments: number; delivered: number; invoiced: number; collected: number };
+type OpsAgentRow = { agent_id: string | null; name: string; shipments: number; in_progress: number; delivered: number; exceptions: number; invoiced: number; collected: number; outstanding: number };
 type OutcomeRow = { agent_id: string | null; agent: string; customer: string; opportunities: number; statuses: Record<string, number>; gross_generated: number };
 type AgentRow = { agent_id: string; name: string; leads: number; customers: number; shipments: number; gross_generated: number };
 type ReportData = {
   sales: { totals: Record<string, number>; agent_breakdown?: AgentRow[]; agents?: { id: string; full_name: string }[]; shipment_rows: Row[]; lead_stages: Counts; quote_stages: Counts; shipment_statuses: Counts; customer_outcomes: Counts; agent_outcomes?: OutcomeRow[]; by_agent: Counts; by_team: Counts };
-  operations: { totals: Record<string, number>; agent_breakdown?: OpsAgentRow[]; team_breakdown?: RollupRow[]; customer_breakdown?: RollupRow[]; rows: Row[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Counts; by_customer: Counts };
+  operations: { totals: Record<string, number>; agent_breakdown?: OpsAgentRow[]; team_breakdown?: RollupRow[]; customer_breakdown?: RollupRow[]; rows: OpsRow[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Counts; by_customer: Counts };
 };
 
 const barTones: Tone[] = ["brand", "aqua", "accent", "info", "success", "danger"];
@@ -40,19 +40,14 @@ export function ReportsScreen() {
   const [range, setRange] = useState(thisMonth);
   const reports = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(range).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
 
-  const exportCsv = (title: string, rows: Row[]) => {
+  const exportCsv = (title: string, rows: Row[] | OpsRow[]) => {
     if (!rows.length) return report("There is no data in this report to export.", "error");
-    const readable = rows.map((row) => ({ "Shipment reference": row.reference_number ?? "", Customer: row.customer_name ?? row.company_name ?? "", Pickup: row.pickup_location ?? "", Delivery: row.delivery_location ?? "", Equipment: row.equipment_type ?? "", "Quoted rate": row.amount_quoted ?? row.quoted_rate ?? "", "Agreed rate": row.amount_agreed ?? "", "Commercial status": row.sales_status ?? row.status ?? "", "Pickup date": row.pickup_date ?? "", "Delivery date": row.delivery_date ?? "", "Created date": row.created_at ? new Date(String(row.created_at)).toLocaleString() : "", "Last updated": row.updated_at ? new Date(String(row.updated_at)).toLocaleString() : row.created_at ? new Date(String(row.created_at)).toLocaleString() : "" }));
-    const columns = Object.keys(readable[0]);
-    const csv = [columns.join(","), ...readable.map((row) => columns.map((column) => JSON.stringify(row[column as keyof typeof row] ?? "")).join(","))].join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${title.toLowerCase().replaceAll(" ", "-")}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    const readable = sales ? salesCsv(rows as Row[]) : opsCsv(rows as OpsRow[], canViewTeamPerformance);
+    download(title, readable);
     report(`${title} exported as CSV without internal IDs.`);
   };
+  const salesCsv = (rows: Row[]) => rows.map((row) => ({ "Shipment reference": row.reference_number ?? "", Customer: row.customer_name ?? row.company_name ?? "", Pickup: row.pickup_location ?? "", Delivery: row.delivery_location ?? "", Equipment: row.equipment_type ?? "", "Quoted rate": row.amount_quoted ?? row.quoted_rate ?? "", "Agreed rate": row.amount_agreed ?? "", "Commercial status": row.sales_status ?? row.status ?? "", "Pickup date": row.pickup_date ?? "", "Delivery date": row.delivery_date ?? "", "Created date": row.created_at ? new Date(String(row.created_at)).toLocaleString() : "", "Last updated": row.updated_at ? new Date(String(row.updated_at)).toLocaleString() : row.created_at ? new Date(String(row.created_at)).toLocaleString() : "" }));
+
 
   const data = reports.data;
   const title = sales ? canViewTeamPerformance ? "Sales performance" : "My sales results" : "Operations & revenue";
@@ -87,16 +82,20 @@ export function ReportsScreen() {
             <KpiCard label="Agreed value" value={money(data.sales.totals.agreed_value)} tone="brand" />
           </> : <>
             <KpiCard label="Shipments" value={data.operations.totals.shipments} tone="brand" />
+            <KpiCard label="In progress" value={data.operations.totals.in_progress ?? 0} tone="aqua" />
+            <KpiCard label="Delivered" value={data.operations.totals.delivered ?? 0} tone="success" />
+            <KpiCard label="Open exceptions" value={data.operations.totals.exceptions ?? 0} tone={data.operations.totals.exceptions ? "danger" : "info"} />
             <KpiCard label="Invoiced" value={money(data.operations.totals.invoiced)} tone="accent" />
-            <KpiCard label="Paid" value={money(data.operations.totals.paid)} tone="success" />
+            <KpiCard label="Collected" value={money(data.operations.totals.paid)} tone="success" />
             <KpiCard label="Outstanding" value={money(data.operations.totals.outstanding)} tone="danger" />
+            <KpiCard label="Overdue invoices" value={data.operations.totals.overdue ?? 0} tone={data.operations.totals.overdue ? "danger" : "info"} />
           </>}
         </div>
 
         {sales && !canViewTeamPerformance ? <div className="space-y-6">
           <ShipmentTable rows={data.sales.shipment_rows} />
           <Breakdown title="Shipment status" values={data.sales.shipment_statuses} />
-        </div> : <>{!sales && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{!sales && (data.operations.team_breakdown?.length ?? 0) > 0 && <RollupTable title="By team" label="Team" rows={data.operations.team_breakdown!} />}{!sales && (data.operations.customer_breakdown?.length ?? 0) > 0 && <RollupTable title="By customer" label="Customer" rows={data.operations.customer_breakdown!} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}{sales && (data.sales.agent_outcomes?.length ?? 0) > 0 && <OutcomeTable rows={data.sales.agent_outcomes!} />}<div className="grid gap-6 xl:grid-cols-2">
+        </div> : <>{!sales && canViewTeamPerformance && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{!sales && canViewTeamPerformance && (data.operations.team_breakdown?.length ?? 0) > 0 && <RollupTable title="By team" label="Team" rows={data.operations.team_breakdown!} />}{!sales && (data.operations.customer_breakdown?.length ?? 0) > 0 && <RollupTable title="By customer" label="Customer" rows={data.operations.customer_breakdown!} />}{!sales && <OpsShipmentTable rows={data.operations.rows} manager={canViewTeamPerformance} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}{sales && (data.sales.agent_outcomes?.length ?? 0) > 0 && <OutcomeTable rows={data.sales.agent_outcomes!} />}<div className="grid gap-6 xl:grid-cols-2">
           {sales ? <>
             <Breakdown title="Pipeline by stage" values={data.sales.lead_stages} />
             <Breakdown title="Quote outcomes" values={data.sales.quote_stages} />
@@ -106,44 +105,110 @@ export function ReportsScreen() {
           </> : <>
             <Breakdown title="Shipment status" values={data.operations.shipment_statuses} />
             <Breakdown title="Invoice status" values={data.operations.invoice_statuses} />
-            <Breakdown title="Workload by agent" values={data.operations.workload} />
-            <Breakdown title="Customer volume" values={data.operations.by_customer} />
+            {canViewTeamPerformance && <Breakdown title="Workload by agent" values={data.operations.workload} />}
           </>}
         </div></>}
       </>}
   </div>;
 }
 
-function RollupTable({ title, label, rows }: { title: string; label: string; rows: RollupRow[] }) {
-  const total = rows.reduce((sum, row) => ({ shipments: sum.shipments + row.shipments, invoiced: sum.invoiced + row.invoiced, collected: sum.collected + row.collected, outstanding: sum.outstanding + row.outstanding }), { shipments: 0, invoiced: 0, collected: 0, outstanding: 0 });
+/** Readable CSV columns for Operations, matching the on-screen table. */
+function opsCsv(rows: OpsRow[], manager: boolean) {
+  const day = (value: string | null) => value ? new Date(value).toLocaleDateString() : "";
+  return rows.map((row) => ({
+    "Shipment reference": row.reference_number, Customer: row.customer_name ?? "", Pickup: row.pickup_location ?? "", Delivery: row.delivery_location ?? "",
+    ...(manager ? { Agent: row.agent, Team: row.team ?? "" } : {}),
+    Status: humanize(row.status), Exception: row.exception ?? "", Carrier: row.carrier_name ?? "", Equipment: row.equipment_type ?? "",
+    "Pickup date": row.pickup_date ?? "", "Delivery date": row.delivery_date ?? "", "Quoted amount": row.amount_quoted ?? "", "Agreed amount": row.amount_agreed ?? "",
+    "Invoice number": row.invoice_number ?? "", "Invoice status": row.overdue ? "Overdue" : row.invoice_status ? humanize(row.invoice_status) : "Not invoiced", "Due date": row.invoice_due ?? "",
+    Invoiced: row.invoiced ?? "", Collected: row.collected ?? "", Outstanding: row.outstanding ?? "", Created: day(row.created_at), "Last updated": day(row.updated_at),
+  }));
+}
+
+function download(title: string, readable: Record<string, unknown>[]) {
+  const columns = Object.keys(readable[0]);
+  const csv = [columns.join(","), ...readable.map((row) => columns.map((column) => JSON.stringify(row[column] ?? "")).join(","))].join("\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${title.toLowerCase().replaceAll(" ", "-")}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+type Column<T> = { label: string; value: (row: T) => ReactNode; total?: (rows: T[]) => ReactNode; align?: "right"; wide?: boolean };
+
+/** A report table with an optional totals row; every column comes from the same row data as the CSV. */
+function ReportTable<T>({ title, subtitle, rows, columns, keyOf, empty = "No records match this reporting period.", actions }: { title: string; subtitle?: string; rows: T[]; columns: Column<T>[]; keyOf: (row: T, index: number) => string; empty?: string; actions?: ReactNode }) {
+  const totals = columns.some((column) => column.total);
   return <Card>
-    <CardHeader title={title} subtitle="Invoiced, collected and outstanding" />
-    <div className="max-h-[420px] overflow-auto">
-      <table className="w-full min-w-[620px] text-sm">
-        <thead className="sticky top-0 bg-white"><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">{label}</th><th className="px-3 py-2.5 text-right font-medium">Shipments</th><th className="px-3 py-2.5 text-right font-medium">Invoiced</th><th className="px-3 py-2.5 text-right font-medium">Collected</th><th className="px-5 py-2.5 text-right font-medium">Outstanding</th></tr></thead>
+    <CardHeader title={title} subtitle={subtitle} actions={actions} />
+    <div className="max-h-[520px] overflow-auto">
+      <table className="w-full text-sm" style={{ minWidth: Math.max(620, columns.length * 120) }}>
+        <thead className="sticky top-0 z-[1] bg-white"><tr className="text-left text-xs text-muted">{columns.map((column, index) => <th key={column.label} className={cn("whitespace-nowrap py-2.5 font-medium", index === 0 ? "px-5" : "px-3", column.align === "right" && "text-right")}>{column.label}</th>)}</tr></thead>
         <tbody>
-          {rows.map((row) => <tr key={row.name} className="border-t border-line-soft"><td className="px-5 py-3 font-semibold">{row.name}</td><td className="px-3 py-3 text-right tabular-nums">{row.shipments}</td><td className="px-3 py-3 text-right tabular-nums">{money(row.invoiced)}</td><td className="px-3 py-3 text-right tabular-nums">{money(row.collected)}</td><td className={cn("px-5 py-3 text-right font-semibold tabular-nums", row.outstanding > 0 && "text-[#A5183F]")}>{money(row.outstanding)}</td></tr>)}
-          <tr className="border-t-2 border-line bg-[#FBFAF7] font-semibold"><td className="px-5 py-3">Total</td><td className="px-3 py-3 text-right tabular-nums">{total.shipments}</td><td className="px-3 py-3 text-right tabular-nums">{money(total.invoiced)}</td><td className="px-3 py-3 text-right tabular-nums">{money(total.collected)}</td><td className="px-5 py-3 text-right tabular-nums">{money(total.outstanding)}</td></tr>
+          {rows.map((row, rowIndex) => <tr key={keyOf(row, rowIndex)} className="border-t border-line-soft">{columns.map((column, index) => <td key={column.label} className={cn("py-3 align-top", index === 0 ? "px-5 font-semibold" : "px-3", column.align === "right" && "text-right tabular-nums", column.wide ? "min-w-48" : "whitespace-nowrap")}>{column.value(row)}</td>)}</tr>)}
+          {!rows.length && <tr><td colSpan={columns.length} className="px-5 py-10 text-center text-sm text-muted">{empty}</td></tr>}
+          {totals && rows.length > 0 && <tr className="border-t-2 border-line bg-[#FBFAF7] font-semibold">{columns.map((column, index) => <td key={column.label} className={cn("whitespace-nowrap py-3", index === 0 ? "px-5" : "px-3", column.align === "right" && "text-right tabular-nums")}>{index === 0 ? "Total" : column.total?.(rows) ?? ""}</td>)}</tr>}
         </tbody>
       </table>
     </div>
   </Card>;
 }
 
+const sumOf = <T,>(key: keyof T) => (rows: T[]) => rows.reduce((total, row) => total + Number(row[key] ?? 0), 0);
+const moneySum = <T,>(key: keyof T) => (rows: T[]) => money(sumOf<T>(key)(rows));
+const owedCell = (value: number) => <span className={cn(value > 0 && "font-semibold text-[#A5183F]")}>{money(value)}</span>;
+
+/** Paid and outstanding rolled up by team or customer (BO-7, IN-6). */
+function RollupTable({ title, label, rows }: { title: string; label: string; rows: RollupRow[] }) {
+  return <ReportTable title={title} subtitle="Shipments, delivery and billing" rows={rows} keyOf={(row) => row.name} columns={[
+    { label, value: (row) => row.name },
+    { label: "Shipments", align: "right", value: (row) => row.shipments, total: sumOf("shipments") },
+    { label: "Delivered", align: "right", value: (row) => row.delivered, total: sumOf("delivered") },
+    { label: "Invoiced", align: "right", value: (row) => money(row.invoiced), total: moneySum("invoiced") },
+    { label: "Collected", align: "right", value: (row) => money(row.collected), total: moneySum("collected") },
+    { label: "Outstanding", align: "right", value: (row) => owedCell(row.outstanding), total: moneySum("outstanding") },
+  ]} />;
+}
+
+/** Every agent's progress and revenue (BO-5, BO-7). */
 function OpsAgentTable({ rows }: { rows: OpsAgentRow[] }) {
-  const total = rows.reduce((sum, row) => ({ shipments: sum.shipments + row.shipments, delivered: sum.delivered + row.delivered, invoiced: sum.invoiced + row.invoiced, collected: sum.collected + row.collected }), { shipments: 0, delivered: 0, invoiced: 0, collected: 0 });
-  return <Card>
-    <CardHeader title="By agent" subtitle="Shipment progress and revenue per agent" />
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[620px] text-sm">
-        <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Agent</th><th className="px-3 py-2.5 text-right font-medium">Shipments</th><th className="px-3 py-2.5 text-right font-medium">Delivered</th><th className="px-3 py-2.5 text-right font-medium">Invoiced</th><th className="px-5 py-2.5 text-right font-medium">Collected</th></tr></thead>
-        <tbody>
-          {rows.map((row) => <tr key={row.agent_id ?? "unassigned"} className="border-t border-line-soft"><td className={cn("px-5 py-3 font-semibold", !row.agent_id && "text-muted")}>{row.name}</td><td className="px-3 py-3 text-right tabular-nums">{row.shipments}</td><td className="px-3 py-3 text-right tabular-nums">{row.delivered}</td><td className="px-3 py-3 text-right tabular-nums">{money(row.invoiced)}</td><td className="px-5 py-3 text-right font-semibold tabular-nums">{money(row.collected)}</td></tr>)}
-          <tr className="border-t-2 border-line bg-[#FBFAF7] font-semibold"><td className="px-5 py-3">Total</td><td className="px-3 py-3 text-right tabular-nums">{total.shipments}</td><td className="px-3 py-3 text-right tabular-nums">{total.delivered}</td><td className="px-3 py-3 text-right tabular-nums">{money(total.invoiced)}</td><td className="px-5 py-3 text-right tabular-nums">{money(total.collected)}</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </Card>;
+  return <ReportTable title="By agent" subtitle="Shipment progress and revenue per agent" rows={rows} keyOf={(row) => row.agent_id ?? "unassigned"} columns={[
+    { label: "Agent", value: (row) => <span className={cn(!row.agent_id && "text-muted")}>{row.name}</span> },
+    { label: "Shipments", align: "right", value: (row) => row.shipments, total: sumOf("shipments") },
+    { label: "In progress", align: "right", value: (row) => row.in_progress, total: sumOf("in_progress") },
+    { label: "Delivered", align: "right", value: (row) => row.delivered, total: sumOf("delivered") },
+    { label: "Open exceptions", align: "right", value: (row) => row.exceptions ? <span className="font-semibold text-[#A5183F]">{row.exceptions}</span> : 0, total: sumOf("exceptions") },
+    { label: "Invoiced", align: "right", value: (row) => money(row.invoiced), total: moneySum("invoiced") },
+    { label: "Collected", align: "right", value: (row) => money(row.collected), total: moneySum("collected") },
+    { label: "Outstanding", align: "right", value: (row) => owedCell(row.outstanding), total: moneySum("outstanding") },
+  ]} />;
+}
+
+type OpsRow = { id: string; reference_number: string; customer_name: string | null; pickup_location: string; delivery_location: string; equipment_type: string | null; agent: string; team: string | null; status: string; carrier_name: string | null; pickup_date: string | null; delivery_date: string | null; amount_quoted: number | null; amount_agreed: number | null; invoice_number: string | null; invoice_status: string | null; invoice_due: string | null; invoiced: number | null; collected: number | null; outstanding: number | null; overdue: boolean; exception: string | null; created_at: string; updated_at: string };
+
+/** One complete line per shipment, the same rows as the CSV (BO-1 to BO-6). */
+function OpsShipmentTable({ rows, manager }: { rows: OpsRow[]; manager: boolean }) {
+  const dash = (value: ReactNode) => value === null || value === undefined || value === "" ? <span className="text-muted">—</span> : value;
+  return <ReportTable title={manager ? "Shipments" : "My shipments"} subtitle="Every shipment in this period, the same rows as the CSV export" rows={rows} keyOf={(row) => row.id} empty="No shipments match this reporting period." columns={[
+    { label: "Reference", value: (row) => row.reference_number },
+    { label: "Customer", value: (row) => dash(row.customer_name) },
+    { label: "Lane", wide: true, value: (row) => <span className="text-[13px]">{row.pickup_location} <span className="text-brand">→</span> {row.delivery_location}</span> },
+    ...(manager ? [{ label: "Agent", value: (row: OpsRow) => <span className={cn(row.agent === "Unassigned" && "text-accent")}>{row.agent}</span> }, { label: "Team", value: (row: OpsRow) => dash(row.team) }] : []),
+    { label: "Status", value: (row) => <StatusChip status={row.status} /> },
+    { label: "Exception", value: (row) => row.exception ? <StatusChip status={row.exception === "Open" ? "EXCEPTION" : "RESOLVED"} label={row.exception} /> : dash(null) },
+    { label: "Carrier", value: (row) => dash(row.carrier_name) },
+    { label: "Equipment", value: (row) => dash(row.equipment_type) },
+    { label: "Pickup", value: (row) => dash(row.pickup_date && dateLabel(row.pickup_date)) },
+    { label: "Delivery", value: (row) => dash(row.delivery_date && dateLabel(row.delivery_date)) },
+    { label: "Quoted", align: "right", value: (row) => dash(row.amount_quoted == null ? null : money(row.amount_quoted)), total: moneySum("amount_quoted") },
+    { label: "Invoice", value: (row) => row.invoice_number ? <span className="text-[13px]">{row.invoice_number}<br /><StatusChip status={row.overdue ? "OVERDUE" : row.invoice_status ?? ""} /></span> : <span className="text-muted">Not invoiced</span> },
+    { label: "Due", value: (row) => dash(row.invoice_due && <span className={cn(row.overdue && "font-semibold text-[#A5183F]")}>{dateLabel(row.invoice_due)}</span>) },
+    { label: "Invoiced", align: "right", value: (row) => dash(row.invoiced == null ? null : money(row.invoiced)), total: moneySum("invoiced") },
+    { label: "Collected", align: "right", value: (row) => dash(row.collected == null ? null : money(row.collected)), total: moneySum("collected") },
+    { label: "Outstanding", align: "right", value: (row) => row.outstanding == null ? dash(null) : owedCell(row.outstanding), total: moneySum("outstanding") },
+  ]} />;
 }
 
 function AgentTable({ rows, onPick }: { rows: AgentRow[]; onPick: (id: string) => void }) {
