@@ -31,6 +31,8 @@ export type Quote = {
 
 export type SalesShipment = {
   id: string;
+  /** Set while in Exception: where Operations was when it was raised. */
+  status_before_exception?: string | null;
   quote_id?: string | null;
   reference_number: string;
   pickup_location?: string | null;
@@ -135,7 +137,9 @@ export const operationsSteps = ["Booked", "Picked up", "Delivered", "Invoiced", 
 export function operationsPosition(shipment: SalesShipment): { current: number; exception: boolean; invoice?: { invoice_number?: string; status?: string } } {
   const invoice = Array.isArray(shipment.brokerage_invoices) ? shipment.brokerage_invoices[0] : shipment.brokerage_invoices ?? undefined;
   const reached: Record<string, number> = { BOOKED: 0, CARRIER_ASSIGNED: 0, PICKED_UP: 1, IN_TRANSIT: 1, DELIVERED: 2, COMPLETED: 2, EXCEPTION: 0 };
-  let step = reached[shipment.status ?? "BOOKED"] ?? 0;
+  // An exception pauses the shipment where it was; the line holds that place in red instead of falling back.
+  const status = shipment.status === "EXCEPTION" ? shipment.status_before_exception ?? "BOOKED" : shipment.status ?? "BOOKED";
+  let step = reached[status] ?? 0;
   if (invoice) step = Math.max(step, 3);
   if (invoice?.status === "PAID") step = 4;
   return { current: step + 1, exception: shipment.status === "EXCEPTION", invoice };

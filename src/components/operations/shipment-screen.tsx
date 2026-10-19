@@ -37,6 +37,8 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
   const { workspace, manager } = useBrokerage();
   const caps = workspace.capabilities ?? {};
   const { shipment, documents, events, comments, invoice } = data;
+  // While in exception, the progress line shows where the shipment was when it was raised.
+  const lineStatus = shipment.status === "EXCEPTION" ? events.find((event) => event.to_status === "EXCEPTION")?.from_status ?? "BOOKED" : shipment.status;
   const directory = useOperationsDirectory(manager);
   const pendingDocuments = documents.filter((document) => !document.is_verified).length;
   const [tab, setTab] = useState<TabKey>(exceptionOpen(shipment) ? "exception" : "details");
@@ -55,9 +57,9 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
     />
 
     <Card className="px-4 py-5 sm:px-6">
-      {shipment.status === "EXCEPTION"
-        ? <div className="flex items-center gap-3 text-sm"><AlertTriangle size={18} className="shrink-0 text-danger" /><p><b>Shipment in exception.</b> {shipment.exception_note ? shipment.exception_note : "Details are in the Exception tab."}</p></div>
-        : <div className="overflow-x-auto"><Stepper steps={progressStatuses.map((status) => ({ label: statusLabel[status] }))} current={shipment.status === "COMPLETED" ? progressStatuses.length : Math.max(0, progressStatuses.indexOf(shipment.status))} className="min-w-[560px]" /></div>}
+      {/* An exception pauses the lifecycle: the line holds its place in red rather than disappearing. */}
+      <div className="overflow-x-auto"><Stepper steps={progressStatuses.map((status) => ({ label: statusLabel[status] }))} current={lineStatus === "COMPLETED" ? progressStatuses.length : Math.max(0, progressStatuses.indexOf(lineStatus))} tone={shipment.status === "EXCEPTION" ? "danger" : "brand"} className="min-w-[560px]" /></div>
+      {shipment.status === "EXCEPTION" && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm"><AlertTriangle size={18} className="shrink-0 text-danger" /><p><b>Shipment in exception.</b> {shipment.exception_note ? shipment.exception_note : "Details are in the Exception tab."}</p></div>}
       {manager && <div className="mt-5 grid gap-4 border-t border-line-soft pt-5 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] xl:items-center">
         <Assignment shipment={shipment} directory={directory.data} />
         <Signal ok={!pendingDocuments} label="Documents" value={pendingDocuments ? `${pendingDocuments} pending review` : documents.length ? "All verified" : "None uploaded"} />

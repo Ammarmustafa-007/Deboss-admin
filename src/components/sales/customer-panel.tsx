@@ -172,7 +172,7 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
     <TextField label="Agreed rate" type="number" min="0" value={form.agreed_rate} onChange={(event) => set("agreed_rate")(event.target.value)} />
     <TextField label="Pickup date" type="date" value={form.pickup_date} onChange={(event) => set("pickup_date")(event.target.value)} />
     <TextField label="Delivery date" type="date" value={form.delivery_date} onChange={(event) => set("delivery_date")(event.target.value)} />
-    <SelectField label="Commercial status" required value={form.status} onChange={(event) => set("status")(event.target.value)} options={commercialStatuses.map((status) => ({ value: status, label: status.charAt(0) + status.slice(1).toLowerCase() }))} wrapperClassName="sm:col-span-2" />
+    <SelectField label="Commercial status" required value={form.status} disabled={Boolean(shipment?.operations_department_id)} hint={shipment?.operations_department_id ? "Follows Operations: delivered on delivery, paid when the invoice is paid." : undefined} onChange={(event) => set("status")(event.target.value)} options={commercialStatuses.map((status) => ({ value: status, label: status.charAt(0) + status.slice(1).toLowerCase() }))} wrapperClassName="sm:col-span-2" />
     <div className="sm:col-span-2"><FilePicker label="Supporting document" file={file} onFile={pick} accept={documentAccept} error={fileError} placeholder="Choose a PDF, JPG or PNG" hint={file ? "Uploads when you save." : "Optional · PDF, JPG or PNG · up to 10 MB"} /></div>
   </div>;
 
