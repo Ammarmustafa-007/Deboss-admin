@@ -16,9 +16,10 @@ type Row = Record<string, string | number | null | undefined> & { id: string };
 type Counts = Record<string, number>;
 type RollupRow = { name: string; shipments: number; delivered: number; invoiced: number; collected: number; outstanding: number };
 type OpsAgentRow = { agent_id: string | null; name: string; shipments: number; delivered: number; invoiced: number; collected: number };
+type OutcomeRow = { agent_id: string | null; agent: string; customer: string; opportunities: number; statuses: Record<string, number>; gross_generated: number };
 type AgentRow = { agent_id: string; name: string; leads: number; customers: number; shipments: number; gross_generated: number };
 type ReportData = {
-  sales: { totals: Record<string, number>; agent_breakdown?: AgentRow[]; agents?: { id: string; full_name: string }[]; shipment_rows: Row[]; lead_stages: Counts; quote_stages: Counts; shipment_statuses: Counts; customer_outcomes: Counts; by_agent: Counts; by_team: Counts };
+  sales: { totals: Record<string, number>; agent_breakdown?: AgentRow[]; agents?: { id: string; full_name: string }[]; shipment_rows: Row[]; lead_stages: Counts; quote_stages: Counts; shipment_statuses: Counts; customer_outcomes: Counts; agent_outcomes?: OutcomeRow[]; by_agent: Counts; by_team: Counts };
   operations: { totals: Record<string, number>; agent_breakdown?: OpsAgentRow[]; team_breakdown?: RollupRow[]; customer_breakdown?: RollupRow[]; rows: Row[]; shipment_statuses: Counts; invoice_statuses: Counts; workload: Counts; by_customer: Counts };
 };
 
@@ -87,12 +88,11 @@ export function ReportsScreen() {
         {sales && !canViewTeamPerformance ? <div className="space-y-6">
           <ShipmentTable rows={data.sales.shipment_rows} />
           <Breakdown title="Shipment status" values={data.sales.shipment_statuses} />
-        </div> : <>{!sales && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{!sales && (data.operations.team_breakdown?.length ?? 0) > 0 && <RollupTable title="By team" label="Team" rows={data.operations.team_breakdown!} />}{!sales && (data.operations.customer_breakdown?.length ?? 0) > 0 && <RollupTable title="By customer" label="Customer" rows={data.operations.customer_breakdown!} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}<div className="grid gap-6 xl:grid-cols-2">
+        </div> : <>{!sales && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{!sales && (data.operations.team_breakdown?.length ?? 0) > 0 && <RollupTable title="By team" label="Team" rows={data.operations.team_breakdown!} />}{!sales && (data.operations.customer_breakdown?.length ?? 0) > 0 && <RollupTable title="By customer" label="Customer" rows={data.operations.customer_breakdown!} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}{sales && (data.sales.agent_outcomes?.length ?? 0) > 0 && <OutcomeTable rows={data.sales.agent_outcomes!} />}<div className="grid gap-6 xl:grid-cols-2">
           {sales ? <>
             <Breakdown title="Pipeline by stage" values={data.sales.lead_stages} />
             <Breakdown title="Quote outcomes" values={data.sales.quote_stages} />
             <Breakdown title="Shipment status" values={data.sales.shipment_statuses} />
-            <Breakdown title="Customer outcomes" values={data.sales.customer_outcomes} />
             <Breakdown title="Opportunities by agent" values={data.sales.by_agent} />
             <Breakdown title="Team performance" values={data.sales.by_team} />
           </> : <>
@@ -155,6 +155,48 @@ function AgentTable({ rows, onPick }: { rows: AgentRow[]; onPick: (id: string) =
           </tr>)}
           <tr className="border-t-2 border-line bg-[#FBFAF7] font-semibold"><td className="px-5 py-3">Total</td><td className="px-3 py-3 text-right tabular-nums">{total.leads}</td><td className="px-3 py-3 text-right tabular-nums">{total.customers}</td><td className="px-3 py-3 text-right tabular-nums">{total.shipments}</td><td className="px-5 py-3 text-right tabular-nums">{money(total.gross)}</td></tr>
         </tbody>
+      </table>
+    </div>
+  </Card>;
+}
+
+const outcomeStatuses = ["QUOTED", "BOOKED", "DELIVERED", "PAID"];
+
+/** Outcome per customer, grouped under the agent who owns the customer (BS-7). */
+function OutcomeTable({ rows }: { rows: OutcomeRow[] }) {
+  const groups = rows.reduce((map, row) => map.set(row.agent, [...(map.get(row.agent) ?? []), row]), new Map<string, OutcomeRow[]>());
+  const totalOf = (list: OutcomeRow[]) => ({ opportunities: list.reduce((sum, row) => sum + row.opportunities, 0), gross: list.reduce((sum, row) => sum + row.gross_generated, 0), status: (key: string) => list.reduce((sum, row) => sum + (row.statuses[key] ?? 0), 0) });
+  const grand = totalOf(rows);
+  const download = () => {
+    const columns = ["Agent", "Customer", "Opportunities", ...outcomeStatuses.map(humanize), "Gross generated"];
+    const lines = rows.map((row) => [row.agent, row.customer, row.opportunities, ...outcomeStatuses.map((key) => row.statuses[key] ?? 0), row.gross_generated]);
+    const csv = [columns, ...lines].map((line) => line.map((cell) => JSON.stringify(cell)).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "outcomes-by-agent.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+  const cells = (opportunities: number, status: (key: string) => number, gross: number) => <>
+    <td className="px-3 py-3 text-right tabular-nums">{opportunities}</td>
+    {outcomeStatuses.map((key) => <td key={key} className="px-3 py-3 text-right tabular-nums">{status(key) || "–"}</td>)}
+    <td className="px-5 py-3 text-right tabular-nums">{money(gross)}</td>
+  </>;
+  return <Card>
+    <CardHeader title="Outcomes by agent" subtitle="Each customer's opportunities and outcomes under the agent who owns it" actions={<Button variant="outline" size="sm" icon={<Download size={14} />} onClick={download}>Export</Button>} />
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[760px] text-sm">
+        <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Agent</th><th className="px-3 py-2.5 font-medium">Customer</th><th className="px-3 py-2.5 text-right font-medium">Opportunities</th>{outcomeStatuses.map((key) => <th key={key} className="px-3 py-2.5 text-right font-medium">{humanize(key)}</th>)}<th className="px-5 py-2.5 text-right font-medium">Gross</th></tr></thead>
+        {[...groups.entries()].map(([agent, list]) => { const total = totalOf(list); return <tbody key={agent} className="border-t-2 border-line">
+          {list.map((row, index) => <tr key={`${row.customer}-${index}`} className="border-t border-line-soft first:border-t-0">
+            <td className="px-5 py-3 font-semibold">{index === 0 ? agent : ""}</td>
+            <td className="px-3 py-3">{row.customer}</td>
+            {cells(row.opportunities, (key) => row.statuses[key] ?? 0, row.gross_generated)}
+          </tr>)}
+          <tr className="border-t border-line-soft bg-[#FBFAF7] font-semibold text-ink/80"><td className="px-5 py-2.5">{agent} total</td><td />{cells(total.opportunities, total.status, total.gross)}</tr>
+        </tbody>; })}
+        <tbody className="border-t-2 border-line"><tr className="bg-[#FBFAF7] font-semibold"><td className="px-5 py-3">Total</td><td />{cells(grand.opportunities, grand.status, grand.gross)}</tr></tbody>
       </table>
     </div>
   </Card>;
