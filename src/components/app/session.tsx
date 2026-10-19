@@ -40,7 +40,15 @@ export function SessionGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, current) => {
       if (!current) {
+        // Drop the previous user's cached data so the next sign-in never sees it.
+        queryClient.clear();
         router.replace("/");
+        return;
+      }
+      const cached = queryClient.getQueryData<{ id: string } | null>(profileKey);
+      if (cached && cached.id !== current.user.id) {
+        // Another account signed in (e.g. in another tab): reload so nothing from the old account survives.
+        window.location.reload();
         return;
       }
       if (event === "SIGNED_IN" || event === "USER_UPDATED") void queryClient.invalidateQueries({ queryKey: profileKey });

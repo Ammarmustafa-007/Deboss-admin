@@ -52,6 +52,8 @@ export default function SignInPage() {
       // Load the profile and first screen's data while the globe moves to the center,
       // so /app opens with everything cached. At least 0.5 s so the move is visible; never more than 2.5 s.
       const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+      // Start from an empty cache so nothing from a previous account is reused.
+      queryClient.clear();
       await Promise.all([wait(500), Promise.race([warmWorkspace(queryClient, supabase, api), wait(2500)])]);
       router.push("/app");
     } catch {
