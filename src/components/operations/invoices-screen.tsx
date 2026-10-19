@@ -27,6 +27,8 @@ type Invoice = {
   brokerage_shipments?: { reference_number?: string; customer_name?: string } | null;
 };
 
+/** Allowed manual moves, the same as the API: Draft → Sent → Pending → Paid, Cancelled from any open state. */
+const invoiceFlow: Record<string, string[]> = { DRAFT: ["SENT", "CANCELLED"], SENT: ["PENDING", "PAID", "CANCELLED"], PENDING: ["PAID", "CANCELLED"], OVERDUE: ["PENDING", "PAID", "CANCELLED"], PAID: [], CANCELLED: [] };
 const open = (invoice: Invoice) => ["DRAFT", "SENT", "PENDING"].includes(invoice.status);
 const outstanding = (invoice: Invoice) => Math.max(0, Number(invoice.amount ?? 0) - Number(invoice.amount_paid ?? 0));
 
@@ -119,7 +121,7 @@ function InvoiceDrawer({ invoice, onClose }: { invoice: Invoice; onClose: () => 
         <TextField label="Amount" type="number" min="0" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} hint={money(form.amount)} />
         <TextField label="Paid" type="number" min="0" value={form.amount_paid} onChange={(event) => setForm({ ...form, amount_paid: event.target.value })} hint={form.amount ? `Outstanding ${money(Math.max(0, Number(form.amount || 0) - Number(form.amount_paid || 0)))}` : undefined} />
         <TextField label="Due date" type="date" value={form.due_date} onChange={(event) => setForm({ ...form, due_date: event.target.value })} />
-        <SelectField label="Status" required value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} options={paymentStatuses.map((status) => ({ value: status, label: humanize(status) }))} />
+        <SelectField label="Status" required value={form.status} onChange={(event) => setForm({ ...form, status: event.target.value })} options={[invoice.status ?? "DRAFT", ...(invoiceFlow[invoice.status ?? "DRAFT"] ?? [])].map((status) => ({ value: status, label: humanize(status) }))} hint={invoice.status === "DRAFT" ? "Mark it Sent once it goes to the customer; then it can be paid." : invoice.status === "PAID" || invoice.status === "CANCELLED" ? "This invoice is closed." : "Overdue is set automatically after the due date."} />
       </fieldset>
     </form>
     {invoice.shipment_id && <Link href={`/app/operations/${invoice.shipment_id}`} className="mt-6 inline-flex items-center gap-1 text-sm font-semibold text-brand-deep hover:underline">Open shipment<ChevronRight size={15} /></Link>}

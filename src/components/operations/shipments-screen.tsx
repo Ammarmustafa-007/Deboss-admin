@@ -47,12 +47,13 @@ export function ShipmentsScreen() {
 
   const term = search.trim().toLowerCase();
   const visible = shipments.filter((shipment) => {
-    if (agent && shipment.assigned_to !== agent) return false;
+    if (agent === "unassigned" ? Boolean(shipment.assigned_to) : agent && shipment.assigned_to !== agent) return false;
     if (filter === "unassigned" && shipment.assigned_to) return false;
     if (filter === "exceptions" && !exceptionOpen(shipment)) return false;
     if (filter === "active" && !active(shipment)) return false;
     if ((filter === "DELIVERED" || filter === "COMPLETED") && shipment.status !== filter) return false;
-    return !term || `${shipment.reference_number} ${shipment.customer_name ?? ""} ${shipment.pickup_location ?? ""} ${shipment.delivery_location ?? ""}`.toLowerCase().includes(term);
+    // Search what people look shipments up by: reference, customer, agent or carrier.
+    return !term || [shipment.reference_number, shipment.customer_name, nameOf(shipment.assigned_to), shipment.carrier_name].some((value) => value?.toLowerCase().includes(term));
   });
 
   const assign = (shipment: Shipment, patch: { assigned_to?: string | null; team_id?: string | null }) => void run(`assign:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}`, "PATCH", patch, "Shipment assignment updated.");
@@ -72,10 +73,10 @@ export function ShipmentsScreen() {
       <div className="flex flex-col gap-3 px-5 pt-4 lg:flex-row lg:items-end lg:justify-between">
         <Tabs items={tabs} value={filter} onChange={setFilter} className="-mb-px border-b-0 lg:flex-1" />
         <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-        {manager && <select value={agent} onChange={(event) => setAgent(event.target.value)} aria-label="Filter by agent" className={cn(controlClass, "h-10 sm:w-48")}><option value="">All agents</option>{users.map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}</select>}
+        {manager && <select value={agent} onChange={(event) => setAgent(event.target.value)} aria-label="Filter by agent" className={cn(controlClass, "h-10 sm:w-48")}><option value="">All agents</option>{counts.unassigned > 0 && <option value="unassigned">Unassigned ({counts.unassigned})</option>}{users.map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}</select>}
         <label className="relative block lg:w-72">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search shipments" aria-label="Search shipments" className={cn(controlClass, "h-10 pl-9")} />
+          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Reference, customer, agent or carrier" aria-label="Search shipments" className={cn(controlClass, "h-10 pl-9")} />
         </label>
         </div>
       </div>

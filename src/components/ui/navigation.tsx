@@ -8,7 +8,7 @@ export type TabItem<T extends string> = { value: T; label: ReactNode; count?: nu
 
 /** Underlined tabs with optional count badges (prototype `.tabs`). */
 export function Tabs<T extends string>({ items, value, onChange, className }: { items: TabItem<T>[]; value: T; onChange: (value: T) => void; className?: string }) {
-  return <div role="tablist" className={cn("flex gap-1 overflow-x-auto border-b border-line", className)}>
+  return <div role="tablist" className={cn("flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none] [&::-webkit-scrollbar]:hidden", className)}>
     {items.filter((item) => !item.hidden).map((item) => {
       const active = item.value === value;
       return <button key={item.value} role="tab" type="button" aria-selected={active} onClick={() => onChange(item.value)} className={cn("-mb-px flex items-center gap-1.5 border-b-[3px] px-3.5 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors", active ? "border-brand text-ink" : "border-transparent text-muted hover:text-ink")}>
