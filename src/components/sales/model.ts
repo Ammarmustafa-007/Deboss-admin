@@ -97,21 +97,20 @@ export function nextAction(quotes: Quote[], manager: boolean): NextAction {
 
 export const quoteStageLabel: Record<string, string> = { DRAFT: "Draft", SUBMITTED: "Awaiting approval", APPROVED: "Approved", REJECTED: "Returned for rework", HANDED_OFF: "With Operations" };
 
-export const journeySteps = ["Lead", "Contacted", "Qualified", "Customer", "Quote submitted", "Approved", "With Operations"];
+export const journeySteps = ["Lead", "Customer", "Quote submitted", "Approved", "With Operations"];
 
 /**
  * Index of the current journey step (steps before it are complete).
+ * Driven only by conversion and quotes; the agent's pipeline stage never moves it.
  * With several quotes, the one still waiting on someone wins, matching `nextAction`.
  */
-export function journeyPosition(lead: Lead, quotes: Quote[]): { current: number; blocked: boolean } {
+export function journeyPosition(converted: boolean, quotes: Quote[]): { current: number; blocked: boolean } {
   const has = (stage: string) => quotes.some((quote) => quote.stage === stage);
-  if (has("SUBMITTED")) return { current: 5, blocked: false };
-  if (has("APPROVED")) return { current: 6, blocked: false };
-  if (has("REJECTED")) return { current: 4, blocked: true };
-  if (has("HANDED_OFF")) return { current: 7, blocked: false };
-  if (lead.stage === "CUSTOMER") return { current: 4, blocked: false };
-  const reached: Record<string, number> = { NEW: 0, CONTACTED: 1, QUALIFIED: 2 };
-  return { current: (reached[lead.stage] ?? 0) + 1, blocked: false };
+  if (has("SUBMITTED")) return { current: 3, blocked: false };
+  if (has("APPROVED")) return { current: 4, blocked: false };
+  if (has("REJECTED")) return { current: 2, blocked: true };
+  if (has("HANDED_OFF")) return { current: 5, blocked: false };
+  return { current: converted ? 2 : 1, blocked: false };
 }
 
 export const quoteSteps = ["Draft", "Submitted", "Approved", "With Operations"];

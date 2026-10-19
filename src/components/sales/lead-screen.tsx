@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Archive, ArchiveRestore, Crown, CalendarClock, FileSearch, Mail, Phone, Plus, UserRound, UserRoundPlus, XCircle } from "lucide-react";
+import { Archive, ArchiveRestore, Crown, CalendarClock, FileSearch, Mail, Phone, Plus, UserRound, UserRoundPlus } from "lucide-react";
 import { use, useState, type FormEvent, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { responseData } from "@/lib/api";
@@ -63,12 +63,12 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
       </span>}
       actions={<>
         {action.key !== "none" && <Chip tone={action.tone} className="h-8 px-3 text-[13px]">{action.label}</Chip>}
-        {lead.stage !== "CUSTOMER" && <StageControl lead={lead} />}
+        {!customer && !quotes.length && lead.stage !== "CUSTOMER" && <StageControl lead={lead} />}
         <Button variant="outline" icon={lead.archived_at ? <ArchiveRestore size={15} /> : <Archive size={15} />} pending={busy(`archive:${lead.id}`)} onClick={() => void toggleArchive()}>{lead.archived_at ? "Restore" : "Archive"}</Button>
       </>}
     />
 
-    <Journey lead={lead} quotes={quotes} />
+    <Journey converted={Boolean(customer) || lead.stage === "CUSTOMER"} quotes={quotes} />
 
     <Tabs<TabKey> value={tab} onChange={setTab} items={manager ? [
       { value: "quotes", label: "Quotes & approval", count: quotes.length },
@@ -93,9 +93,8 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
   </div>;
 }
 
-function Journey({ lead, quotes }: { lead: Lead; quotes: LeadDetailData["quotes"] }) {
-  if (lead.stage === "LOST") return <div className="flex items-center gap-3 rounded-card border border-danger/25 bg-danger/[.06] px-5 py-4 text-sm"><XCircle size={18} className="shrink-0 text-danger" /><p><b>Marked as lost.</b> Move the stage back to reopen this lead.</p></div>;
-  const { current, blocked } = journeyPosition(lead, quotes);
+function Journey({ converted, quotes }: { converted: boolean; quotes: LeadDetailData["quotes"] }) {
+  const { current, blocked } = journeyPosition(converted, quotes);
   const rejected = quotes.find((quote) => quote.stage === "REJECTED");
   return <Card className="px-4 py-5 sm:px-6">
     <div className="overflow-x-auto"><Stepper steps={journeySteps.map((label, index) => ({ label, hint: blocked && index === current ? "Returned for rework" : undefined }))} current={current} tone={blocked ? "danger" : "brand"} className="min-w-[620px]" /></div>

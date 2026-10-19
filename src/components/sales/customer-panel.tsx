@@ -52,7 +52,7 @@ export function CustomerPanel({ customerId, readOnly = false, onSyncFromLead }: 
             <ChevronRight size={16} className="text-muted transition-transform group-hover:translate-x-0.5" />
           </button></li>;
         })}
-      </ul> : <EmptyState icon={Package} title="No shipments yet" body={canEdit ? "Add the first shipment to create its quote for manager approval." : undefined} action={canEdit && <Button variant="primary" icon={<Plus size={15} />} onClick={() => setDrawer({})}>Add shipment</Button>} />}
+      </ul> : <EmptyState icon={Package} title="No shipments yet" body={canEdit ? "Add the first shipment to create its quote for manager approval." : undefined} />}
     </Card>
 
     <div className="grid gap-6 xl:grid-cols-2">
