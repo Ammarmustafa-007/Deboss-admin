@@ -16,6 +16,8 @@ export type Capabilities = {
   teamLead?: boolean;
   canMarkInvoiceReady?: boolean;
   canReviewQuotes?: boolean;
+  canAssignLeads?: boolean;
+  canAssignShipments?: boolean;
   canHandoffQuotes?: boolean;
   canResolveExceptions?: boolean;
   canReviewDocuments?: boolean;
@@ -35,6 +37,10 @@ type Brokerage = {
   sales: boolean;
   manager: boolean;
   teamLead: boolean;
+  /** Team Lead with Full managerial access: manager-style views and approvals, scoped to their team. */
+  fullLead: boolean;
+  /** Manager or Full Team Lead: anyone who supervises other agents' work. */
+  supervisor: boolean;
   isFetching: boolean;
   api: Api;
   refresh: () => Promise<void>;
@@ -84,6 +90,8 @@ export function BrokerageGate({ children }: { children: ReactNode }) {
       sales: Boolean(caps.sales),
       manager: Boolean(caps.departmentManager),
       teamLead: Boolean(caps.teamLead),
+      fullLead: Boolean(caps.teamLead && !caps.departmentManager && (caps.canReviewQuotes || caps.canHandoffQuotes || caps.canReviewDocuments || caps.canResolveExceptions || caps.canMarkInvoiceReady)),
+      supervisor: Boolean(caps.departmentManager || (caps.teamLead && (caps.canReviewQuotes || caps.canHandoffQuotes || caps.canReviewDocuments || caps.canResolveExceptions || caps.canMarkInvoiceReady))),
       isFetching: workspace.isFetching || notifications.isFetching,
       api,
       refresh,

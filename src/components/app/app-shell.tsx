@@ -41,7 +41,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     canMarkInvoiceReady: Boolean(brokerage.workspace.capabilities?.canMarkInvoiceReady),
   });
   const current = activeItem(groups, pathname);
-  const roleLabel = isSuperAdmin ? "Super Admin" : brokerage?.manager ? "Department manager" : brokerage?.teamLead ? "Team lead" : "Agent";
+  const roleLabel = isSuperAdmin ? "Super Admin" : brokerage?.manager ? "Department manager" : brokerage?.teamLead ? (brokerage.fullLead ? "Team lead · Full access" : "Team lead") : "Agent";
   const areaLabel = isSuperAdmin ? "Administration" : `Brokerage · ${humanize(brokerage?.workspace.department?.function ?? (brokerage?.sales ? "SALES" : "OPERATIONS"))}`;
 
   const sidebar = (compact: boolean) => <div className="sidebar-surface flex h-full flex-col px-3 py-5 text-white">

@@ -26,15 +26,15 @@ export function LeadRoute({ params }: { params: Promise<{ id: string }> }) {
 }
 
 export function LeadScreen({ leadId }: { leadId: string }) {
-  const { api, manager } = useBrokerage();
+  const { api, manager, teamLead } = useBrokerage();
   const detail = useQuery({ queryKey: ["brokerage", "lead", leadId], queryFn: async () => responseData<LeadDetailData>(await api(`/api/v1/brokerage/leads/${leadId}/detail`)), staleTime: 15_000 });
 
   if (detail.isLoading) return <LeadSkeleton />;
   if (detail.isError || !detail.data) return <EmptyState icon={FileSearch} title="Lead unavailable" body={detail.error instanceof Error ? detail.error.message : "This lead could not be loaded."} action={<LinkButton href="/app/sales" variant="ink">Back to pipeline</LinkButton>} className="mt-10" />;
-  return <LeadView key={leadId} data={detail.data} manager={manager} />;
+  return <LeadView key={leadId} data={detail.data} manager={manager} teamLead={teamLead} />;
 }
 
-function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean }) {
+function LeadView({ data, manager, teamLead }: { data: LeadDetailData; manager: boolean; teamLead: boolean }) {
   const { lead, quotes, activities, comments, customer } = data;
   const { workspace } = useBrokerage();
   const caps = workspace.capabilities ?? {};
@@ -43,7 +43,7 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
   const action = nextAction(quotes, reviewer);
   const reviewWaiting = quotes.some((quote) => quote.stage === "SUBMITTED" || quote.stage === "APPROVED");
   const [tab, setTab] = useState<TabKey>(reviewer && reviewWaiting ? "quotes" : "details");
-  const directory = useTeamDirectory(manager);
+  const directory = useTeamDirectory(manager || teamLead);
   const ownerName = directory.data?.users.find((user) => user.id === lead.owner_id)?.full_name;
   const { run, busy } = useBrokerageAction();
   const leadPath = `/api/v1/brokerage/leads/${lead.id}`;
@@ -57,7 +57,7 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
       title={<span className="flex flex-wrap items-center gap-3">{lead.company_name}<StatusChip status={lead.stage} label={stageLabel[lead.stage] ?? undefined} className="text-[13px]" />{lead.archived_at && <Chip>Archived</Chip>}</span>}
       subtitle={<span className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <span className="inline-flex items-center gap-1.5"><UserRound size={14} />{lead.contact_name || "No contact"}</span>
-        {manager && <span className="inline-flex items-center gap-1.5"><Crown size={14} className="text-brand" />Owner: {ownerName ?? "—"}</span>}
+        {(manager || teamLead) && <span className="inline-flex items-center gap-1.5"><Crown size={14} className="text-brand" />Owner: {ownerName ?? "—"}</span>}
         {lead.contact_email && <a href={`mailto:${lead.contact_email}`} className="inline-flex items-center gap-1.5 hover:text-ink"><Mail size={14} />{lead.contact_email}</a>}
         {lead.contact_phone && <a href={`tel:${lead.contact_phone}`} className="inline-flex items-center gap-1.5 hover:text-ink"><Phone size={14} />{lead.contact_phone}</a>}
       </span>}
@@ -85,7 +85,7 @@ function LeadView({ data, manager }: { data: LeadDetailData; manager: boolean })
 
     <div key={tab} className="animate-fade">
       {tab === "quotes" && <QuoteList quotes={quotes} lead={lead} customerId={customer?.id} />}
-      {tab === "details" && (manager ? <div className="space-y-6"><Assignment lead={lead} directory={directory.data} /><LeadFacts lead={lead} /></div> : <LeadForm lead={lead} />)}
+      {tab === "details" && (manager ? <div className="space-y-6"><Assignment lead={lead} directory={directory.data} /><LeadFacts lead={lead} /></div> : caps.canAssignLeads ? <div className="space-y-6"><Assignment lead={lead} directory={directory.data} /><LeadForm lead={lead} /></div> : <LeadForm lead={lead} />)}
       {tab === "activity" && <ActivityTab lead={lead} activities={activities} manager={manager} />}
       {tab === "comments" && <CommentsTab leadId={lead.id} comments={comments} manager={manager} />}
       {tab === "customer" && <CustomerTab lead={lead} customerId={customer?.id ?? null} />}

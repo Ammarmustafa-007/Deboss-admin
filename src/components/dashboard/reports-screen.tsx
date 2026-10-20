@@ -38,10 +38,10 @@ function thisMonth() {
 
 export function ReportsScreen() {
   const { profile } = useSession();
-  const { api, report, sales, manager, workspace } = useBrokerage();
-  const canViewTeamPerformance = manager || profile.role === "SUPER_ADMIN";
-  // Team Leads report on their team's work, so show who handled each shipment.
-  const teamView = canViewTeamPerformance || Boolean(workspace.capabilities?.teamLead);
+  const { api, report, sales, manager, teamLead } = useBrokerage();
+  // Managers, Directors and Team Leads (team reports are in both Partial and Full access) see per-agent performance.
+  const canViewTeamPerformance = manager || teamLead || profile.role === "SUPER_ADMIN";
+  const teamView = canViewTeamPerformance;
   const [range, setRange] = useState(thisMonth);
   const reports = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(range).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
 

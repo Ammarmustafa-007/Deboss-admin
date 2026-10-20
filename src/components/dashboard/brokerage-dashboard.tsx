@@ -46,28 +46,28 @@ export function BrokerageDashboard() {
 }
 
 function SalesDashboard({ unread }: { unread: number }) {
-  const { workspace, manager } = useBrokerage();
+  const { workspace, manager, supervisor, teamLead } = useBrokerage();
   const leads = (workspace.leads ?? []) as Lead[];
   const quotes = (workspace.quotes ?? []) as Quote[];
   const quotesFor = (lead: Lead) => quotes.filter((quote) => quote.lead_id === lead.id);
   const open = leads.filter((lead) => !["CUSTOMER", "LOST"].includes(lead.stage));
   const overdue = open.filter((lead) => isPast(lead.next_follow_up_at));
-  const review = leads.filter((lead) => nextAction(quotesFor(lead), manager).key === "review");
-  const handoff = leads.filter((lead) => nextAction(quotesFor(lead), manager).key === "handoff");
-  const rework = leads.filter((lead) => nextAction(quotesFor(lead), manager).key === "rework");
+  const review = leads.filter((lead) => nextAction(quotesFor(lead), supervisor).key === "review");
+  const handoff = leads.filter((lead) => nextAction(quotesFor(lead), supervisor).key === "handoff");
+  const rework = leads.filter((lead) => nextAction(quotesFor(lead), supervisor).key === "rework");
 
   const attention: Attention[] = [
-    ...(manager ? review : []).map((lead) => ({ href: `/app/sales/leads/${lead.id}`, icon: Hourglass, tone: "brand" as Tone, title: lead.company_name, detail: "Quote waiting for your decision" })),
-    ...(manager ? handoff : []).map((lead) => ({ href: `/app/sales/leads/${lead.id}`, icon: Send, tone: "success" as Tone, title: lead.company_name, detail: "Approved, ready to hand off" })),
+    ...(supervisor ? review : []).map((lead) => ({ href: `/app/sales/leads/${lead.id}`, icon: Hourglass, tone: "brand" as Tone, title: lead.company_name, detail: "Quote waiting for your decision" })),
+    ...(supervisor ? handoff : []).map((lead) => ({ href: `/app/sales/leads/${lead.id}`, icon: Send, tone: "success" as Tone, title: lead.company_name, detail: "Approved, ready to hand off" })),
     ...(!manager ? rework : []).map((lead) => ({ href: `/app/sales/leads/${lead.id}`, icon: RotateCcw, tone: "danger" as Tone, title: lead.company_name, detail: "Quote returned for rework" })),
     ...overdue.map((lead) => ({ href: `/app/sales/leads/${lead.id}`, icon: CalendarClock, tone: "danger" as Tone, title: lead.company_name, detail: `Follow-up overdue since ${dateLabel(lead.next_follow_up_at)}` })),
   ];
 
   return <>
     <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-      <KpiCard label={manager ? "Department leads" : "Open leads"} value={manager ? leads.length : open.length} icon={ClipboardList} tone="brand" />
+      <KpiCard label={manager ? "Department leads" : teamLead ? "Team pipeline" : "Open leads"} value={manager || teamLead ? leads.length : open.length} icon={ClipboardList} tone="brand" />
       <KpiCard label="Customers" value={leads.filter((lead) => lead.stage === "CUSTOMER").length} icon={UserRoundCheck} tone="success" />
-      <KpiCard label={manager ? "Review required" : "Awaiting approval"} value={review.length} icon={Hourglass} tone="accent" />
+      <KpiCard label={supervisor ? "Review required" : "Awaiting approval"} value={review.length} icon={Hourglass} tone="accent" />
       <KpiCard label="Follow-ups overdue" value={overdue.length} icon={CalendarClock} tone={overdue.length ? "danger" : "info"} />
     </div>
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
@@ -75,7 +75,7 @@ function SalesDashboard({ unread }: { unread: number }) {
       <Card>
         <CardHeader title="Recently updated leads" actions={<Link href="/app/sales" className="text-xs font-semibold text-brand-deep hover:underline">View all</Link>} />
         {leads.length ? <ul className="divide-y divide-line-soft">{leads.slice(0, 6).map((lead) => {
-          const action = nextAction(quotesFor(lead), manager);
+          const action = nextAction(quotesFor(lead), supervisor);
           return <li key={lead.id}><Link href={`/app/sales/leads/${lead.id}`} className="group flex items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]">
             <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{lead.company_name}</p><p className="truncate text-xs text-muted">{lead.contact_name || "No contact"} · {money(lead.estimated_monthly_value)}</p></div>
             <span className="hidden gap-1.5 sm:flex"><StatusChip status={lead.stage} label={stageLabel[lead.stage]} />{action.key !== "none" && <Chip tone={action.tone}>{action.label}</Chip>}</span>

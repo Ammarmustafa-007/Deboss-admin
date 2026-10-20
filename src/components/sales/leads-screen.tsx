@@ -20,7 +20,12 @@ type Filter = "all" | "NEW" | "CONTACTED" | "QUALIFIED" | "CUSTOMER" | "LOST" | 
 
 export function LeadsScreen() {
   const router = useRouter();
-  const { workspace, manager } = useBrokerage();
+  const { workspace, manager, supervisor, teamLead } = useBrokerage();
+  // Full Team Leads review like a manager (labels, queues); Team Leads see who owns each lead. Bulk reassignment stays manager-only.
+  const reviewer = supervisor;
+  const showOwner = manager || teamLead;
+  // Managers and Full Team Leads can bulk-assign, move stage and archive (Team Leads within their team).
+  const canBulk = manager || Boolean(workspace.capabilities?.canAssignLeads);
   const leads = useMemo(() => (workspace.leads ?? []) as Lead[], [workspace.leads]);
   const quotes = useMemo(() => (workspace.quotes ?? []) as Quote[], [workspace.quotes]);
   const [filter, setFilter] = useState<Filter>("all");
@@ -28,11 +33,11 @@ export function LeadsScreen() {
   const [owner, setOwner] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
-  const directory = useTeamDirectory(manager);
+  const directory = useTeamDirectory(showOwner);
   const agents = (directory.data?.users ?? []).filter((user) => user.role === "AGENT");
   const ownerName = (id?: string | null) => directory.data?.users.find((user) => user.id === id)?.full_name;
 
-  const rows = useMemo(() => leads.map((lead) => ({ lead, action: nextAction(quotes.filter((quote) => quote.lead_id === lead.id), manager) })), [leads, quotes, manager]);
+  const rows = useMemo(() => leads.map((lead) => ({ lead, action: nextAction(quotes.filter((quote) => quote.lead_id === lead.id), reviewer) })), [leads, quotes, reviewer]);
   const count = (predicate: (row: (typeof rows)[number]) => boolean) => rows.filter(predicate).length;
   const byStage = (stage: string) => count((row) => row.lead.stage === stage);
   const reviewCount = count((row) => row.action.key === "review");
@@ -42,9 +47,9 @@ export function LeadsScreen() {
 
   const tabs: TabItem<Filter>[] = [
     { value: "all", label: "All", count: rows.length },
-    { value: "review", label: manager ? "Needs review" : "Awaiting approval", count: reviewCount, hidden: !reviewCount },
-    { value: "handoff", label: manager ? "Ready to hand off" : "Approved", count: handoffCount, hidden: !handoffCount },
-    { value: "rework", label: manager ? "Agent rework" : "Rework needed", count: reworkCount, hidden: !reworkCount },
+    { value: "review", label: reviewer ? "Needs review" : "Awaiting approval", count: reviewCount, hidden: !reviewCount },
+    { value: "handoff", label: reviewer ? "Ready to hand off" : "Approved", count: handoffCount, hidden: !handoffCount },
+    { value: "rework", label: reviewer ? "Agent rework" : "Rework needed", count: reworkCount, hidden: !reworkCount },
     ...(["NEW", "CONTACTED", "QUALIFIED", "CUSTOMER", "LOST"] as const).map((stage) => ({ value: stage, label: stageLabel[stage], count: byStage(stage) })),
   ];
 
@@ -62,15 +67,15 @@ export function LeadsScreen() {
   const selectedLeads = leads.filter((lead) => selected.includes(lead.id));
 
   return <div className="space-y-6 animate-rise">
-    <PageHeader title="Sales pipeline" subtitle={manager ? "Every lead in your department" : "Your leads and customers"} actions={<>
+    <PageHeader title="Sales pipeline" subtitle={manager ? "Every lead in your department" : teamLead ? "Your team's leads and customers" : "Your leads and customers"} actions={<>
       <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportLeadsExcel(visible.map(({ lead }) => lead), ownerName)} disabled={!visible.length}>Export</Button>
       <Button variant="outline" icon={<Upload size={15} />} onClick={() => setImporting(true)}>Import</Button>
       {!manager && <LinkButton href="/app/sales/new" variant="primary" icon={<Plus size={16} />}>New lead</LinkButton>}
     </>} />
 
     <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-      {manager ? <>
-        <KpiCard label="Department leads" value={leads.length} icon={ClipboardList} tone="brand" />
+      {supervisor ? <>
+        <KpiCard label={manager ? "Department leads" : "Team pipeline"} value={leads.length} icon={ClipboardList} tone="brand" />
         <KpiCard label="Customers" value={byStage("CUSTOMER")} icon={UserRoundCheck} tone="success" />
         <KpiCard label="Review required" value={reviewCount} icon={Hourglass} tone="accent" hint={reviewCount ? "Quotes waiting for your decision" : "Nothing waiting"} />
         <KpiCard label="Ready for Operations" value={handoffCount} icon={Send} tone="aqua" />
@@ -86,21 +91,21 @@ export function LeadsScreen() {
       <div className="flex flex-col gap-3 px-5 pt-4 lg:flex-row lg:items-end lg:justify-between">
         <Tabs items={tabs} value={filter} onChange={setFilter} className="-mb-px border-b-0 lg:flex-1" />
         <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-        {manager && <select value={owner} onChange={(event) => setOwner(event.target.value)} aria-label="Filter by agent" className={cn(controlClass, "h-10 sm:w-48")}><option value="">All agents</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select>}
+        {showOwner && <select value={owner} onChange={(event) => setOwner(event.target.value)} aria-label="Filter by agent" className={cn(controlClass, "h-10 sm:w-48")}><option value="">All agents</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select>}
         <label className="relative block lg:w-72">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company or contact" aria-label="Search leads" className={cn(controlClass, "h-10 pl-9")} />
         </label>
         </div>
       </div>
-      {manager && selected.length > 0 && <BulkBar leads={selectedLeads} agents={agents} onClear={() => setSelected([])} ownerName={ownerName} />}
+      {canBulk && selected.length > 0 && <BulkBar leads={selectedLeads} agents={agents} onClear={() => setSelected([])} ownerName={ownerName} />}
       <div className="border-t border-line">
         {visible.length ? <>
           <table className="hidden w-full text-sm md:table">
             <thead><tr className="text-left text-xs text-muted">
-              {manager && <th className="w-10 pl-5"><input type="checkbox" aria-label="Select all leads in view" checked={allSelected} onChange={toggleAll} className="h-4 w-4" /></th>}
-              <th className={cn("py-2.5 font-medium", manager ? "px-3" : "px-5")}>Company</th>
-              {manager && <th className="px-3 py-2.5 font-medium">Owner</th>}
+              {canBulk && <th className="w-10 pl-5"><input type="checkbox" aria-label="Select all leads in view" checked={allSelected} onChange={toggleAll} className="h-4 w-4" /></th>}
+              <th className={cn("py-2.5 font-medium", canBulk ? "px-3" : "px-5")}>Company</th>
+              {showOwner && <th className="px-3 py-2.5 font-medium">Owner</th>}
               <th className="px-3 py-2.5 font-medium">Stage</th>
               <th className="px-3 py-2.5 font-medium">Next step</th>
               <th className="px-3 py-2.5 font-medium">Follow-up</th>
@@ -111,9 +116,9 @@ export function LeadsScreen() {
               {visible.map(({ lead, action }) => {
                 const overdue = !["CUSTOMER", "LOST"].includes(lead.stage) && isPast(lead.next_follow_up_at);
                 return <tr key={lead.id} onClick={() => router.push(`/app/sales/leads/${lead.id}`)} className="group cursor-pointer border-t border-line-soft transition-colors hover:bg-[#FAF8F4]">
-                  {manager && <td className="pl-5" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${lead.company_name}`} checked={selected.includes(lead.id)} onChange={() => toggle(lead.id)} className="h-4 w-4" /></td>}
-                  <td className={cn("py-3.5", manager ? "px-3" : "px-5")}><Link href={`/app/sales/leads/${lead.id}`} onClick={(event) => event.stopPropagation()} className="font-semibold hover:text-brand-deep">{lead.company_name}</Link><p className="mt-0.5 text-xs text-muted">{lead.contact_name || "No contact"}{lead.contact_email ? ` · ${lead.contact_email}` : ""}</p></td>
-                  {manager && <td className="px-3 py-3.5 text-[13px] text-ink/75">{ownerName(lead.owner_id) ?? "—"}</td>}
+                  {canBulk && <td className="pl-5" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${lead.company_name}`} checked={selected.includes(lead.id)} onChange={() => toggle(lead.id)} className="h-4 w-4" /></td>}
+                  <td className={cn("py-3.5", canBulk ? "px-3" : "px-5")}><Link href={`/app/sales/leads/${lead.id}`} onClick={(event) => event.stopPropagation()} className="font-semibold hover:text-brand-deep">{lead.company_name}</Link><p className="mt-0.5 text-xs text-muted">{lead.contact_name || "No contact"}{lead.contact_email ? ` · ${lead.contact_email}` : ""}</p></td>
+                  {showOwner && <td className="px-3 py-3.5 text-[13px] text-ink/75">{ownerName(lead.owner_id) ?? "—"}</td>}
                   <td className="px-3 py-3.5"><span className="flex flex-wrap gap-1.5"><StatusChip status={lead.stage} label={stageLabel[lead.stage]} />{lead.archived_at && <Chip>Archived</Chip>}</span></td>
                   <td className="px-3 py-3.5">{action.key === "none" ? <span className="text-xs text-muted">—</span> : <Chip tone={action.tone}>{action.label}</Chip>}</td>
                   <td className={cn("px-3 py-3.5 text-[13px]", overdue ? "font-medium text-[#C4254B]" : "text-ink/75")}>{overdue && <AlertCircle size={13} className="mr-1 inline -translate-y-px" />}{dateLabel(lead.next_follow_up_at)}</td>
@@ -127,7 +132,7 @@ export function LeadsScreen() {
             {visible.map(({ lead, action }) => <li key={lead.id}><Link href={`/app/sales/leads/${lead.id}`} className="flex items-center gap-3 px-4 py-3.5 active:bg-[#FAF8F4]">
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold">{lead.company_name}</p>
-                <p className="truncate text-xs text-muted">{lead.contact_name || "No contact"}{manager ? ` · ${ownerName(lead.owner_id) ?? "No owner"}` : ""} · Follow-up {dateLabel(lead.next_follow_up_at)}</p>
+                <p className="truncate text-xs text-muted">{lead.contact_name || "No contact"}{showOwner ? ` · ${ownerName(lead.owner_id) ?? "No owner"}` : ""} · Follow-up {dateLabel(lead.next_follow_up_at)}</p>
                 <div className="mt-2 flex flex-wrap gap-1.5"><StatusChip status={lead.stage} label={stageLabel[lead.stage]} />{action.key !== "none" && <Chip tone={action.tone}>{action.label}</Chip>}</div>
               </div>
               <ChevronRight size={16} className="text-muted" />
