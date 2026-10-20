@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Download } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
 import { dateLabel, money } from "@/lib/format";
@@ -44,6 +44,9 @@ export function ReportsScreen() {
   const canViewTeamPerformance = manager || teamLead || profile.role === "SUPER_ADMIN";
   const teamView = canViewTeamPerformance;
   const [range, setRange] = useState(thisMonth);
+  // The report response is intentionally narrowed once an agent filter is active.
+  // Keep the full roster separately so selecting one agent never removes the way back to all agents.
+  const [agentOptions, setAgentOptions] = useState<{ id: string; full_name: string }[]>([]);
   // Screens stay mounted between visits, so start fresh each time someone comes back to Reports.
   const pathname = usePathname();
   const [seenPath, setSeenPath] = useState(pathname);
@@ -52,6 +55,17 @@ export function ReportsScreen() {
     if (pathname === "/app/reports") setRange(thisMonth());
   }
   const reports = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(range).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
+
+  useEffect(() => {
+    const incoming = reports.data?.sales.agents ?? [];
+    if (!incoming.length) return;
+    setAgentOptions((current) => {
+      const byId = new Map(current.map((agent) => [agent.id, agent]));
+      incoming.forEach((agent) => byId.set(agent.id, agent));
+      const next = [...byId.values()];
+      return next.length === current.length && next.every((agent, index) => agent.id === current[index]?.id && agent.full_name === current[index]?.full_name) ? current : next;
+    });
+  }, [reports.data?.sales.agents]);
 
   const [exporting, setExporting] = useState(false);
   const exportExcel = async () => {
@@ -75,7 +89,8 @@ export function ReportsScreen() {
     <Card className="flex flex-wrap items-end gap-3 px-5 py-4">
       <label className="flex flex-col text-xs font-medium text-muted">From<input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
       <label className="flex flex-col text-xs font-medium text-muted">To<input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
-      {sales && canViewTeamPerformance && (data?.sales.agents ?? []).length > 1 && <label className="flex flex-col text-xs font-medium text-muted">Agent<select value={range.agent_id} onChange={(event) => setRange({ ...range, agent_id: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-52")}><option value="">All permitted agents</option>{data!.sales.agents!.map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select></label>}
+      {sales && canViewTeamPerformance && agentOptions.length > 0 && <label className="flex flex-col text-xs font-medium text-muted">Agent<select value={range.agent_id} onChange={(event) => setRange({ ...range, agent_id: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-52")}><option value="">All permitted agents</option>{agentOptions.map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select></label>}
+      {range.agent_id && <Button variant="ghost" onClick={() => setRange({ ...range, agent_id: "" })}>Clear agent</Button>}
       {(range.from !== thisMonth().from || range.to !== thisMonth().to || range.agent_id) && <Button variant="ghost" onClick={() => setRange(thisMonth())}>This month</Button>}
       {(range.from || range.to) && <Button variant="ghost" onClick={() => setRange({ ...range, from: "", to: "" })}>All time</Button>}
     </Card>
