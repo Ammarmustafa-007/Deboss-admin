@@ -124,7 +124,6 @@ function opsSheets(data: ReportData, manager: boolean): ExcelSheet[] {
   const rollup = (label: string): ExcelColumn[] => [{ header: label, key: "name" }, { header: "Shipments", key: "shipments", type: "number" }, { header: "Delivered", key: "delivered", type: "number" }, { header: "Invoiced", key: "invoiced", type: "money" }, { header: "Collected", key: "collected", type: "money" }, { header: "Outstanding", key: "outstanding", type: "money" }];
   const sumRows = <T extends Record<string, unknown>>(rows: T[], keys: string[]) => Object.fromEntries(keys.map((key) => [key, rows.reduce((total, row) => total + Number(row[key] ?? 0), 0)]));
   const sheets: ExcelSheet[] = [
-    summarySheet("Operations summary", [["Shipments", totals.shipments, "number"], ["In progress", totals.in_progress, "number"], ["Delivered", totals.delivered, "number"], ["Open exceptions", totals.exceptions, "number"], ["Invoiced", totals.invoiced, "money"], ["Collected", totals.paid, "money"], ["Outstanding", totals.outstanding, "money"], ["Overdue invoices", totals.overdue, "number"]]),
     {
       name: manager ? "Shipments" : "My shipments", title: manager ? "Shipments" : "My shipments",
       columns: [
@@ -142,6 +141,7 @@ function opsSheets(data: ReportData, manager: boolean): ExcelSheet[] {
   if (manager && data.operations.agent_breakdown?.length) sheets.push({ name: "By agent", title: "By agent", rows: data.operations.agent_breakdown, totals: sumRows(data.operations.agent_breakdown, ["shipments", "in_progress", "delivered", "exceptions", "invoiced", "collected", "outstanding"]), columns: [{ header: "Agent", key: "name" }, { header: "Shipments", key: "shipments", type: "number" }, { header: "In progress", key: "in_progress", type: "number" }, { header: "Delivered", key: "delivered", type: "number" }, { header: "Open exceptions", key: "exceptions", type: "number" }, { header: "Invoiced", key: "invoiced", type: "money" }, { header: "Collected", key: "collected", type: "money" }, { header: "Outstanding", key: "outstanding", type: "money" }] });
   if (manager && data.operations.team_breakdown?.length) sheets.push({ name: "By team", title: "By team", columns: rollup("Team"), rows: data.operations.team_breakdown, totals: sumRows(data.operations.team_breakdown, ["shipments", "delivered", "invoiced", "collected", "outstanding"]) });
   if (data.operations.customer_breakdown?.length) sheets.push({ name: "By customer", title: "By customer", columns: rollup("Customer"), rows: data.operations.customer_breakdown, totals: sumRows(data.operations.customer_breakdown, ["shipments", "delivered", "invoiced", "collected", "outstanding"]) });
+  sheets.push(summarySheet("Operations summary", [["Shipments", totals.shipments, "number"], ["In progress", totals.in_progress, "number"], ["Delivered", totals.delivered, "number"], ["Open exceptions", totals.exceptions, "number"], ["Invoiced", totals.invoiced, "money"], ["Collected", totals.paid, "money"], ["Outstanding", totals.outstanding, "money"], ["Overdue invoices", totals.overdue, "number"]]));
   return sheets;
 }
 
@@ -150,7 +150,6 @@ function salesSheets(data: ReportData, manager: boolean): ExcelSheet[] {
   const totals = data.sales.totals;
   const rows = data.sales.shipment_rows;
   const sheets: ExcelSheet[] = [
-    summarySheet(manager ? "Sales summary" : "My sales summary", [...(manager ? [["Leads", totals.leads, "number"] as SummaryLine] : []), ["Customers onboarded", totals.customers, "number"], ["Shipments", totals.shipments, "number"], ["Gross generated", totals.gross_generated, "money"], ["Quoted value", totals.quoted_value, "money"], ["Agreed value", totals.agreed_value, "money"], ...(manager ? [["Pipeline value", totals.pipeline_value, "money"] as SummaryLine] : [])]),
     {
       name: manager ? "Shipments" : "My shipments", title: manager ? "Shipments" : "My shipments",
       columns: [{ header: "Shipment reference", key: "reference_number" }, { header: "Customer", key: "customer_name" }, { header: "Pickup", key: "pickup_location" }, { header: "Delivery", key: "delivery_location" }, { header: "Equipment", key: "equipment_type" }, { header: "Quoted rate", key: "amount_quoted", type: "money" }, { header: "Agreed rate", key: "amount_agreed", type: "money" }, { header: "Commercial status", key: "sales_status", type: "status" }, { header: "Pickup date", key: "pickup_date", type: "date" }, { header: "Delivery date", key: "delivery_date", type: "date" }, { header: "Created date", key: "created_at", type: "date" }, { header: "Last updated", key: "updated_at", type: "date" }],
@@ -161,12 +160,14 @@ function salesSheets(data: ReportData, manager: boolean): ExcelSheet[] {
   const agents = data.sales.agent_breakdown ?? [];
   if (manager && agents.length) sheets.push({ name: "By agent", title: "By agent", columns: [{ header: "Agent", key: "name" }, { header: "Leads", key: "leads", type: "number" }, { header: "Customers", key: "customers", type: "number" }, { header: "Shipments", key: "shipments", type: "number" }, { header: "Gross generated", key: "gross_generated", type: "money" }], rows: agents, totals: { leads: agents.reduce((t, r) => t + r.leads, 0), customers: agents.reduce((t, r) => t + r.customers, 0), shipments: agents.reduce((t, r) => t + r.shipments, 0), gross_generated: agents.reduce((t, r) => t + r.gross_generated, 0) } });
   if (manager && data.sales.agent_outcomes?.length) sheets.push(outcomeSheet(data.sales.agent_outcomes));
+  sheets.push(summarySheet(manager ? "Sales summary" : "My sales summary", [...(manager ? [["Leads", totals.leads, "number"] as SummaryLine] : []), ["Customers onboarded", totals.customers, "number"], ["Shipments", totals.shipments, "number"], ["Gross generated", totals.gross_generated, "money"], ["Quoted value", totals.quoted_value, "money"], ["Agreed value", totals.agreed_value, "money"], ...(manager ? [["Pipeline value", totals.pipeline_value, "money"] as SummaryLine] : [])]));
   return sheets;
 }
 
 type SummaryLine = [string, number | undefined, "number" | "money"];
+/** The page's headline numbers as one row, one measure per column, so it reads like the rest of the workbook. */
 function summarySheet(title: string, lines: SummaryLine[]): ExcelSheet {
-  return { name: "Summary", title, columns: [{ header: "Measure", key: "label", width: 28 }, { header: "Value", key: "value", type: (row) => row.format as "number" | "money", width: 20 }], rows: lines.map(([label, value, format]) => ({ label, value: value ?? 0, format })) };
+  return { name: "Summary", title, columns: lines.map(([label, , format]) => ({ header: label, key: label, type: format })), rows: [Object.fromEntries(lines.map(([label, value]) => [label, value ?? 0]))] };
 }
 
 function outcomeSheet(rows: OutcomeRow[]): ExcelSheet {

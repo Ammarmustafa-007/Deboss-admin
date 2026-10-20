@@ -2,7 +2,7 @@
 
 /**
  * Styled Excel exports (RP-6). Every download in the app goes through here so they all share one look:
- * a branded title block, an orange frozen header with filters, aligned and formatted values,
+ * the data table starting in row 1 (as a plain export), an orange frozen header with filters, aligned and formatted values,
  * status colours that match the app, banded rows and a bold totals row.
  */
 
@@ -72,27 +72,14 @@ export async function downloadExcel(fileName: string, sheets: ExcelSheet[], meta
   for (const sheet of sheets) {
     const width = Math.max(sheet.columns.length, 2);
     const ws = workbook.addWorksheet(sheet.name.slice(0, 31).replace(/[\\/?*[\]:]/g, " "), {
-      views: [{ state: "frozen", ySplit: 5, showGridLines: false }],
+      views: [{ state: "frozen", ySplit: 1, showGridLines: false }],
       pageSetup: { orientation: sheet.columns.length > 6 ? "landscape" : "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.3, footer: 0.3 } },
-      headerFooter: { oddFooter: `&L&8DEBOSS GLOBAL · ${sheet.title}&R&8Page &P of &N` },
+      // The data starts at row 1 like a plain export; who/when/period go in the printed header instead.
+      headerFooter: { oddHeader: `&L&9&B${sheet.title}&R&8${[meta.period, meta.exportedBy ? `Exported by ${meta.exportedBy}` : "", new Date().toLocaleDateString()].filter(Boolean).join(" · ")}`, oddFooter: "&L&8DEBOSS GLOBAL&R&8Page &P of &N" },
     });
 
-    // Title block: report name, period and who exported it.
-    ws.mergeCells(1, 1, 1, width);
-    const title = ws.getCell(1, 1);
-    title.value = sheet.title;
-    title.font = { name: font, size: 16, bold: true, color: { argb: ink } };
-    ws.getRow(1).height = 28;
-    ws.mergeCells(2, 1, 2, width);
-    const detail = ws.getCell(2, 1);
-    detail.value = ["DEBOSS GLOBAL", meta.period, meta.exportedBy ? `Exported by ${meta.exportedBy}` : undefined, new Date().toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })].filter(Boolean).join("  ·  ");
-    detail.font = { name: font, size: 9, color: { argb: muted } };
-    ws.mergeCells(3, 1, 3, width);
-    if (sheet.note) { const note = ws.getCell(3, 1); note.value = sheet.note; note.font = { name: font, size: 9, italic: true, color: { argb: muted } }; }
-    ws.getRow(4).height = 6;
-
     // Header row.
-    const header = ws.getRow(5);
+    const header = ws.getRow(1);
     sheet.columns.forEach((column, index) => {
       const cell = header.getCell(index + 1);
       cell.value = column.header;
@@ -105,7 +92,7 @@ export async function downloadExcel(fileName: string, sheets: ExcelSheet[], meta
 
     // Data rows.
     sheet.rows.forEach((row, rowIndex) => {
-      const excelRow = ws.getRow(6 + rowIndex);
+      const excelRow = ws.getRow(2 + rowIndex);
       sheet.columns.forEach((column, index) => {
         const type = typeof column.type === "function" ? column.type(row) : column.type ?? "text";
         const cell = excelRow.getCell(index + 1);
@@ -125,8 +112,8 @@ export async function downloadExcel(fileName: string, sheets: ExcelSheet[], meta
     });
 
     if (!sheet.rows.length) {
-      ws.mergeCells(6, 1, 6, width);
-      const empty = ws.getCell(6, 1);
+      ws.mergeCells(2, 1, 2, width);
+      const empty = ws.getCell(2, 1);
       empty.value = "No records in this period.";
       empty.font = { name: font, size: 10, italic: true, color: { argb: muted } };
       empty.alignment = { horizontal: "center" };
@@ -134,7 +121,7 @@ export async function downloadExcel(fileName: string, sheets: ExcelSheet[], meta
 
     // Totals row.
     if (sheet.totals && sheet.rows.length) {
-      const totals = ws.getRow(6 + sheet.rows.length);
+      const totals = ws.getRow(2 + sheet.rows.length);
       sheet.columns.forEach((column, index) => {
         const type = typeof column.type === "function" ? "text" : column.type ?? "text";
         const cell = totals.getCell(index + 1);
@@ -149,7 +136,7 @@ export async function downloadExcel(fileName: string, sheets: ExcelSheet[], meta
       totals.height = 22;
     }
 
-    if (sheet.rows.length) ws.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5 + sheet.rows.length, column: sheet.columns.length } };
+    if (sheet.rows.length) ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1 + sheet.rows.length, column: sheet.columns.length } };
 
     // Column widths fit the content (within sensible limits).
     sheet.columns.forEach((column, index) => {
