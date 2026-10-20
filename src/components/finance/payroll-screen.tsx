@@ -11,6 +11,7 @@ import { Tabs } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
 import { Drawer, Modal } from "@/components/ui/overlay";
 import { MonthPicker } from "@/components/finance/month-picker";
+import { downloadExcel } from "@/lib/excel";
 import { basisDescription, basisLabel, currentPeriod, periodLabel, roleLabel, usePayroll, type PayrollLine, cash } from "@/components/finance/finance-data";
 
 export function PayrollScreen() {
@@ -25,15 +26,14 @@ export function PayrollScreen() {
   const lines = (data?.lines ?? []).filter((line) => department === "all" || (line.department_id ?? "none") === department);
   const unconfigured = (data?.lines ?? []).filter((line) => !line.configured).length;
 
-  const exportCsv = () => {
+  const exportExcel = () => {
     if (!data) return;
-    const header = ["Name", "Role", "Department", "Base salary", "Commission basis", "Basis amount", "Commission %", "Commission", "Total"];
-    const rows = data.lines.map((line) => [line.full_name, roleLabel[line.role_key], line.department_name ?? "", line.base_salary, basisLabel[line.commission_basis], line.basis_amount, line.commission_rate, line.commission_amount, line.total]);
-    const csv = [header, ...rows, [], ["Total", "", "", data.totals.base, "", "", "", data.totals.commission, data.totals.total]].map((row) => row.map((cell) => JSON.stringify(cell ?? "")).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url; link.download = `payroll-${period}${finalized ? "" : "-draft"}.csv`; link.click();
-    URL.revokeObjectURL(url);
+    void downloadExcel(`Payroll ${period}${finalized ? "" : " draft"}`, [{
+      name: "Payroll", title: `Payroll · ${periodLabel(period)}`, note: finalized ? "Finalized." : "Draft: live figures until the month is finalized.",
+      columns: [{ header: "Name", key: "full_name" }, { header: "Role", key: "role" }, { header: "Department", key: "department_name" }, { header: "Base salary", key: "base_salary", type: "money" }, { header: "Commission basis", key: "basis" }, { header: "Basis amount", key: "basis_amount", type: "money" }, { header: "Commission %", key: "commission_rate", type: "percent" }, { header: "Commission", key: "commission_amount", type: "money" }, { header: "Total", key: "total", type: "money" }],
+      rows: data.lines.map((line) => ({ ...line, role: roleLabel[line.role_key], basis: basisLabel[line.commission_basis] })),
+      totals: { base_salary: data.totals.base, commission_amount: data.totals.commission, total: data.totals.total },
+    }]);
   };
 
   const confirmAction = async () => {
@@ -46,7 +46,7 @@ export function PayrollScreen() {
   return <div className="space-y-6 animate-rise">
     <PageHeader title="Payroll" subtitle="Base salary plus commission from approved and paid work" actions={<>
       <MonthPicker value={period} onChange={(next) => { setPeriod(next); setDepartment("all"); }} />
-      <Button variant="outline" icon={<Download size={15} />} onClick={exportCsv} disabled={!data?.lines.length}>Export</Button>
+      <Button variant="outline" icon={<Download size={15} />} onClick={exportExcel} disabled={!data?.lines.length}>Export</Button>
       {data && (finalized
         ? <Button variant="outline" icon={<LockOpen size={15} />} onClick={() => setConfirm("reopen")}>Reopen</Button>
         : <Button variant="primary" icon={<Lock size={15} />} onClick={() => setConfirm("finalize")} disabled={!data.lines.length}>Finalize month</Button>)}

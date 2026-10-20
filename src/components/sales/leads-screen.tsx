@@ -13,7 +13,7 @@ import { Button, LinkButton } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
 import { nextAction, stageLabel, type Lead, type Quote } from "@/components/sales/model";
 import { useTeamDirectory } from "@/components/sales/directory";
-import { BulkBar, exportLeadsCsv } from "@/components/sales/lead-bulk";
+import { BulkBar, exportLeadsExcel } from "@/components/sales/lead-bulk";
 import { LeadImport } from "@/components/sales/lead-import";
 
 type Filter = "all" | "NEW" | "CONTACTED" | "QUALIFIED" | "CUSTOMER" | "LOST" | "review" | "handoff" | "rework";
@@ -63,7 +63,7 @@ export function LeadsScreen() {
 
   return <div className="space-y-6 animate-rise">
     <PageHeader title="Sales pipeline" subtitle={manager ? "Every lead in your department" : "Your leads and customers"} actions={<>
-      <Button variant="outline" icon={<Download size={15} />} onClick={() => exportLeadsCsv(visible.map(({ lead }) => lead), ownerName)} disabled={!visible.length}>Export</Button>
+      <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportLeadsExcel(visible.map(({ lead }) => lead), ownerName)} disabled={!visible.length}>Export</Button>
       <Button variant="outline" icon={<Upload size={15} />} onClick={() => setImporting(true)}>Import</Button>
       {!manager && <LinkButton href="/app/sales/new" variant="primary" icon={<Plus size={16} />}>New lead</LinkButton>}
     </>} />

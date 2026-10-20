@@ -8,22 +8,18 @@ import { useBrokerage } from "@/components/app/brokerage-context";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { Button } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
+import { downloadExcel } from "@/lib/excel";
 import { editableStages, stageLabel, type Lead } from "@/components/sales/model";
 import type { DirectoryPerson } from "@/components/sales/directory";
 
-const csvCell = (value: unknown) => JSON.stringify(value == null ? "" : String(value));
-
-/** Downloads the given leads as CSV (no internal IDs). */
-export function exportLeadsCsv(leads: Lead[], ownerName: (id?: string | null) => string | undefined) {
-  const header = ["Company", "Contact", "Email", "Phone", "Stage", "Owner", "Source", "Monthly forecast", "Next follow-up", "Archived"];
-  const rows = leads.map((lead) => [lead.company_name, lead.contact_name, lead.contact_email, lead.contact_phone, stageLabel[lead.stage] ?? lead.stage, ownerName(lead.owner_id) ?? "", lead.source, lead.estimated_monthly_value, lead.next_follow_up_at ? new Date(lead.next_follow_up_at).toLocaleString() : "", lead.archived_at ? "Yes" : ""]);
-  const csv = [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+/** Downloads the given leads as a styled Excel sheet (no internal IDs). */
+export function exportLeadsExcel(leads: Lead[], ownerName: (id?: string | null) => string | undefined) {
+  return downloadExcel(`Leads ${new Date().toISOString().slice(0, 10)}`, [{
+    name: "Leads", title: "Leads", note: `${leads.length} lead${leads.length === 1 ? "" : "s"}`,
+    columns: [{ header: "Company", key: "company" }, { header: "Contact", key: "contact" }, { header: "Email", key: "email" }, { header: "Phone", key: "phone" }, { header: "Stage", key: "stage", type: "status" }, { header: "Owner", key: "owner" }, { header: "Source", key: "source" }, { header: "Monthly forecast", key: "forecast", type: "money" }, { header: "Next follow-up", key: "follow_up", type: "datetime" }, { header: "Archived", key: "archived" }],
+    rows: leads.map((lead) => ({ company: lead.company_name, contact: lead.contact_name, email: lead.contact_email, phone: lead.contact_phone, stage: stageLabel[lead.stage] ?? lead.stage, owner: ownerName(lead.owner_id) ?? "", source: lead.source, forecast: lead.estimated_monthly_value, follow_up: lead.next_follow_up_at, archived: lead.archived_at ? "Yes" : "" })),
+    totals: { company: "Total", forecast: leads.reduce((sum, lead) => sum + Number(lead.estimated_monthly_value ?? 0), 0) },
+  }]);
 }
 
 /** Manager bulk actions on selected leads. Each lead is updated with the existing single-lead endpoint. */
@@ -70,7 +66,7 @@ export function BulkBar({ leads, agents, onClear, ownerName }: { leads: Lead[]; 
         : apply("bulk-archive", leads.filter((lead) => !lead.archived_at), () => ({ archived_at: new Date().toISOString() }), "Archived")}>
       {archived.length === leads.length ? "Restore" : "Archive"}
     </Button>
-    <Button size="sm" variant="outline" icon={<Download size={13} />} disabled={anyBusy} onClick={() => exportLeadsCsv(leads, ownerName)}>Export</Button>
+    <Button size="sm" variant="outline" icon={<Download size={13} />} disabled={anyBusy} onClick={() => void exportLeadsExcel(leads, ownerName)}>Export</Button>
 
     <button type="button" onClick={onClear} disabled={anyBusy} aria-label="Clear selection" className="ml-auto grid h-8 w-8 place-items-center rounded-lg text-muted hover:bg-black/5 hover:text-ink"><X size={16} /></button>
     {stage && stageable.length < leads.length && <p className="basis-full text-xs text-muted">Customers keep their stage; {stageable.length} of {leads.length} will move.</p>}

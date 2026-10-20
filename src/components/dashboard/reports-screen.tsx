@@ -12,6 +12,7 @@ import { useBrokerage } from "@/components/app/brokerage-context";
 import { Card, CardHeader, EmptyState, KpiCard, PageHeader, Skeleton, StatusChip, humanize, type Tone } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
+import { downloadExcel, periodLabel, type ExcelColumn, type ExcelSheet } from "@/lib/excel";
 
 type Row = Record<string, string | number | null | undefined> & { id: string };
 type Counts = Record<string, number>;
@@ -42,21 +43,24 @@ export function ReportsScreen() {
   const [range, setRange] = useState(thisMonth);
   const reports = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(range).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
 
-  const exportCsv = (title: string, rows: Row[] | OpsRow[]) => {
-    if (!rows.length) return report("There is no data in this report to export.", "error");
-    const readable = sales ? salesCsv(rows as Row[]) : opsCsv(rows as OpsRow[], canViewTeamPerformance);
-    download(title, readable);
-    report(`${title} exported as CSV without internal IDs.`);
+  const [exporting, setExporting] = useState(false);
+  const exportExcel = async () => {
+    if (!reports.data) return;
+    setExporting(true);
+    try {
+      const sheets = sales ? salesSheets(reports.data, canViewTeamPerformance) : opsSheets(reports.data, canViewTeamPerformance);
+      await downloadExcel(`${title} ${range.from || "all-time"}${range.to ? ` to ${range.to}` : ""}`, sheets, { period: periodLabel(range.from, range.to), exportedBy: profile.full_name });
+      report(`${title} exported to Excel.`);
+    } catch (error) { report(errorMessage(error, "The Excel file could not be created."), "error"); }
+    finally { setExporting(false); }
   };
-  const salesCsv = (rows: Row[]) => rows.map((row) => ({ "Shipment reference": row.reference_number ?? "", Customer: row.customer_name ?? row.company_name ?? "", Pickup: row.pickup_location ?? "", Delivery: row.delivery_location ?? "", Equipment: row.equipment_type ?? "", "Quoted rate": row.amount_quoted ?? row.quoted_rate ?? "", "Agreed rate": row.amount_agreed ?? "", "Commercial status": row.sales_status ?? row.status ?? "", "Pickup date": row.pickup_date ?? "", "Delivery date": row.delivery_date ?? "", "Created date": row.created_at ? new Date(String(row.created_at)).toLocaleString() : "", "Last updated": row.updated_at ? new Date(String(row.updated_at)).toLocaleString() : row.created_at ? new Date(String(row.created_at)).toLocaleString() : "" }));
 
 
   const data = reports.data;
   const title = sales ? canViewTeamPerformance ? "Sales performance" : "My sales results" : "Operations & revenue";
-  const exportRows = data ? (sales ? data.sales.shipment_rows : data.operations.rows) : [];
 
   return <div className="space-y-6 animate-rise">
-    <PageHeader title={title} subtitle="Filter by date range and export the detail as CSV" actions={<Button variant="ink" icon={<Download size={15} />} disabled={!data} onClick={() => exportCsv(sales ? "Sales agent shipments" : "Operations report", exportRows)}>Export CSV</Button>} />
+    <PageHeader title={title} subtitle="Filter by date range and export the report to Excel" actions={<Button variant="ink" icon={<Download size={15} />} disabled={!data} pending={exporting} pendingLabel="Preparing…" onClick={() => void exportExcel()}>Export Excel</Button>} />
 
     <Card className="flex flex-wrap items-end gap-3 px-5 py-4">
       <label className="flex flex-col text-xs font-medium text-muted">From<input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
@@ -114,33 +118,70 @@ export function ReportsScreen() {
   </div>;
 }
 
-/** Readable CSV columns for Operations, matching the on-screen table. */
-function opsCsv(rows: OpsRow[], manager: boolean) {
-  const day = (value: string | null) => value ? new Date(value).toLocaleDateString() : "";
-  return rows.map((row) => ({
-    "Shipment reference": row.reference_number, Customer: row.customer_name ?? "", Pickup: row.pickup_location ?? "", Delivery: row.delivery_location ?? "",
-    ...(manager ? { Agent: row.agent, Team: row.team ?? "" } : {}),
-    Status: humanize(row.status), Exception: row.exception ?? "", Carrier: row.carrier_name ?? "", Equipment: row.equipment_type ?? "",
-    "Pickup date": row.pickup_date ?? "", "Delivery date": row.delivery_date ?? "", "Quoted amount": row.amount_quoted ?? "", "Agreed amount": row.amount_agreed ?? "",
-    "Invoice number": row.invoice_number ?? "", "Invoice status": row.overdue ? "Overdue" : row.invoice_status ? humanize(row.invoice_status) : "Not invoiced", "Due date": row.invoice_due ?? "",
-    Invoiced: row.invoiced ?? "", Collected: row.collected ?? "", Outstanding: row.outstanding ?? "", Created: day(row.created_at), "Last updated": day(row.updated_at),
-  }));
+/** Operations workbook: summary, every shipment, then the agent, team and customer roll-ups (BO-5 to BO-7, IN-6). */
+function opsSheets(data: ReportData, manager: boolean): ExcelSheet[] {
+  const totals = data.operations.totals;
+  const rollup = (label: string): ExcelColumn[] => [{ header: label, key: "name" }, { header: "Shipments", key: "shipments", type: "number" }, { header: "Delivered", key: "delivered", type: "number" }, { header: "Invoiced", key: "invoiced", type: "money" }, { header: "Collected", key: "collected", type: "money" }, { header: "Outstanding", key: "outstanding", type: "money" }];
+  const sumRows = <T extends Record<string, unknown>>(rows: T[], keys: string[]) => Object.fromEntries(keys.map((key) => [key, rows.reduce((total, row) => total + Number(row[key] ?? 0), 0)]));
+  const sheets: ExcelSheet[] = [
+    summarySheet("Operations summary", [["Shipments", totals.shipments, "number"], ["In progress", totals.in_progress, "number"], ["Delivered", totals.delivered, "number"], ["Open exceptions", totals.exceptions, "number"], ["Invoiced", totals.invoiced, "money"], ["Collected", totals.paid, "money"], ["Outstanding", totals.outstanding, "money"], ["Overdue invoices", totals.overdue, "number"]]),
+    {
+      name: manager ? "Shipments" : "My shipments", title: manager ? "Shipments" : "My shipments",
+      columns: [
+        { header: "Shipment reference", key: "reference_number" }, { header: "Customer", key: "customer_name" }, { header: "Pickup", key: "pickup_location" }, { header: "Delivery", key: "delivery_location" },
+        ...(manager ? [{ header: "Agent", key: "agent" }, { header: "Team", key: "team" }] : []),
+        { header: "Status", key: "status", type: "status" }, { header: "Exception", key: "exception", type: "status" }, { header: "Carrier", key: "carrier_name" }, { header: "Equipment", key: "equipment_type" },
+        { header: "Pickup date", key: "pickup_date", type: "date" }, { header: "Delivery date", key: "delivery_date", type: "date" }, { header: "Quoted amount", key: "amount_quoted", type: "money" }, { header: "Agreed amount", key: "amount_agreed", type: "money" },
+        { header: "Invoice number", key: "invoice_number" }, { header: "Invoice status", key: "invoice_state", type: "status" }, { header: "Due date", key: "invoice_due", type: "date" },
+        { header: "Invoiced", key: "invoiced", type: "money" }, { header: "Collected", key: "collected", type: "money" }, { header: "Outstanding", key: "outstanding", type: "money" }, { header: "Created", key: "created_at", type: "date" }, { header: "Last updated", key: "updated_at", type: "date" },
+      ],
+      rows: data.operations.rows.map((row) => ({ ...row, invoice_state: row.overdue ? "Overdue" : row.invoice_status ?? "Not invoiced" })),
+      totals: sumRows(data.operations.rows, ["amount_quoted", "amount_agreed", "invoiced", "collected", "outstanding"]),
+    },
+  ];
+  if (manager && data.operations.agent_breakdown?.length) sheets.push({ name: "By agent", title: "By agent", rows: data.operations.agent_breakdown, totals: sumRows(data.operations.agent_breakdown, ["shipments", "in_progress", "delivered", "exceptions", "invoiced", "collected", "outstanding"]), columns: [{ header: "Agent", key: "name" }, { header: "Shipments", key: "shipments", type: "number" }, { header: "In progress", key: "in_progress", type: "number" }, { header: "Delivered", key: "delivered", type: "number" }, { header: "Open exceptions", key: "exceptions", type: "number" }, { header: "Invoiced", key: "invoiced", type: "money" }, { header: "Collected", key: "collected", type: "money" }, { header: "Outstanding", key: "outstanding", type: "money" }] });
+  if (manager && data.operations.team_breakdown?.length) sheets.push({ name: "By team", title: "By team", columns: rollup("Team"), rows: data.operations.team_breakdown, totals: sumRows(data.operations.team_breakdown, ["shipments", "delivered", "invoiced", "collected", "outstanding"]) });
+  if (data.operations.customer_breakdown?.length) sheets.push({ name: "By customer", title: "By customer", columns: rollup("Customer"), rows: data.operations.customer_breakdown, totals: sumRows(data.operations.customer_breakdown, ["shipments", "delivered", "invoiced", "collected", "outstanding"]) });
+  return sheets;
 }
 
-function download(title: string, readable: Record<string, unknown>[]) {
-  const columns = Object.keys(readable[0]);
-  const csv = [columns.join(","), ...readable.map((row) => columns.map((column) => JSON.stringify(row[column] ?? "")).join(","))].join("\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `${title.toLowerCase().replaceAll(" ", "-")}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
+/** Sales workbook: summary, shipments, then per-agent results and outcomes for managers (BS-5 to BS-7). */
+function salesSheets(data: ReportData, manager: boolean): ExcelSheet[] {
+  const totals = data.sales.totals;
+  const rows = data.sales.shipment_rows;
+  const sheets: ExcelSheet[] = [
+    summarySheet(manager ? "Sales summary" : "My sales summary", [...(manager ? [["Leads", totals.leads, "number"] as SummaryLine] : []), ["Customers onboarded", totals.customers, "number"], ["Shipments", totals.shipments, "number"], ["Gross generated", totals.gross_generated, "money"], ["Quoted value", totals.quoted_value, "money"], ["Agreed value", totals.agreed_value, "money"], ...(manager ? [["Pipeline value", totals.pipeline_value, "money"] as SummaryLine] : [])]),
+    {
+      name: manager ? "Shipments" : "My shipments", title: manager ? "Shipments" : "My shipments",
+      columns: [{ header: "Shipment reference", key: "reference_number" }, { header: "Customer", key: "customer_name" }, { header: "Pickup", key: "pickup_location" }, { header: "Delivery", key: "delivery_location" }, { header: "Equipment", key: "equipment_type" }, { header: "Quoted rate", key: "amount_quoted", type: "money" }, { header: "Agreed rate", key: "amount_agreed", type: "money" }, { header: "Commercial status", key: "sales_status", type: "status" }, { header: "Pickup date", key: "pickup_date", type: "date" }, { header: "Delivery date", key: "delivery_date", type: "date" }, { header: "Created date", key: "created_at", type: "date" }, { header: "Last updated", key: "updated_at", type: "date" }],
+      rows: rows.map((row) => ({ ...row, customer_name: row.customer_name ?? row.company_name, amount_quoted: row.amount_quoted ?? row.quoted_rate, sales_status: row.sales_status ?? row.status, updated_at: row.updated_at ?? row.created_at })),
+      totals: { amount_quoted: rows.reduce((total, row) => total + Number(row.amount_quoted ?? row.quoted_rate ?? 0), 0), amount_agreed: rows.reduce((total, row) => total + Number(row.amount_agreed ?? 0), 0) },
+    },
+  ];
+  const agents = data.sales.agent_breakdown ?? [];
+  if (manager && agents.length) sheets.push({ name: "By agent", title: "By agent", columns: [{ header: "Agent", key: "name" }, { header: "Leads", key: "leads", type: "number" }, { header: "Customers", key: "customers", type: "number" }, { header: "Shipments", key: "shipments", type: "number" }, { header: "Gross generated", key: "gross_generated", type: "money" }], rows: agents, totals: { leads: agents.reduce((t, r) => t + r.leads, 0), customers: agents.reduce((t, r) => t + r.customers, 0), shipments: agents.reduce((t, r) => t + r.shipments, 0), gross_generated: agents.reduce((t, r) => t + r.gross_generated, 0) } });
+  if (manager && data.sales.agent_outcomes?.length) sheets.push(outcomeSheet(data.sales.agent_outcomes));
+  return sheets;
+}
+
+type SummaryLine = [string, number | undefined, "number" | "money"];
+function summarySheet(title: string, lines: SummaryLine[]): ExcelSheet {
+  return { name: "Summary", title, columns: [{ header: "Measure", key: "label", width: 28 }, { header: "Value", key: "value", type: (row) => row.format as "number" | "money", width: 20 }], rows: lines.map(([label, value, format]) => ({ label, value: value ?? 0, format })) };
+}
+
+function outcomeSheet(rows: OutcomeRow[]): ExcelSheet {
+  const total = (key: string) => rows.reduce((sum, row) => sum + (row.statuses[key] ?? 0), 0);
+  return {
+    name: "Outcomes by agent", title: "Outcomes by agent", note: "Each customer's opportunities and outcomes under the agent who owns it.",
+    columns: [{ header: "Agent", key: "agent" }, { header: "Customer", key: "customer" }, { header: "Opportunities", key: "opportunities", type: "number" }, ...outcomeStatuses.map((key) => ({ header: humanize(key), key, type: "number" as const })), { header: "Gross generated", key: "gross_generated", type: "money" }],
+    rows: rows.map((row) => ({ ...row, ...Object.fromEntries(outcomeStatuses.map((key) => [key, row.statuses[key] ?? 0])) })),
+    totals: { opportunities: rows.reduce((sum, row) => sum + row.opportunities, 0), ...Object.fromEntries(outcomeStatuses.map((key) => [key, total(key)])), gross_generated: rows.reduce((sum, row) => sum + row.gross_generated, 0) },
+  };
 }
 
 type Column<T> = { label: string; value: (row: T) => ReactNode; total?: (rows: T[]) => ReactNode; align?: "right"; wide?: boolean };
 
-/** A report table with an optional totals row; every column comes from the same row data as the CSV. */
+/** A report table with an optional totals row; every column comes from the same row data as the Excel export. */
 function ReportTable<T>({ title, subtitle, rows, columns, keyOf, empty = "No records match this reporting period.", actions }: { title: string; subtitle?: string; rows: T[]; columns: Column<T>[]; keyOf: (row: T, index: number) => string; empty?: string; actions?: ReactNode }) {
   const totals = columns.some((column) => column.total);
   return <Card>
@@ -190,10 +231,10 @@ function OpsAgentTable({ rows }: { rows: OpsAgentRow[] }) {
 
 type OpsRow = { id: string; reference_number: string; customer_name: string | null; pickup_location: string; delivery_location: string; equipment_type: string | null; agent: string; team: string | null; status: string; carrier_name: string | null; pickup_date: string | null; delivery_date: string | null; amount_quoted: number | null; amount_agreed: number | null; invoice_number: string | null; invoice_status: string | null; invoice_due: string | null; invoiced: number | null; collected: number | null; outstanding: number | null; overdue: boolean; exception: string | null; created_at: string; updated_at: string };
 
-/** One complete line per shipment, the same rows as the CSV (BO-1 to BO-6). */
+/** One complete line per shipment, the same rows as the Excel export (BO-1 to BO-6). */
 function OpsShipmentTable({ rows, manager }: { rows: OpsRow[]; manager: boolean }) {
   const dash = (value: ReactNode) => value === null || value === undefined || value === "" ? <span className="text-muted">—</span> : value;
-  return <ReportTable title={manager ? "Shipments" : "My shipments"} subtitle="Every shipment in this period, the same rows as the CSV export" rows={rows} keyOf={(row) => row.id} empty="No shipments match this reporting period." columns={[
+  return <ReportTable title={manager ? "Shipments" : "My shipments"} subtitle="Every shipment in this period, the same rows as the Excel export" rows={rows} keyOf={(row) => row.id} empty="No shipments match this reporting period." columns={[
     { label: "Reference", value: (row) => row.reference_number },
     { label: "Customer", value: (row) => dash(row.customer_name) },
     { label: "Lane", wide: true, value: (row) => <span className="text-[13px]">{row.pickup_location} <span className="text-brand">→</span> {row.delivery_location}</span> },
@@ -242,17 +283,8 @@ function OutcomeTable({ rows }: { rows: OutcomeRow[] }) {
   const groups = rows.reduce((map, row) => map.set(row.agent, [...(map.get(row.agent) ?? []), row]), new Map<string, OutcomeRow[]>());
   const totalOf = (list: OutcomeRow[]) => ({ opportunities: list.reduce((sum, row) => sum + row.opportunities, 0), gross: list.reduce((sum, row) => sum + row.gross_generated, 0), status: (key: string) => list.reduce((sum, row) => sum + (row.statuses[key] ?? 0), 0) });
   const grand = totalOf(rows);
-  const download = () => {
-    const columns = ["Agent", "Customer", "Opportunities", ...outcomeStatuses.map(humanize), "Gross generated"];
-    const lines = rows.map((row) => [row.agent, row.customer, row.opportunities, ...outcomeStatuses.map((key) => row.statuses[key] ?? 0), row.gross_generated]);
-    const csv = [columns, ...lines].map((line) => line.map((cell) => JSON.stringify(cell)).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "outcomes-by-agent.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-  };
+  const { profile } = useSession();
+  const download = () => void downloadExcel("Outcomes by agent", [outcomeSheet(rows)], { exportedBy: profile.full_name });
   const cells = (opportunities: number, status: (key: string) => number, gross: number) => <>
     <td className="px-3 py-3 text-right tabular-nums">{opportunities}</td>
     {outcomeStatuses.map((key) => <td key={key} className="px-3 py-3 text-right tabular-nums">{status(key) || "–"}</td>)}
@@ -312,7 +344,7 @@ function Breakdown({ title, values }: { title: string; values: Counts }) {
 
 function ShipmentTable({ rows }: { rows: Row[] }) {
   return <Card>
-    <CardHeader title="My shipments" subtitle="The same rows included in the CSV export" />
+    <CardHeader title="My shipments" subtitle="The same rows included in the Excel export" />
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] text-sm">
         <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Reference</th><th className="px-3 py-2.5 font-medium">Customer</th><th className="px-3 py-2.5 font-medium">Lane</th><th className="px-3 py-2.5 font-medium">Equipment</th><th className="px-3 py-2.5 text-right font-medium">Quoted</th><th className="px-3 py-2.5 text-right font-medium">Agreed</th><th className="px-3 py-2.5 font-medium">Status</th><th className="px-5 py-2.5 font-medium">Dates</th></tr></thead>
