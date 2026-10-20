@@ -38,8 +38,10 @@ function thisMonth() {
 
 export function ReportsScreen() {
   const { profile } = useSession();
-  const { api, report, sales, manager } = useBrokerage();
+  const { api, report, sales, manager, workspace } = useBrokerage();
   const canViewTeamPerformance = manager || profile.role === "SUPER_ADMIN";
+  // Team Leads report on their team's work, so show who handled each shipment.
+  const teamView = canViewTeamPerformance || Boolean(workspace.capabilities?.teamLead);
   const [range, setRange] = useState(thisMonth);
   const reports = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(range).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
 
@@ -48,7 +50,7 @@ export function ReportsScreen() {
     if (!reports.data) return;
     setExporting(true);
     try {
-      const sheets = sales ? salesSheets(reports.data, canViewTeamPerformance) : opsSheets(reports.data, canViewTeamPerformance);
+      const sheets = sales ? salesSheets(reports.data, canViewTeamPerformance) : opsSheets(reports.data, teamView);
       await downloadExcel(`${title} ${range.from || "all-time"}${range.to ? ` to ${range.to}` : ""}`, sheets, { period: periodLabel(range.from, range.to), exportedBy: profile.full_name });
       report(`${title} exported to Excel.`);
     } catch (error) { report(errorMessage(error, "The Excel file could not be created."), "error"); }
@@ -101,7 +103,7 @@ export function ReportsScreen() {
         {sales && !canViewTeamPerformance ? <div className="space-y-6">
           <ShipmentTable rows={data.sales.shipment_rows} />
           <Breakdown title="Shipment status" values={data.sales.shipment_statuses} />
-        </div> : <>{!sales && canViewTeamPerformance && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{!sales && canViewTeamPerformance && (data.operations.team_breakdown?.length ?? 0) > 0 && <RollupTable title="By team" label="Team" rows={data.operations.team_breakdown!} />}{!sales && (data.operations.customer_breakdown?.length ?? 0) > 0 && <RollupTable title="By customer" label="Customer" rows={data.operations.customer_breakdown!} />}{!sales && <OpsShipmentTable rows={data.operations.rows} manager={canViewTeamPerformance} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}{sales && (data.sales.agent_outcomes?.length ?? 0) > 0 && <OutcomeTable rows={data.sales.agent_outcomes!} />}<div className="grid gap-6 xl:grid-cols-2">
+        </div> : <>{!sales && canViewTeamPerformance && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{!sales && canViewTeamPerformance && (data.operations.team_breakdown?.length ?? 0) > 0 && <RollupTable title="By team" label="Team" rows={data.operations.team_breakdown!} />}{!sales && (data.operations.customer_breakdown?.length ?? 0) > 0 && <RollupTable title="By customer" label="Customer" rows={data.operations.customer_breakdown!} />}{!sales && <OpsShipmentTable rows={data.operations.rows} manager={teamView} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}{sales && (data.sales.agent_outcomes?.length ?? 0) > 0 && <OutcomeTable rows={data.sales.agent_outcomes!} />}<div className="grid gap-6 xl:grid-cols-2">
           {sales ? <>
             <Breakdown title="Pipeline by stage" values={data.sales.lead_stages} />
             <Breakdown title="Quote outcomes" values={data.sales.quote_stages} />

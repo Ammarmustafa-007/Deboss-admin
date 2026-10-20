@@ -18,7 +18,9 @@ export function ShipmentsScreen() {
   const router = useRouter();
   const { workspace, manager } = useBrokerage();
   const shipments = useMemo(() => (workspace.shipments ?? []) as Shipment[], [workspace.shipments]);
-  const directory = useOperationsDirectory(manager);
+  // Team Leads see their team's work, so they need the names of who is handling it (read-only).
+  const teamLead = !manager && Boolean(workspace.capabilities?.teamLead);
+  const directory = useOperationsDirectory(manager || teamLead);
   const { run, busy } = useBrokerageAction();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -73,7 +75,7 @@ export function ShipmentsScreen() {
       <div className="flex flex-col gap-3 px-5 pt-4 lg:flex-row lg:items-end lg:justify-between">
         <Tabs items={tabs} value={filter} onChange={setFilter} className="-mb-px border-b-0 lg:flex-1" />
         <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-        {manager && <select value={agent} onChange={(event) => setAgent(event.target.value)} aria-label="Filter by agent" className={cn(controlClass, "h-10 sm:w-48")}><option value="">All agents</option>{counts.unassigned > 0 && <option value="unassigned">Unassigned ({counts.unassigned})</option>}{users.map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}</select>}
+        {(manager || teamLead) && <select value={agent} onChange={(event) => setAgent(event.target.value)} aria-label="Filter by agent" className={cn(controlClass, "h-10 sm:w-48")}><option value="">All agents</option>{counts.unassigned > 0 && <option value="unassigned">Unassigned ({counts.unassigned})</option>}{users.map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}</select>}
         <label className="relative block lg:w-72">
           <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
           <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Reference, customer, agent or carrier" aria-label="Search shipments" className={cn(controlClass, "h-10 pl-9")} />
@@ -88,6 +90,7 @@ export function ShipmentsScreen() {
               <th className="px-3 py-2.5 font-medium">Lane</th>
               <th className="px-3 py-2.5 font-medium">Status</th>
               {manager && <th className="px-3 py-2.5 font-medium">Assignment</th>}
+              {teamLead && <th className="px-3 py-2.5 font-medium">Agent</th>}
               <th className="w-10" />
             </tr></thead>
             <tbody>
@@ -103,6 +106,7 @@ export function ShipmentsScreen() {
                       <select aria-label={`Assign team for ${shipment.reference_number}`} disabled={pending || busy()} value={shipment.team_id ?? ""} onChange={(event) => assign(shipment, { team_id: event.target.value || null })} className={cn(controlClass, "h-9 w-36 text-xs")}><option value="">No team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select>
                     </div>
                   </td>}
+                  {teamLead && <td className="px-3 py-3.5 text-[13px]">{shipment.assigned_to ? nameOf(shipment.assigned_to) ?? "Team member" : <span className="text-accent">Unassigned</span>}</td>}
                   <td className="pr-4 text-muted"><ChevronRight size={16} className="transition-transform group-hover:translate-x-0.5" /></td>
                 </tr>;
               })}
@@ -112,7 +116,7 @@ export function ShipmentsScreen() {
             {visible.map((shipment) => <li key={shipment.id}><Link href={`/app/operations/${shipment.id}`} className="flex items-center gap-3 px-4 py-3.5">
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold">{shipment.reference_number} <span className="font-normal text-muted">· {shipment.customer_name}</span></p>
-                <p className="truncate text-xs text-muted">{shipment.pickup_location} → {shipment.delivery_location}{manager ? ` · ${nameOf(shipment.assigned_to) ?? "Unassigned"}` : ""}</p>
+                <p className="truncate text-xs text-muted">{shipment.pickup_location} → {shipment.delivery_location}{manager || teamLead ? ` · ${nameOf(shipment.assigned_to) ?? "Unassigned"}` : ""}</p>
                 <div className="mt-2 flex flex-wrap gap-1.5"><StatusChip status={shipment.status} label={statusLabel[shipment.status]} />{exceptionOpen(shipment) && shipment.status !== "EXCEPTION" && <Chip tone="danger">Exception</Chip>}</div>
               </div>
               <ChevronRight size={16} className="text-muted" />

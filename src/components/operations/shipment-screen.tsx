@@ -39,7 +39,7 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
   const { shipment, documents, events, comments, invoice } = data;
   // While in exception, the progress line shows where the shipment was when it was raised.
   const lineStatus = shipment.status === "EXCEPTION" ? events.find((event) => event.to_status === "EXCEPTION")?.from_status ?? "BOOKED" : shipment.status;
-  const directory = useOperationsDirectory(manager);
+  const directory = useOperationsDirectory(manager || Boolean(caps.teamLead));
   const pendingDocuments = documents.filter((document) => !document.is_verified).length;
   const [tab, setTab] = useState<TabKey>(exceptionOpen(shipment) ? "exception" : "details");
 
