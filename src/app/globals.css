@@ -33,7 +33,7 @@
   @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
   @keyframes fade { from { opacity: 0; } }
   @keyframes slide-in { from { transform: translateX(-100%); } }
-  @keyframes slide-from-right { from { transform: translateX(100%); } }
+  @keyframes slide-from-right { from { transform: translateX(calc(100% + 1.5rem)); opacity: .6; } }
 }
 
 * { box-sizing: border-box; }

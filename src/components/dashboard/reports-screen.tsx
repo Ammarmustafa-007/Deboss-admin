@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { BarChart3, Download } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
@@ -43,6 +44,13 @@ export function ReportsScreen() {
   const canViewTeamPerformance = manager || teamLead || profile.role === "SUPER_ADMIN";
   const teamView = canViewTeamPerformance;
   const [range, setRange] = useState(thisMonth);
+  // Screens stay mounted between visits, so start fresh each time someone comes back to Reports.
+  const pathname = usePathname();
+  const [seenPath, setSeenPath] = useState(pathname);
+  if (pathname !== seenPath) {
+    setSeenPath(pathname);
+    if (pathname === "/app/reports") setRange(thisMonth());
+  }
   const reports = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(range).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
 
   const [exporting, setExporting] = useState(false);

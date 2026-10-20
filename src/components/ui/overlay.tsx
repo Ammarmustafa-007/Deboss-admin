@@ -51,8 +51,8 @@ export function Modal({ open, onClose, title, subtitle, children, footer, dismis
 export function Drawer({ open, onClose, title, subtitle, children, footer, dismissible = true, className }: OverlayProps) {
   const panel = useOverlay(open, onClose, dismissible);
   if (!open || typeof document === "undefined") return null;
-  return createPortal(<div className="fixed inset-0 z-50 flex justify-end bg-ink/45 backdrop-blur-[2px] animate-fade" onMouseDown={(event) => { if (event.target === event.currentTarget && dismissible) onClose(); }}>
-    <div ref={panel} role="dialog" aria-modal="true" className={cn("flex h-full w-full max-w-xl flex-col bg-white shadow-2xl animate-slide-from-right", className)}>
+  return createPortal(<div className="fixed inset-0 z-50 flex items-center justify-end bg-ink/45 p-3 backdrop-blur-[2px] animate-fade sm:p-5" onMouseDown={(event) => { if (event.target === event.currentTarget && dismissible) onClose(); }}>
+    <div ref={panel} role="dialog" aria-modal="true" className={cn("flex h-full w-full max-w-xl flex-col overflow-hidden rounded-[22px] border border-white/60 bg-white shadow-[0_24px_70px_-20px_rgba(31,26,20,.45)] animate-slide-from-right", className)}>
       <OverlayHeader title={title} subtitle={subtitle} onClose={onClose} dismissible={dismissible} bordered />
       <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
       {footer && <div className="flex flex-wrap justify-end gap-2 border-t border-line-soft px-6 py-4">{footer}</div>}
