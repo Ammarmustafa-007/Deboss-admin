@@ -62,6 +62,7 @@ const statusTone: Record<string, Tone> = {
   CARRIER_ASSIGNED: "accent", PICKED_UP: "aqua", IN_TRANSIT: "brand", COMPLETED: "success", EXCEPTION: "danger",
   SENT: "info", PENDING: "brand", OVERDUE: "danger", CANCELLED: "neutral",
   ACTIVE: "success", INACTIVE: "danger", ARCHIVED: "neutral",
+  DOCS_PENDING: "neutral", PENDING_REVIEW: "brand", RETURNED: "danger", DISCARDED: "neutral", ONBOARDED: "aqua", RUNNING: "success", DNC: "danger", FORWARDED: "info",
 };
 
 export function toneFor(status?: string | null): Tone {

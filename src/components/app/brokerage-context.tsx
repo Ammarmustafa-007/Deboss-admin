@@ -37,6 +37,8 @@ type Brokerage = {
   sales: boolean;
   manager: boolean;
   teamLead: boolean;
+  /** Dispatch business unit (Dispatch Sales or Dispatch Operations) rather than Brokerage. */
+  dispatch: boolean;
   /** Team Lead with Full managerial access: manager-style views and approvals, scoped to their team. */
   fullLead: boolean;
   /** Manager or Full Team Lead: anyone who supervises other agents' work. */
@@ -90,8 +92,9 @@ export function BrokerageGate({ children }: { children: ReactNode }) {
       sales: Boolean(caps.sales),
       manager: Boolean(caps.departmentManager),
       teamLead: Boolean(caps.teamLead),
-      fullLead: Boolean(caps.teamLead && !caps.departmentManager && (caps.canReviewQuotes || caps.canHandoffQuotes || caps.canReviewDocuments || caps.canResolveExceptions || caps.canMarkInvoiceReady)),
-      supervisor: Boolean(caps.departmentManager || (caps.teamLead && (caps.canReviewQuotes || caps.canHandoffQuotes || caps.canReviewDocuments || caps.canResolveExceptions || caps.canMarkInvoiceReady))),
+      dispatch: workspace.data.unit === "DISPATCH",
+      fullLead: Boolean(caps.teamLead && !caps.departmentManager && (caps.canReviewQuotes || caps.canHandoffQuotes || caps.canReviewDocuments || caps.canResolveExceptions || caps.canMarkInvoiceReady || caps.canReviewCarriers || caps.canSignOffInvoices || caps.canAssignTrucks || caps.canReviewInvoices)),
+      supervisor: Boolean(caps.departmentManager || (caps.teamLead && (caps.canReviewQuotes || caps.canHandoffQuotes || caps.canReviewDocuments || caps.canResolveExceptions || caps.canMarkInvoiceReady || caps.canReviewCarriers || caps.canSignOffInvoices || caps.canAssignTrucks || caps.canReviewInvoices))),
       isFetching: workspace.isFetching || notifications.isFetching,
       api,
       refresh,

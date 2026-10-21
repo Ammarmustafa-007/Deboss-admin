@@ -1,4 +1,4 @@
-import { BadgePercent, BarChart3, Bell, Building2, Contact, LayoutDashboard, ReceiptText, Settings, ShieldCheck, TrendingUp, Truck, UsersRound, Wallet, type LucideIcon } from "lucide-react";
+import { Ban, BadgePercent, BarChart3, Bell, Building2, Container, Contact, Goal, LayoutDashboard, MapPinned, ReceiptText, Settings, ShieldCheck, TrendingUp, Truck, UsersRound, Wallet, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/surface";
 
 /** `hidden` items stay routable (title, access check) but are not listed in the sidebar. */
@@ -36,6 +36,30 @@ export function brokerageNavigation({ sales, manager, canMarkInvoiceReady }: Bro
     { href: "/app/reports", label: "Reports", icon: BarChart3, tone: "info" },
     // Opened from the header bell rather than the sidebar.
     { href: "/app/notifications", label: "Notifications", icon: Bell, tone: "danger", hidden: true },
+  ] });
+  return groups;
+}
+
+type DispatchAccess = { sales: boolean; manager: boolean; invoices: boolean };
+
+/** Dispatch Sales (carriers) and Dispatch Operations (trucks, loads, weekly invoices). */
+export function dispatchNavigation({ sales, manager, invoices }: DispatchAccess): NavGroup[] {
+  const work: NavItem[] = [{ href: "/app", label: "Dashboard", icon: LayoutDashboard, tone: "brand" }];
+  if (sales) work.push({ href: "/app/dispatch/carriers", label: "Carriers", icon: Container, tone: "aqua" });
+  else work.push({ href: "/app/dispatch/trucks", label: "Trucks", icon: Truck, tone: "aqua" }, { href: "/app/dispatch/loads", label: "Loads", icon: MapPinned, tone: "accent" });
+  if (!sales || invoices) work.push({ href: "/app/dispatch/invoices", label: "Weekly invoices", icon: ReceiptText, tone: "success" });
+  work.push({ href: "/app/dispatch/dnc", label: "Do-not-call list", icon: Ban, tone: "danger" });
+  const groups: NavGroup[] = [{ label: "Workspace", items: work }];
+  if (manager) groups.push({ label: "Management", items: [
+    { href: "/app/teams", label: "Teams", icon: UsersRound, tone: "accent" },
+    { href: "/app/access", label: sales ? "Agent access" : "Dispatcher access", icon: ShieldCheck, tone: "info" },
+    { href: "/app/dispatch/targets", label: "Targets", icon: Goal, tone: "brand" },
+  ] });
+  groups.push({ label: "Insights", items: [
+    { href: "/app/reports", label: "Reports", icon: BarChart3, tone: "info" },
+    { href: "/app/notifications", label: "Notifications", icon: Bell, tone: "danger", hidden: true },
+    // Operations open a truck's carrier from the truck, so the route stays reachable without a menu entry.
+    ...(!sales ? [{ href: "/app/dispatch/carriers", label: "Carriers", icon: Container, tone: "aqua" as Tone, hidden: true }] : []),
   ] });
   return groups;
 }

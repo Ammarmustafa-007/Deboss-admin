@@ -24,6 +24,9 @@ export function notificationHref(item: NotificationItem, sales: boolean, quotes:
     case "QUOTE": { const quote = quotes.find((candidate) => candidate.id === item.entity_id); return quote ? `/app/sales/leads/${quote.lead_id}` : null; }
     case "SHIPMENT": return sales ? null : `/app/operations/${item.entity_id}`;
     case "INVOICE": return sales ? null : "/app/invoices";
+    case "CARRIER": return `/app/dispatch/carriers/${item.entity_id}`;
+    case "TRUCK": return `/app/dispatch/trucks/${item.entity_id}`;
+    case "DISPATCH_INVOICE": return `/app/dispatch/invoices?open=${item.entity_id}`;
     default: return null;
   }
 }

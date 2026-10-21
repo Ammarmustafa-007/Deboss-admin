@@ -20,7 +20,7 @@ type Team = DirectoryTeam;
 type Access = "partial" | "full";
 
 /** Team Lead access presets, mapped onto the existing permission keys for each department function. */
-const accessPresets: Record<"sales" | "operations", Record<Access, { label: string; summary: string[]; keys: string[] }>> = {
+const accessPresets: Record<"sales" | "operations" | "dispatchSales" | "dispatchOps", Record<Access, { label: string; summary: string[]; keys: string[] }>> = {
   sales: {
     partial: { label: "Partial access", summary: ["View the team's leads, customers and activity", "Edit the team's leads", "Team reports"], keys: ["sales.leads.view_team", "sales.leads.edit_team", "sales.activities.view_team", "sales.reports.view_team"] },
     full: { label: "Full managerial access", summary: ["Everything a manager can do, for this team", "Assign and reassign the team's leads", "Approve or return quotes for rework", "Hand approved quotes off to Operations"], keys: ["sales.leads.view_team", "sales.leads.edit_team", "sales.activities.view_team", "sales.reports.view_team", "sales.leads.assign", "sales.activities.assign", "sales.quotes.review", "sales.quotes.handoff"] },
@@ -29,11 +29,21 @@ const accessPresets: Record<"sales" | "operations", Record<Access, { label: stri
     partial: { label: "Partial access", summary: ["View the team's shipments", "Update the team's shipments", "Team reports"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team"] },
     full: { label: "Full managerial access", summary: ["Everything a manager can do, for this team", "Assign and reassign the team's shipments", "Verify or return documents", "Resolve exceptions and set their owner", "Invoices: generate, mark ready, update status"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team", "operations.shipments.assign", "operations.documents.review", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready"] },
   },
+  dispatchSales: {
+    partial: { label: "Partial access", summary: ["View the team's carriers, documents and activity", "Edit the team's carriers", "Team reports"], keys: ["dispatch_sales.carriers.view_team", "dispatch_sales.carriers.edit_team", "dispatch_sales.reports.view_team"] },
+    full: { label: "Full managerial access", summary: ["Everything a manager can do, for this team", "Assign and reassign the team's carriers", "Approve, return or discard carriers", "Sign off paid invoices"], keys: ["dispatch_sales.carriers.view_team", "dispatch_sales.carriers.edit_team", "dispatch_sales.reports.view_team", "dispatch_sales.carriers.assign", "dispatch_sales.carriers.review", "dispatch_sales.invoices.signoff"] },
+  },
+  dispatchOps: {
+    partial: { label: "Partial access", summary: ["View the team's trucks and loads", "Update the team's trucks and loads", "Team reports"], keys: ["dispatch.trucks.view_team", "dispatch.trucks.update_team", "dispatch.reports.view_team"] },
+    full: { label: "Full managerial access", summary: ["Everything a manager can do, for this team", "Assign and reassign the team's trucks", "Review and forward weekly invoices"], keys: ["dispatch.trucks.view_team", "dispatch.trucks.update_team", "dispatch.reports.view_team", "dispatch.trucks.assign", "dispatch.invoices.review"] },
+  },
 };
+
+const presetKey = (dispatch: boolean, sales: boolean) => dispatch ? (sales ? "dispatchSales" : "dispatchOps") : sales ? "sales" : "operations";
 
 /** Existing teams may carry any mix of keys; anything with an approval-level key counts as full access. */
 function accessFrom(keys: string[]): Access {
-  return keys.some((key) => ["sales.quotes.review", "sales.quotes.handoff", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready", "operations.documents.review"].includes(key)) ? "full" : "partial";
+  return keys.some((key) => ["sales.quotes.review", "sales.quotes.handoff", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready", "operations.documents.review", "dispatch_sales.carriers.review", "dispatch_sales.invoices.signoff", "dispatch.trucks.assign", "dispatch.invoices.review"].includes(key)) ? "full" : "partial";
 }
 
 export function TeamsScreen() {
@@ -85,8 +95,8 @@ export function TeamWizard({ teamId }: { teamId?: string }) {
 
 function TeamForm({ team, users }: { team?: Team; users: Person[] }) {
   const router = useRouter();
-  const { report, sales } = useBrokerage();
-  const presets = accessPresets[sales ? "sales" : "operations"];
+  const { report, sales, dispatch } = useBrokerage();
+  const presets = accessPresets[presetKey(dispatch, sales)];
   const { run, busy } = useBrokerageAction();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({

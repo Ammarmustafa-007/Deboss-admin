@@ -12,7 +12,7 @@ import { useSession } from "@/components/app/session";
 import { useOptionalBrokerage } from "@/components/app/brokerage-context";
 import { NotificationBell } from "@/components/app/notification-bell";
 import { RevealIntro, useIntro } from "@/components/app/intro";
-import { activeItem, adminNavigation, brokerageNavigation, type NavGroup } from "@/components/app/navigation";
+import { activeItem, adminNavigation, brokerageNavigation, dispatchNavigation, type NavGroup } from "@/components/app/navigation";
 
 const iconTone: Record<Tone, string> = {
   brand: "text-brand", aqua: "text-aqua", accent: "text-[#A08BFF]", info: "text-[#6AB0FF]", danger: "text-[#FF7A9A]", success: "text-[#4FD18B]", neutral: "text-white/60",
@@ -35,14 +35,18 @@ export function AppShell({ children }: { children: ReactNode }) {
     return !value;
   });
 
-  const groups: NavGroup[] = isSuperAdmin || !brokerage ? adminNavigation : brokerageNavigation({
+  const groups: NavGroup[] = isSuperAdmin || !brokerage ? adminNavigation : brokerage.dispatch ? dispatchNavigation({
+    sales: brokerage.sales,
+    manager: brokerage.manager,
+    invoices: Boolean(brokerage.workspace.capabilities?.canSignOffInvoices),
+  }) : brokerageNavigation({
     sales: brokerage.sales,
     manager: brokerage.manager,
     canMarkInvoiceReady: Boolean(brokerage.workspace.capabilities?.canMarkInvoiceReady),
   });
   const current = activeItem(groups, pathname);
   const roleLabel = isSuperAdmin ? "Super Admin" : brokerage?.manager ? "Department manager" : brokerage?.teamLead ? (brokerage.fullLead ? "Team lead · Full access" : "Team lead") : "Agent";
-  const areaLabel = isSuperAdmin ? "Administration" : `Brokerage · ${humanize(brokerage?.workspace.department?.function ?? (brokerage?.sales ? "SALES" : "OPERATIONS"))}`;
+  const areaLabel = isSuperAdmin ? "Administration" : `${brokerage?.dispatch ? "Dispatch" : "Brokerage"} · ${humanize(brokerage?.workspace.department?.function ?? (brokerage?.sales ? "SALES" : "OPERATIONS"))}`;
 
   const sidebar = (compact: boolean) => <div className="sidebar-surface flex h-full flex-col px-3 py-5 text-white">
     <div className={cn("mb-7 flex items-center gap-3", compact ? "justify-center" : "px-2")}>

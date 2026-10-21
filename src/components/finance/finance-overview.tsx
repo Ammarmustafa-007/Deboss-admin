@@ -38,9 +38,9 @@ export function FinanceOverview() {
           <Card>
             <CardHeader title="By department" subtitle={periodLabel(period)} actions={<Link href="/app/admin/payroll" className="inline-flex items-center gap-1 text-xs font-semibold text-brand-deep hover:underline">Payroll<ChevronRight size={14} /></Link>} />
             {data.departments.length ? <ul className="divide-y divide-line-soft">{data.departments.map((department) => <li key={department.id} className="px-5 py-3.5">
-              <div className="flex items-center justify-between gap-3"><p className="truncate font-semibold">{department.name}</p><Chip tone={department.function === "SALES" ? "aqua" : "accent"}>{department.function === "SALES" ? "Sales" : "Operations"}</Chip></div>
+              <div className="flex items-center justify-between gap-3"><p className="truncate font-semibold">{department.name}</p><Chip tone={department.function === "SALES" ? "aqua" : "accent"}>{department.business_unit === "DISPATCH" ? "Dispatch · " : ""}{department.function === "SALES" ? "Sales" : "Operations"}</Chip></div>
               <dl className="mt-2 grid grid-cols-3 gap-2 text-sm">
-                <div><dt className="text-xs text-muted">{department.function === "SALES" ? "Approved gross" : "Invoiced"}</dt><dd className="font-semibold tabular-nums">{money(department.revenue)}</dd></div>
+                <div><dt className="text-xs text-muted">{department.business_unit === "DISPATCH" ? "Invoiced revenue" : department.function === "SALES" ? "Approved gross" : "Invoiced"}</dt><dd className="font-semibold tabular-nums">{money(department.revenue)}</dd></div>
                 <div><dt className="text-xs text-muted">Collected</dt><dd className="font-semibold tabular-nums">{department.collected == null ? "—" : money(department.collected)}</dd></div>
                 <div><dt className="text-xs text-muted">Payroll · {department.people}</dt><dd className="font-semibold tabular-nums">{money(department.payroll)}</dd></div>
               </dl>
