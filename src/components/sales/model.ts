@@ -73,7 +73,9 @@ export type FeedItem = {
 
 export type Attachment = { id: string; file_name: string; created_at?: string };
 
-export type LeadDetailData = { lead: Lead; activities: FeedItem[]; comments: FeedItem[]; customer: Customer | null; quotes: Quote[] };
+/** The mined row a qualified lead came from (Fronters sheet). */
+export type FronterProspect = Record<string, string | boolean | null> & { fronter_name: string | null; qualified_at: string | null };
+export type LeadDetailData = { lead: Lead; activities: FeedItem[]; comments: FeedItem[]; customer: Customer | null; quotes: Quote[]; prospect?: FronterProspect | null };
 export type CustomerProfile = { customer: Customer; can_edit?: boolean; activities: FeedItem[]; comments: FeedItem[]; quotes: Quote[]; shipments: SalesShipment[] };
 export type QuoteDetail = { quote: Quote; attachments: Attachment[]; events: FeedItem[]; comments: FeedItem[] };
 

@@ -1,6 +1,7 @@
 import type { HTMLAttributes, ReactNode } from "react";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
+import { Bump, StatusMotion } from "@/components/ui/motion";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -78,15 +79,16 @@ export function Chip({ tone = "neutral", children, className }: { tone?: Tone; c
   return <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium whitespace-nowrap", toneChip[tone], className)}>{children}</span>;
 }
 
+/** A status chip that animates when the status changes (a pop; a zoom and sparkle burst for wins; a shake for setbacks). */
 export function StatusChip({ status, label, className }: { status?: string | null; label?: string; className?: string }) {
-  return <Chip tone={toneFor(status)} className={className}>{label ?? humanize(status)}</Chip>;
+  return <StatusMotion status={status}><Chip tone={toneFor(status)} className={className}>{label ?? humanize(status)}</Chip></StatusMotion>;
 }
 
 export function KpiCard({ label, value, hint, icon: Icon, tone = "brand", className }: { label: string; value: ReactNode; hint?: ReactNode; icon?: LucideIcon; tone?: Tone; className?: string }) {
-  return <div className={cn("min-w-0 rounded-card border border-line border-t-[3px] bg-white p-4 sm:p-5", toneBorder[tone], className)}>
+  return <div className={cn("kpi-card min-w-0 rounded-card border border-line border-t-[3px] bg-white p-4 transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-14px_rgba(31,26,20,.35)] sm:p-5", toneBorder[tone], className)}>
     {Icon && <span className={cn("mb-3 grid h-9 w-9 place-items-center rounded-control", toneSolid[tone])}><Icon size={18} /></span>}
     <p className="truncate text-[13px] text-muted">{label}</p>
-    <p className="mt-0.5 text-2xl font-bold leading-tight tracking-tight sm:text-[28px]">{value}</p>
+    <p className="mt-0.5 text-2xl font-bold leading-tight tracking-tight sm:text-[28px]"><Bump value={value} /></p>
     {hint && <p className="mt-1 text-xs text-muted">{hint}</p>}
   </div>;
 }
@@ -105,7 +107,7 @@ export function EmptyState({ icon: Icon, title, body, action, className }: { ico
 }
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-lg bg-black/[.06]", className)} />;
+  return <div className={cn("skeleton-shimmer rounded-lg", className)} />;
 }
 
 export function Avatar({ name, className }: { name?: string | null; className?: string }) {

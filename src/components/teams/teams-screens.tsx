@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, ChevronRight, Crown, Plus, ShieldCheck, UsersRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronRight, Crown, ImagePlus, Plus, ShieldCheck, UsersRound } from "lucide-react";
 import { use, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage } from "@/lib/api";
@@ -12,6 +12,7 @@ import { Avatar, Card, Chip, EmptyState, PageHeader, Skeleton } from "@/componen
 import { Stepper } from "@/components/ui/navigation";
 import { Button, LinkButton } from "@/components/ui/button";
 import { TextField } from "@/components/ui/field";
+import { uploadGroupPhoto } from "@/components/chat/chat-screen";
 import { useTeamDirectory, type DirectoryPerson, type DirectoryTeam } from "@/components/sales/directory";
 
 type Person = DirectoryPerson;
@@ -20,7 +21,7 @@ type Team = DirectoryTeam;
 type Access = "partial" | "full";
 
 /** Team Lead access presets, mapped onto the existing permission keys for each department function. */
-const accessPresets: Record<"sales" | "operations" | "dispatchSales" | "dispatchOps", Record<Access, { label: string; summary: string[]; keys: string[] }>> = {
+const accessPresets: Record<"sales" | "operations" | "dispatchSales" | "dispatchOps" | "fronter", Record<Access, { label: string; summary: string[]; keys: string[] }>> = {
   sales: {
     partial: { label: "Partial access", summary: ["View the team's leads, customers and activity", "Edit the team's leads", "Team reports"], keys: ["sales.leads.view_team", "sales.leads.edit_team", "sales.activities.view_team", "sales.reports.view_team"] },
     full: { label: "Full managerial access", summary: ["Everything a manager can do, for this team", "Assign and reassign the team's leads", "Approve or return quotes for rework", "Hand approved quotes off to Operations"], keys: ["sales.leads.view_team", "sales.leads.edit_team", "sales.activities.view_team", "sales.reports.view_team", "sales.leads.assign", "sales.activities.assign", "sales.quotes.review", "sales.quotes.handoff"] },
@@ -28,6 +29,10 @@ const accessPresets: Record<"sales" | "operations" | "dispatchSales" | "dispatch
   operations: {
     partial: { label: "Partial access", summary: ["View the team's shipments", "Update the team's shipments", "Team reports"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team"] },
     full: { label: "Full managerial access", summary: ["Everything a manager can do, for this team", "Assign and reassign the team's shipments", "Verify or return documents", "Resolve exceptions and set their owner", "Invoices: generate, mark ready, update status"], keys: ["operations.shipments.view_team", "operations.shipments.update_team", "operations.reports.view_team", "operations.shipments.assign", "operations.documents.review", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready"] },
+  },
+  fronter: {
+    partial: { label: "Partial access", summary: ["View the team's mined prospects", "Edit the team's prospects", "Team reports"], keys: ["fronter.prospects.view_team", "fronter.prospects.edit_team", "fronter.reports.view_team"] },
+    full: { label: "Full managerial access", summary: ["Everything a manager can do, for this team", "Qualify the team's prospects and assign them to Sales"], keys: ["fronter.prospects.view_team", "fronter.prospects.edit_team", "fronter.reports.view_team", "fronter.prospects.qualify"] },
   },
   dispatchSales: {
     partial: { label: "Partial access", summary: ["View the team's carriers, documents and activity", "Edit the team's carriers", "Team reports"], keys: ["dispatch_sales.carriers.view_team", "dispatch_sales.carriers.edit_team", "dispatch_sales.reports.view_team"] },
@@ -39,11 +44,12 @@ const accessPresets: Record<"sales" | "operations" | "dispatchSales" | "dispatch
   },
 };
 
-const presetKey = (dispatch: boolean, sales: boolean) => dispatch ? (sales ? "dispatchSales" : "dispatchOps") : sales ? "sales" : "operations";
+const groupOf = (team?: Team) => { const value = team?.chat_conversations; return (Array.isArray(value) ? value[0] : value) ?? null; };
+const presetKey = (dispatch: boolean, sales: boolean, fronter = false) => fronter ? "fronter" : dispatch ? (sales ? "dispatchSales" : "dispatchOps") : sales ? "sales" : "operations";
 
 /** Existing teams may carry any mix of keys; anything with an approval-level key counts as full access. */
 function accessFrom(keys: string[]): Access {
-  return keys.some((key) => ["sales.quotes.review", "sales.quotes.handoff", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready", "operations.documents.review", "dispatch_sales.carriers.review", "dispatch_sales.invoices.signoff", "dispatch.trucks.assign", "dispatch.invoices.review"].includes(key)) ? "full" : "partial";
+  return keys.some((key) => ["sales.quotes.review", "sales.quotes.handoff", "operations.exceptions.resolve", "operations.billing.mark_invoice_ready", "operations.documents.review", "dispatch_sales.carriers.review", "dispatch_sales.invoices.signoff", "dispatch.trucks.assign", "dispatch.invoices.review", "fronter.prospects.qualify"].includes(key)) ? "full" : "partial";
 }
 
 export function TeamsScreen() {
@@ -95,8 +101,8 @@ export function TeamWizard({ teamId }: { teamId?: string }) {
 
 function TeamForm({ team, users }: { team?: Team; users: Person[] }) {
   const router = useRouter();
-  const { report, sales, dispatch } = useBrokerage();
-  const presets = accessPresets[presetKey(dispatch, sales)];
+  const { report, sales, dispatch, fronter } = useBrokerage();
+  const presets = accessPresets[presetKey(dispatch, sales, fronter)];
   const { run, busy } = useBrokerageAction();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
@@ -105,7 +111,20 @@ function TeamForm({ team, users }: { team?: Team; users: Person[] }) {
     member_ids: (team?.team_members ?? []).map((member) => member.user_id),
     access: accessFrom((team?.team_lead_permissions ?? []).map((permission) => permission.permission_key)),
     is_active: team?.is_active ?? true,
+    // The team's chat group: its members always follow the team.
+    group_name: groupOf(team)?.name ?? "",
+    group_photo_url: groupOf(team)?.photo_url ?? null as string | null,
   });
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const { api } = useBrokerage();
+  const pickPhoto = async (file: File | undefined) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) return report("Use a JPG, PNG or WebP image.", "error");
+    if (file.size > 2 * 1024 * 1024) return report("The photo must be 2 MB or smaller.", "error");
+    setPhotoBusy(true);
+    try { const url = await uploadGroupPhoto(api, file); setForm((current) => ({ ...current, group_photo_url: url })); }
+    catch (error) { report(errorMessage(error), "error"); } finally { setPhotoBusy(false); }
+  };
   const saving = busy("save-team");
   const toggleMember = (id: string) => setForm((current) => {
     const member_ids = current.member_ids.includes(id) ? current.member_ids.filter((item) => item !== id) : [...current.member_ids, id];
@@ -139,6 +158,14 @@ function TeamForm({ team, users }: { team?: Team; users: Person[] }) {
         <fieldset disabled={saving} className="p-6">
           {step === 0 && <div className="space-y-5">
             <TextField label="Team name" required minLength={2} maxLength={80} placeholder="Sales Team A" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} />
+            <div className="grid gap-4 rounded-[14px] border border-line-soft bg-[#FBFAF7] p-4 sm:grid-cols-[auto_1fr] sm:items-end">
+              <label className={cn("group relative grid h-16 w-16 cursor-pointer place-items-center overflow-hidden rounded-full border border-dashed border-line bg-white text-muted hover:border-brand", photoBusy && "pointer-events-none opacity-60")} title="Group photo">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                {form.group_photo_url ? <img src={form.group_photo_url} alt="" className="h-full w-full object-cover" /> : <ImagePlus size={20} />}
+                <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => void pickPhoto(event.target.files?.[0])} />
+              </label>
+              <TextField label="Chat group name" maxLength={80} placeholder={form.name || "Same as the team name"} hint={photoBusy ? "Uploading photo…" : "The team chats here. Tap the circle to add a group photo (JPG, PNG or WebP, up to 2 MB)."} value={form.group_name} onChange={(event) => setForm({ ...form, group_name: event.target.value })} />
+            </div>
             <div>
               <p className="mb-2 flex items-baseline justify-between text-[13px] font-medium text-ink/80">Members<span className="text-xs font-normal text-muted">{form.member_ids.length} selected</span></p>
               {users.length ? <ul className="max-h-80 divide-y divide-line-soft overflow-y-auto rounded-control border border-line">{users.map((user) => {

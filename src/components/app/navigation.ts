@@ -1,4 +1,4 @@
-import { Ban, BadgePercent, BarChart3, Bell, Building2, Container, Contact, Goal, LayoutDashboard, MapPinned, ReceiptText, Settings, ShieldCheck, TrendingUp, Truck, UsersRound, Wallet, type LucideIcon } from "lucide-react";
+import { Ban, BadgePercent, Boxes, MessagesSquare, Sheet, BarChart3, Bell, Building2, Container, Contact, Goal, LayoutDashboard, MapPinned, ReceiptText, Settings, ShieldCheck, TrendingUp, Truck, UsersRound, Wallet, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/surface";
 
 /** `hidden` items stay routable (title, access check) but are not listed in the sidebar. */
@@ -15,8 +15,34 @@ export const adminNavigation: NavGroup[] = [
     { href: "/app/admin/payroll", label: "Payroll", icon: Wallet, tone: "brand" },
     { href: "/app/admin/compensation", label: "Compensation", icon: BadgePercent, tone: "success" },
   ] },
-  { label: "Account", items: [{ href: "/app/settings", label: "Settings", icon: Settings, tone: "info" }] },
+  { label: "Account", items: [
+    { href: "/app/admin/communication", label: "Communication", icon: MessagesSquare, tone: "aqua" },
+    { href: "/app/settings", label: "Settings", icon: Settings, tone: "info" },
+  ] },
 ];
+
+/** Chat sits in every workspace, with the unread count as its badge. */
+export const chatItem = (unread: number): NavItem => ({ href: "/app/chat", label: "Chat", icon: MessagesSquare, tone: "aqua", badge: unread || undefined });
+
+type FronterAccess = { manager: boolean };
+
+/** Brokerage Fronters: the lead mining sheet and the commodities sheet. */
+export function fronterNavigation({ manager }: FronterAccess): NavGroup[] {
+  const groups: NavGroup[] = [{ label: "Workspace", items: [
+    { href: "/app", label: "Dashboard", icon: LayoutDashboard, tone: "brand" },
+    { href: "/app/fronter", label: "Lead mining", icon: Sheet, tone: "aqua" },
+    { href: "/app/fronter/commodities", label: "Commodities", icon: Boxes, tone: "accent" },
+  ] }];
+  if (manager) groups.push({ label: "Management", items: [
+    { href: "/app/teams", label: "Teams", icon: UsersRound, tone: "accent" },
+    { href: "/app/access", label: "Fronter access", icon: ShieldCheck, tone: "info" },
+  ] });
+  groups.push({ label: "Insights", items: [
+    { href: "/app/reports", label: "Reports", icon: BarChart3, tone: "info" },
+    { href: "/app/notifications", label: "Notifications", icon: Bell, tone: "danger", hidden: true },
+  ] });
+  return groups;
+}
 
 type BrokerageAccess = { sales: boolean; manager: boolean; canMarkInvoiceReady: boolean };
 

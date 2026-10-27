@@ -39,6 +39,8 @@ type Brokerage = {
   teamLead: boolean;
   /** Dispatch business unit (Dispatch Sales or Dispatch Operations) rather than Brokerage. */
   dispatch: boolean;
+  /** Brokerage Fronters (lead mining). */
+  fronter: boolean;
   /** Team Lead with Full managerial access: manager-style views and approvals, scoped to their team. */
   fullLead: boolean;
   /** Manager or Full Team Lead: anyone who supervises other agents' work. */
@@ -93,6 +95,7 @@ export function BrokerageGate({ children }: { children: ReactNode }) {
       manager: Boolean(caps.departmentManager),
       teamLead: Boolean(caps.teamLead),
       dispatch: workspace.data.unit === "DISPATCH",
+      fronter: workspace.data.unit === "FRONTER",
       fullLead: Boolean(caps.teamLead && !caps.departmentManager && (caps.canReviewQuotes || caps.canHandoffQuotes || caps.canReviewDocuments || caps.canResolveExceptions || caps.canMarkInvoiceReady || caps.canReviewCarriers || caps.canSignOffInvoices || caps.canAssignTrucks || caps.canReviewInvoices)),
       supervisor: Boolean(caps.departmentManager || (caps.teamLead && (caps.canReviewQuotes || caps.canHandoffQuotes || caps.canReviewDocuments || caps.canResolveExceptions || caps.canMarkInvoiceReady || caps.canReviewCarriers || caps.canSignOffInvoices || caps.canAssignTrucks || caps.canReviewInvoices))),
       isFetching: workspace.isFetching || notifications.isFetching,

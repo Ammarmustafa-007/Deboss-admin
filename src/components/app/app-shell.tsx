@@ -4,15 +4,17 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronsLeft, ChevronsRight, Compass, LoaderCircle, LogOut, Menu, RefreshCw, X } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useState, ViewTransition, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import { Avatar, EmptyState, humanize, type Tone } from "@/components/ui/surface";
 import { LinkButton } from "@/components/ui/button";
+import { Bump } from "@/components/ui/motion";
 import { useSession } from "@/components/app/session";
 import { useOptionalBrokerage } from "@/components/app/brokerage-context";
 import { NotificationBell } from "@/components/app/notification-bell";
 import { RevealIntro, useIntro } from "@/components/app/intro";
-import { activeItem, adminNavigation, brokerageNavigation, dispatchNavigation, type NavGroup } from "@/components/app/navigation";
+import { activeItem, adminNavigation, brokerageNavigation, chatItem, dispatchNavigation, fronterNavigation, type NavGroup } from "@/components/app/navigation";
+import { useChatUnread } from "@/components/chat/chat-data";
 
 const iconTone: Record<Tone, string> = {
   brand: "text-brand", aqua: "text-aqua", accent: "text-[#A08BFF]", info: "text-[#6AB0FF]", danger: "text-[#FF7A9A]", success: "text-[#4FD18B]", neutral: "text-white/60",
@@ -35,7 +37,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     return !value;
   });
 
-  const groups: NavGroup[] = isSuperAdmin || !brokerage ? adminNavigation : brokerage.dispatch ? dispatchNavigation({
+  const chatUnread = useChatUnread(!isSuperAdmin && Boolean(brokerage));
+  const baseGroups: NavGroup[] = isSuperAdmin || !brokerage ? adminNavigation : brokerage.fronter ? fronterNavigation({ manager: brokerage.manager }) : brokerage.dispatch ? dispatchNavigation({
     sales: brokerage.sales,
     manager: brokerage.manager,
     invoices: Boolean(brokerage.workspace.capabilities?.canSignOffInvoices),
@@ -44,9 +47,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     manager: brokerage.manager,
     canMarkInvoiceReady: Boolean(brokerage.workspace.capabilities?.canMarkInvoiceReady),
   });
+  // Chat goes into the first group of every non-admin workspace.
+  const groups: NavGroup[] = isSuperAdmin || !brokerage ? baseGroups : baseGroups.map((group, index) => index === 0 ? { ...group, items: [...group.items, chatItem(chatUnread)] } : group);
   const current = activeItem(groups, pathname);
   const roleLabel = isSuperAdmin ? "Super Admin" : brokerage?.manager ? "Department manager" : brokerage?.teamLead ? (brokerage.fullLead ? "Team lead · Full access" : "Team lead") : "Agent";
-  const areaLabel = isSuperAdmin ? "Administration" : `${brokerage?.dispatch ? "Dispatch" : "Brokerage"} · ${humanize(brokerage?.workspace.department?.function ?? (brokerage?.sales ? "SALES" : "OPERATIONS"))}`;
+  const areaLabel = isSuperAdmin ? "Administration" : `${brokerage?.dispatch ? "Dispatch" : "Brokerage"} · ${brokerage?.fronter ? "Fronters" : humanize(brokerage?.workspace.department?.function ?? (brokerage?.sales ? "SALES" : "OPERATIONS"))}`;
 
   const sidebar = (compact: boolean) => <div className="sidebar-surface flex h-full flex-col px-3 py-5 text-white">
     <div className={cn("mb-7 flex items-center gap-3", compact ? "justify-center" : "px-2")}>
@@ -62,7 +67,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             return <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)} title={compact ? item.label : undefined} aria-current={active ? "page" : undefined} className={cn("group relative flex h-10 items-center gap-3 rounded-control text-sm font-medium transition-[background-color,color,transform] duration-200", compact ? "justify-center" : "px-3 hover:translate-x-1", active ? "bg-brand font-semibold text-ink" : "text-[#D4D0C8] hover:bg-white/[.08] hover:text-white")}>
               <item.icon size={18} className={cn("shrink-0", active ? "text-ink" : iconTone[item.tone])} />
               {!compact && <span className="truncate">{item.label}</span>}
-              {item.badge ? <span className={cn("grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1.5 text-[10px] font-bold text-white", compact ? "absolute -right-0.5 -top-0.5" : "ml-auto")}>{item.badge}</span> : null}
+              {item.badge ? <Bump value={item.badge} className={cn("grid h-5 min-w-5 place-items-center rounded-full bg-danger px-1.5 text-[10px] font-bold text-white", compact ? "absolute -right-0.5 -top-0.5" : "ml-auto")} /> : null}
             </Link>;
           })}
         </div>
@@ -107,7 +112,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="mx-auto w-full max-w-[1440px] flex-1 px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-        {current ? children : <EmptyState icon={Compass} title="This area isn't part of your workspace" body="Your role doesn't include this screen." action={<LinkButton href="/app" variant="ink">Back to dashboard</LinkButton>} className="mt-16" />}
+        <ViewTransition default="page">
+          <div>{current ? children : <EmptyState icon={Compass} title="This area isn't part of your workspace" body="Your role doesn't include this screen." action={<LinkButton href="/app" variant="ink">Back to dashboard</LinkButton>} className="mt-16" />}</div>
+        </ViewTransition>
       </main>
     </div>
   </div>;

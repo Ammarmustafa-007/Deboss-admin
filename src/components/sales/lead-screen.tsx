@@ -16,7 +16,7 @@ import { CustomerPanel } from "@/components/sales/customer-panel";
 import { QuoteList } from "@/components/sales/quote-panel";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { useTeamDirectory, type DirectoryPerson, type DirectoryTeam } from "@/components/sales/directory";
-import { activityTypes, editableStages, journeyPosition, journeySteps, nextAction, stageLabel, type FeedItem, type Lead, type LeadDetailData } from "@/components/sales/model";
+import { activityTypes, editableStages, journeyPosition, journeySteps, nextAction, stageLabel, type FeedItem, type FronterProspect, type Lead, type LeadDetailData } from "@/components/sales/model";
 
 type TabKey = "quotes" | "details" | "activity" | "comments" | "customer";
 
@@ -85,7 +85,10 @@ function LeadView({ data, manager, teamLead }: { data: LeadDetailData; manager: 
 
     <div key={tab} className="animate-fade">
       {tab === "quotes" && <QuoteList quotes={quotes} lead={lead} customerId={customer?.id} />}
-      {tab === "details" && (manager ? <div className="space-y-6"><Assignment lead={lead} directory={directory.data} /><LeadFacts lead={lead} /></div> : caps.canAssignLeads ? <div className="space-y-6"><Assignment lead={lead} directory={directory.data} /><LeadForm lead={lead} /></div> : <LeadForm lead={lead} />)}
+      {tab === "details" && <div className="space-y-6">
+        {manager ? <><Assignment lead={lead} directory={directory.data} /><LeadFacts lead={lead} /></> : caps.canAssignLeads ? <><Assignment lead={lead} directory={directory.data} /><LeadForm lead={lead} /></> : <LeadForm lead={lead} />}
+        {data.prospect && <FromFronters prospect={data.prospect} />}
+      </div>}
       {tab === "activity" && <ActivityTab lead={lead} activities={activities} manager={manager} />}
       {tab === "comments" && <CommentsTab leadId={lead.id} comments={comments} manager={manager} />}
       {tab === "customer" && <CustomerTab lead={lead} customerId={customer?.id ?? null} />}
@@ -207,6 +210,22 @@ function LeadFacts({ lead }: { lead: Lead }) {
     <CardHeader title="Lead record" />
     <dl className="grid gap-x-6 gap-y-5 p-5 sm:grid-cols-2 xl:grid-cols-4">{facts.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs font-medium text-muted">{label}</dt><dd className="mt-0.5 truncate text-sm font-semibold">{value}</dd></div>)}</dl>
     {lead.notes && <div className="border-t border-line-soft p-5"><p className="text-xs font-medium text-muted">Notes</p><p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">{lead.notes}</p></div>}
+  </Card>;
+}
+
+const prospectFields: [string, string][] = [
+  ["Operator", "operator_name"], ["Operator number", "operator_number"], ["Shipping contact", "shipping_contact"], ["Phone", "phone"], ["Email", "email"], ["Truck type", "truck_type"], ["FTL / LTL", "load_type"],
+  ["Shipping volume", "shipping_volume"], ["Commodity", "commodity"], ["Lanes", "lanes"], ["Physical address", "physical_address"], ["Other locations", "other_locations"], ["Billing address", "billing_address"],
+  ["Billing contact", "billing_contact"], ["Billing phone", "billing_phone"], ["Billing email", "billing_email"], ["Payment terms", "payment_terms"], ["W-9 received", "w9_received"], ["EIN #", "ein"], ["Website", "website"],
+];
+
+/** What the Fronter gathered before qualifying the lead. */
+function FromFronters({ prospect }: { prospect: FronterProspect }) {
+  const facts = prospectFields.map(([label, key]) => [label, key === "w9_received" ? (prospect[key] ? "Yes" : "No") : key === "load_type" && prospect[key] === "BOTH" ? "Both" : prospect[key]] as const).filter(([, value]) => value !== null && value !== "");
+  return <Card>
+    <CardHeader title="From Fronters" subtitle={`Mined and qualified by ${prospect.fronter_name ?? "a Fronter"}${prospect.qualified_at ? ` · ${dateTimeLabel(prospect.qualified_at)}` : ""}`} />
+    <dl className="grid gap-x-6 gap-y-5 p-5 sm:grid-cols-2 xl:grid-cols-4">{facts.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs font-medium text-muted">{label}</dt><dd className="mt-0.5 break-words text-sm font-semibold">{String(value)}</dd></div>)}</dl>
+    {prospect.notes && <div className="border-t border-line-soft p-5"><p className="text-xs font-medium text-muted">Fronter notes</p><p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">{String(prospect.notes)}</p></div>}
   </Card>;
 }
 

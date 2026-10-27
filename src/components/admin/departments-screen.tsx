@@ -61,8 +61,8 @@ function NewDepartment({ onClose }: { onClose: () => void }) {
     <form id="department-form" onSubmit={create}>
       <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">
         <TextField label="Department name" required placeholder="Brokerage Sales - East" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} wrapperClassName="sm:col-span-2" />
-        <SelectField label="Business unit" required value={form.business_unit} onChange={(event) => setForm({ ...form, business_unit: event.target.value })} options={[{ value: "BROKERAGE", label: "Brokerage" }, { value: "DISPATCH", label: "Dispatch" }]} />
-        <SelectField label="Function" required value={form.function} onChange={(event) => setForm({ ...form, function: event.target.value })} options={[{ value: "SALES", label: "Sales" }, { value: "OPERATIONS", label: "Operations" }]} />
+        <SelectField label="Business unit" required value={form.business_unit} onChange={(event) => setForm({ ...form, business_unit: event.target.value, function: event.target.value !== "BROKERAGE" && form.function === "FRONTER" ? "SALES" : form.function })} options={[{ value: "BROKERAGE", label: "Brokerage" }, { value: "DISPATCH", label: "Dispatch" }]} />
+        <SelectField label="Function" required value={form.function} onChange={(event) => setForm({ ...form, function: event.target.value })} options={[{ value: "SALES", label: "Sales" }, { value: "OPERATIONS", label: "Operations" }, ...(form.business_unit === "BROKERAGE" ? [{ value: "FRONTER", label: "Fronters (lead mining)" }] : [])]} />
       </fieldset>
     </form>
   </Modal>;

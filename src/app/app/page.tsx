@@ -5,9 +5,10 @@ import { AdminDashboard } from "@/components/dashboard/admin-dashboard";
 import { BrokerageDashboard } from "@/components/dashboard/brokerage-dashboard";
 import { useOptionalBrokerage } from "@/components/app/brokerage-context";
 import { DispatchDashboard } from "@/components/dispatch/insights";
+import { FronterDashboard } from "@/components/fronter/fronter-screens";
 
 export default function DashboardPage() {
   const { isSuperAdmin } = useSession();
   const workspace = useOptionalBrokerage();
-  return isSuperAdmin ? <AdminDashboard /> : workspace?.dispatch ? <DispatchDashboard /> : <BrokerageDashboard />;
+  return isSuperAdmin ? <AdminDashboard /> : workspace?.dispatch ? <DispatchDashboard /> : workspace?.fronter ? <FronterDashboard /> : <BrokerageDashboard />;
 }

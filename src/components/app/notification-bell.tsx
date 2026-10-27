@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { IconTile } from "@/components/ui/surface";
+import { Bump } from "@/components/ui/motion";
 import { kindStyle, notificationHref, timeAgo, type NotificationItem } from "@/components/dashboard/notification-meta";
 import type { Quote } from "@/components/sales/model";
 
@@ -39,7 +40,7 @@ export function NotificationBell() {
     <button type="button" onClick={() => setOpen((value) => !value)} aria-haspopup="dialog" aria-expanded={open} aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
       className={cn("relative grid h-10 w-10 place-items-center rounded-control border bg-white text-ink/70 transition hover:border-brand hover:text-ink", open ? "border-brand text-ink" : "border-line")}>
       <Bell size={17} />
-      {unread > 0 && <span className="absolute -right-1.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-canvas bg-danger px-1 text-[10px] font-bold leading-none text-white">{unread > 99 ? "99+" : unread}</span>}
+      {unread > 0 && <Bump value={unread} className="absolute -right-1.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-canvas bg-danger px-1 text-[10px] font-bold leading-none text-white">{unread > 99 ? "99+" : unread}</Bump>}
     </button>
 
     {open && <div role="dialog" aria-label="Notifications" className="fixed inset-x-3 top-[68px] z-40 overflow-hidden rounded-[16px] border border-line bg-white shadow-[0_24px_60px_-20px_rgba(17,17,17,.35)] animate-rise sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-[400px]">

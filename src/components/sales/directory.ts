@@ -5,7 +5,7 @@ import { responseData } from "@/lib/api";
 import { useBrokerage } from "@/components/app/brokerage-context";
 
 export type DirectoryPerson = { id: string; full_name: string; email?: string; role?: string; is_active?: boolean };
-export type DirectoryTeam = { id: string; name: string; team_lead_id?: string | null; is_active: boolean; team_members?: { user_id: string }[]; team_lead_permissions?: { permission_key: string }[] };
+export type DirectoryTeam = { id: string; name: string; team_lead_id?: string | null; is_active: boolean; team_members?: { user_id: string }[]; team_lead_permissions?: { permission_key: string }[]; chat_conversations?: { id: string; name: string; photo_url: string | null } | { id: string; name: string; photo_url: string | null }[] | null };
 
 /** Department agents and teams. The endpoint is manager-only, so pass `enabled = manager`. */
 export function useTeamDirectory(enabled = true) {
