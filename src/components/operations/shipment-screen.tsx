@@ -67,8 +67,9 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
       <div className="overflow-x-auto"><Stepper steps={progressStatuses.map((status) => ({ label: statusLabel[status] }))} current={lineStatus === "COMPLETED" ? progressStatuses.length : Math.max(0, progressStatuses.indexOf(lineStatus))} tone={paused ? "danger" : "brand"} className="min-w-[560px]" /></div>
       {shipment.status === "EXCEPTION" && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm"><AlertTriangle size={18} className="shrink-0 text-danger" /><p><b>Shipment in exception.</b> {shipment.exception_note ? shipment.exception_note : "Details are in the Exception tab."}</p></div>}
       {shipment.status === "MISSED_PICKUP" && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm animate-fade"><CircleSlash size={18} className="shrink-0 text-danger" /><p><b>Pickup missed.</b> {shipment.missed_pickup_reason} Re-book the load or cancel it.</p></div>}
+      {shipment.ops_review === "PENDING" && (manager ? <OpsReview shipment={shipment} directory={directory.data} /> : <div className="mt-4 rounded-[12px] bg-accent/[.07] px-4 py-3 text-sm animate-fade"><b>New customer.</b> Waiting for the Operations Manager to approve this load and assign the customer&apos;s agent.</div>)}
       {cancelled && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-black/[.04] px-4 py-3 text-sm animate-fade"><Ban size={18} className="shrink-0 text-ink/60" /><p><b>Load cancelled{shipment.cancelled_at ? ` · ${dateTimeLabel(shipment.cancelled_at)}` : ""}.</b> {shipment.cancel_reason}</p></div>}
-      {(manager || caps.canAssignShipments) && !cancelled && <div className="mt-5 grid gap-4 border-t border-line-soft pt-5 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] xl:items-center">
+      {(manager || caps.canAssignShipments) && !cancelled && !shipment.ops_review && <div className="mt-5 grid gap-4 border-t border-line-soft pt-5 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto_auto] xl:items-center">
         <Assignment shipment={shipment} directory={directory.data} />
         <Signal ok={!pendingDocuments} label="Documents" value={pendingDocuments ? `${pendingDocuments} pending review` : documents.length ? "All verified" : "None uploaded"} />
         <Signal ok={!exceptionOpen(shipment)} label="Exception" value={exceptionOpen(shipment) ? "Needs resolution" : "None open"} />
@@ -91,6 +92,33 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
   </div>;
 }
 
+/** The Operations Manager's one-time review of a new customer: approve and assign its agent, or reject with a reason. */
+function OpsReview({ shipment, directory }: { shipment: Shipment; directory?: Directory }) {
+  const { run, busy } = useBrokerageAction();
+  const [agent, setAgent] = useState("");
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const pending = busy(`ops-review:${shipment.id}`);
+  const decide = (body: Record<string, unknown>, success: string) => run(`ops-review:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}/ops-review`, "POST", body, success);
+  return <div className="mt-4 rounded-[14px] border border-accent/30 bg-accent/[.05] p-4 animate-fade">
+    <p className="text-sm font-semibold">New customer: review this load</p>
+    <p className="mt-0.5 text-xs text-muted">Approved by Sales{shipment.sales_agent_name ? ` (agent ${shipment.sales_agent_name})` : ""}. The agent you assign becomes this customer&apos;s Operations agent; its later loads go straight to them.</p>
+    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+      <label className="min-w-0 flex-1 text-xs text-muted">Operations agent for this customer
+        <select value={agent} disabled={pending || !directory} onChange={(event) => setAgent(event.target.value)} className={cn(controlClass, "mt-1 h-10 text-[13px] font-medium")}>
+          <option value="">Choose an agent</option>{(directory?.users ?? []).map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}
+        </select>
+      </label>
+      <Button variant="success" icon={<CheckCircle2 size={15} />} pending={pending && !rejecting} pendingLabel="Approving…" disabled={!agent || pending} onClick={() => void decide({ action: "APPROVE", agent_id: agent }, "Approved. The agent now owns this customer.")}>Approve & assign</Button>
+      <Button variant="ghost" className="text-[#A5183F]" icon={<Ban size={15} />} disabled={pending} onClick={() => setRejecting(true)}>Reject</Button>
+    </div>
+    {rejecting && <Modal open onClose={() => setRejecting(false)} dismissible={!pending} title={`Reject ${shipment.reference_number}?`} subtitle="It goes back to the Sales Manager with your reason; they decide to send it back to the agent or close it out."
+      footer={<><Button variant="ghost" onClick={() => setRejecting(false)} disabled={pending}>Back</Button><Button variant="danger" icon={<Ban size={15} />} pending={pending} pendingLabel="Rejecting…" disabled={!reason.trim()} onClick={async () => { if (await decide({ action: "REJECT", note: reason.trim() }, "Rejected. Sent back to the Sales Manager.") !== undefined) setRejecting(false); }}>Reject load</Button></>}>
+      <TextAreaField label="Reason" required autoFocus maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="e.g. No flatbed capacity on Houston to Dallas at $850. Customer must agree to $950 or move the pickup date." />
+    </Modal>}
+  </div>;
+}
+
 function Signal({ ok, label, value }: { ok: boolean; label: string; value: string }) {
   return <div className="flex items-center gap-3">
     <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-control", ok ? "bg-success/12 text-success" : "bg-brand/12 text-brand")}>{ok ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}</span>
@@ -105,7 +133,7 @@ function StatusControl({ shipment }: { shipment: Shipment }) {
   const pending = busy(`status:${shipment.id}`);
   const step = nextStatus[shipment.status];
   const move = (status: string, extra: Record<string, unknown> = {}) => run(`status:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}`, "PATCH", { status, ...extra }, status === "CANCELLED" ? "Load cancelled." : status === "MISSED_PICKUP" ? "Missed pickup recorded." : ["DELIVERED", "COMPLETED"].includes(status) ? `${statusLabel[status]}. Invoice created for billing.` : `Status: ${statusLabel[status]}.`);
-  if (shipment.status === "CANCELLED") return null;
+  if (shipment.status === "CANCELLED" || shipment.ops_review === "PENDING") return null;
   const locked = pending || ["EXCEPTION", "COMPLETED", "MISSED_PICKUP"].includes(shipment.status);
   return <div className="flex flex-wrap items-center gap-2">
     {canMissPickup(shipment.status) && <Button variant="outline" icon={<CircleSlash size={15} />} disabled={pending} onClick={() => setAsking("MISSED_PICKUP")}>Missed pickup</Button>}
@@ -147,8 +175,13 @@ function Assignment({ shipment, directory }: { shipment: Shipment; directory?: D
       <option value="">{empty}</option>{options.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
     </select>
   </label>;
+  const { manager } = useBrokerage();
+  // One agent per customer: the Operations Manager changes it for the customer, which moves its open loads too.
+  const reassignCustomer = (agentId: string) => void run(`assign:${shipment.id}`, `/api/v1/brokerage/customers/${shipment.customer_id}/operations-agent`, "PATCH", { agent_id: agentId }, "Customer's Operations agent changed. Its open loads moved too.");
   return <>
-    {select("Operations agent", shipment.assigned_to ?? "", "Needs assignment", (directory?.users ?? []).map((user) => ({ id: user.id, label: user.full_name })), (value) => assign({ assigned_to: value || null }))}
+    {manager && shipment.customer_id
+      ? select("Customer's Operations agent", shipment.customer_operations_agent_id ?? shipment.assigned_to ?? "", "Needs assignment", (directory?.users ?? []).map((user) => ({ id: user.id, label: user.full_name })), (value) => value && reassignCustomer(value))
+      : select("Operations agent", shipment.assigned_to ?? "", "Needs assignment", (directory?.users ?? []).map((user) => ({ id: user.id, label: user.full_name })), (value) => assign({ assigned_to: value || null }))}
     {select("Team", shipment.team_id ?? "", "No team", (directory?.teams ?? []).map((team) => ({ id: team.id, label: team.name })), (value) => assign({ team_id: value || null }))}
   </>;
 }

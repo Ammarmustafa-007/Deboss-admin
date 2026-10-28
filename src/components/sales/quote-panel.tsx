@@ -24,6 +24,8 @@ function useQuoteDetail(quoteId: string) {
 const decisionHint: Record<string, string> = {
   SUBMITTED: "Waiting for your decision",
   APPROVED: "Approved · hand off to Operations",
+  OPS_REVIEW: "With the Ops Manager",
+  OPS_REJECTED: "Rejected by Operations · decide",
   REJECTED: "Returned to the agent",
   HANDED_OFF: "Handed off to Operations",
   DRAFT: "Agent hasn't submitted yet",
@@ -78,17 +80,23 @@ function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; 
   const anyBusy = busy();
   const path = `/api/v1/brokerage/quotes/${quote.id}`;
 
-  const approve = (thenHandoff: boolean) => void wrap(thenHandoff ? "approve-handoff" : "approve", async () => {
+  // Approving: a customer with an Operations agent gets the load straight away; a new customer goes to the Ops Manager
+  // of the department picked here (picked once, then remembered on the customer).
+  const ops = detail.data?.customer_operations;
+  const [opsDepartment, setOpsDepartment] = useState<string>("");
+  const chosenDepartment = opsDepartment || ops?.department_id || departments[0]?.id || "";
+  const approve = () => void wrap("approve", async () => {
     try {
-      await responseData(await api(`${path}/review`, { method: "POST", body: JSON.stringify({ action: "APPROVE" }) }));
+      await responseData(await api(`${path}/review`, { method: "POST", body: JSON.stringify({ action: "APPROVE", ...(ops?.agent_id ? {} : { operations_department_id: chosenDepartment }) }) }));
       // Reflect the decision immediately; the refetch then reconciles with the server.
-      queryClient.setQueryData<QuoteDetail>(["brokerage", "quote", quote.id], (current) => current ? { ...current, quote: { ...current.quote, stage: "APPROVED" } } : current);
+      queryClient.setQueryData<QuoteDetail>(["brokerage", "quote", quote.id], (current) => current ? { ...current, quote: { ...current.quote, stage: ops?.agent_id ? "HANDED_OFF" : "OPS_REVIEW" } } : current);
       void refresh();
-      report(thenHandoff ? "Quote approved. Choose an Operations department to finish handoff." : "Quote approved and ready for Operations handoff.");
+      report(ops?.agent_id ? `Approved. Sent straight to ${ops.agent_name ?? "the customer's Operations agent"}.` : "Approved. It's now with the Operations Manager for review.");
     } catch (error) {
       report(errorMessage(error), "error");
     }
   });
+  const [opsNote, setOpsNote] = useState("");
 
   const submitHandoff = async (event: FormEvent) => {
     event.preventDefault();
@@ -100,9 +108,11 @@ function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; 
 
     {caps.canReviewQuotes && stage === "SUBMITTED" && <DecisionCard step={1} title="Review & decide" icon={<Hourglass size={16} />}>
       <TextAreaField label="Reason for returning" maxLength={1000} hint="Required only when returning the quote for rework." value={reviewNote} disabled={anyBusy} onChange={(event) => setReviewNote(event.target.value)} className="min-h-20" />
+      {ops?.agent_id
+        ? <p className="mt-4 rounded-[12px] bg-aqua/[.08] px-4 py-3 text-sm"><b>{ops.agent_name ?? "The customer's Operations agent"}</b> already handles this customer{ops.department_name ? ` (${ops.department_name})` : ""}. Approving sends the load straight to them.</p>
+        : <div className="mt-4"><SelectField label="Operations department for this customer" required hint="A new customer: its first load goes to this department's Operations Manager to approve and assign an agent. It's remembered for later loads." value={chosenDepartment} disabled={anyBusy || Boolean(ops?.department_id)} onChange={(event) => setOpsDepartment(event.target.value)} options={departments.map((department) => ({ value: department.id, label: department.name }))} /></div>}
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button variant="success" icon={<CheckCircle2 size={15} />} pending={busy("approve")} pendingLabel="Approving…" disabled={anyBusy} onClick={() => approve(false)}>Approve</Button>
-        {caps.canHandoffQuotes && <Button variant="primary" icon={<Send size={15} />} pending={busy("approve-handoff")} pendingLabel="Approving…" disabled={anyBusy} onClick={() => approve(true)}>Approve & hand off</Button>}
+        <Button variant="success" icon={<CheckCircle2 size={15} />} pending={busy("approve")} pendingLabel="Approving…" disabled={anyBusy || (!ops?.agent_id && !chosenDepartment)} onClick={approve}>{ops?.agent_id ? "Approve" : "Approve & send to Operations"}</Button>
         <Button variant="danger" icon={<RotateCcw size={15} />} pending={busy("reject")} pendingLabel="Returning…" disabled={anyBusy || !reviewNote.trim()} onClick={() => void run("reject", `${path}/review`, "POST", { action: "REJECT", note: reviewNote }, "Quote returned for rework.").then((result) => { if (result !== undefined) setReviewNote(""); })} className="sm:ml-auto">Return for rework</Button>
       </div>
     </DecisionCard>}
@@ -116,6 +126,17 @@ function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; 
       </form>
     </DecisionCard>}
 
+    {stage === "OPS_REVIEW" && <Notice tone="neutral">Approved by Sales. Waiting for the {ops?.department_name ?? "Operations"} Ops Manager to approve it and assign the customer&apos;s agent.</Notice>}
+    {stage === "OPS_REJECTED" && (caps.canReviewQuotes
+      ? <DecisionCard step={2} title="Rejected by Operations: your decision" icon={<RotateCcw size={16} />}>
+          <p className="mb-4 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm text-[#A5183F]"><b>Operations Manager:</b> {detail.data?.quote.ops_rejection_note ?? quote.ops_rejection_note}</p>
+          <TextAreaField label="Note for the agent" maxLength={1000} hint="Optional. Sent with the decision." value={opsNote} disabled={anyBusy} onChange={(event) => setOpsNote(event.target.value)} className="min-h-16" />
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button variant="primary" icon={<RotateCcw size={15} />} pending={busy("send-back")} pendingLabel="Sending…" disabled={anyBusy} onClick={() => void run("send-back", `${path}/ops-rejection`, "POST", { action: "SEND_BACK", note: opsNote || undefined }, "Sent back to the agent to fix and resubmit.")}>Send back to the agent</Button>
+            <Button variant="danger" pending={busy("close-out")} pendingLabel="Closing…" disabled={anyBusy} onClick={() => void run("close-out", `${path}/ops-rejection`, "POST", { action: "CLOSE_OUT", note: opsNote || undefined }, "Load closed out.")} className="sm:ml-auto">Close out this load</Button>
+          </div>
+        </DecisionCard>
+      : <Notice tone="danger">Rejected by Operations{(detail.data?.quote.ops_rejection_note ?? quote.ops_rejection_note) ? `: ${detail.data?.quote.ops_rejection_note ?? quote.ops_rejection_note}` : "."} Your Sales Manager decides what happens next.</Notice>)}
     {stage === "REJECTED" && <Notice tone="danger">Returned to the agent for rework{quote.rejection_note ? `: ${quote.rejection_note}` : "."}</Notice>}
     {stage === "HANDED_OFF" && <Notice tone="success">Handed off. Operations now owns this shipment.</Notice>}
     {stage === "DRAFT" && <Notice tone="neutral">The agent hasn&apos;t submitted this quote yet.</Notice>}

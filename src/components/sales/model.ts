@@ -35,6 +35,7 @@ export type Quote = {
   equipment_type?: string | null;
   quoted_rate?: number | string | null;
   rejection_note?: string | null;
+  ops_rejection_note?: string | null;
   updated_at?: string;
 };
 
@@ -93,7 +94,9 @@ export type Attachment = { id: string; file_name: string; created_at?: string };
 export type FronterProspect = Record<string, string | boolean | null> & { fronter_name: string | null; qualified_at: string | null };
 export type LeadDetailData = { lead: Lead; activities: FeedItem[]; comments: FeedItem[]; customer: Customer | null; quotes: Quote[]; prospect?: FronterProspect | null };
 export type CustomerProfile = { customer: Customer; can_edit?: boolean; activities: FeedItem[]; comments: FeedItem[]; quotes: Quote[]; shipments: SalesShipment[] };
-export type QuoteDetail = { quote: Quote; attachments: Attachment[]; events: FeedItem[]; comments: FeedItem[] };
+/** Who handles the quote's customer in Operations (set once, on the customer's first approved load). */
+export type CustomerOperations = { department_id: string | null; department_name: string | null; agent_id: string | null; agent_name: string | null };
+export type QuoteDetail = { quote: Quote; customer_operations?: CustomerOperations | null; attachments: Attachment[]; events: FeedItem[]; comments: FeedItem[] };
 
 /**
  * Lead statuses (client flow v2): Lead -> Qualified -> Quoting -> Customer, or Not qualified / Not interested.
@@ -110,7 +113,7 @@ export const activityTypes = ["CALL", "CALLBACK", "EMAIL", "NOTE", "FOLLOW_UP", 
 
 export const stageLabel: Record<string, string> = { LEAD: "Lead", QUALIFIED: "Qualified", QUOTING: "Quoting", CUSTOMER: "Customer", NOT_QUALIFIED: "Not qualified", NOT_INTERESTED: "Not interested", NEW: "Lead", CONTACTED: "Lead", LOST: "Not interested" };
 
-export type NextAction = { key: "review" | "handoff" | "rework" | "operations" | "draft" | "none"; label: string; tone: Tone };
+export type NextAction = { key: "review" | "handoff" | "rework" | "ops_review" | "ops_rejected" | "operations" | "draft" | "none"; label: string; tone: Tone };
 
 /** The one thing that should happen next on a lead, phrased for the person looking at it. */
 export function nextAction(quotes: Quote[], manager: boolean): NextAction {
@@ -118,12 +121,14 @@ export function nextAction(quotes: Quote[], manager: boolean): NextAction {
   if (has("SUBMITTED")) return { key: "review", label: manager ? "Review required" : "Awaiting approval", tone: "brand" };
   if (has("APPROVED")) return { key: "handoff", label: manager ? "Ready to hand off" : "Approved", tone: "success" };
   if (has("REJECTED")) return { key: "rework", label: manager ? "Agent rework" : "Rework needed", tone: "danger" };
+  if (has("OPS_REJECTED")) return { key: "ops_rejected", label: manager ? "Rejected by Operations: decide" : "Rejected by Operations", tone: "danger" };
+  if (has("OPS_REVIEW")) return { key: "ops_review", label: "With the Ops Manager", tone: "accent" };
   if (has("HANDED_OFF")) return { key: "operations", label: "With Operations", tone: "info" };
   if (has("DRAFT")) return { key: "draft", label: manager ? "Agent draft" : "Quote draft", tone: "neutral" };
   return { key: "none", label: "No quote yet", tone: "neutral" };
 }
 
-export const quoteStageLabel: Record<string, string> = { DRAFT: "Draft", SUBMITTED: "Awaiting approval", APPROVED: "Approved", REJECTED: "Returned for rework", HANDED_OFF: "With Operations" };
+export const quoteStageLabel: Record<string, string> = { DRAFT: "Draft", SUBMITTED: "Awaiting approval", APPROVED: "Approved", OPS_REVIEW: "With the Ops Manager", OPS_REJECTED: "Rejected by Operations", REJECTED: "Returned for rework", HANDED_OFF: "With Operations" };
 
 export const journeySteps = ["Lead", "Qualified", "Quoting", "Customer", "Approved", "With Operations"];
 
@@ -133,7 +138,8 @@ export const journeySteps = ["Lead", "Qualified", "Quoting", "Customer", "Approv
  */
 export function journeyPosition(stage: string, quotes: Quote[]): { current: number; blocked: boolean } {
   const has = (value: string) => quotes.some((quote) => quote.stage === value);
-  if (has("SUBMITTED")) return { current: 4, blocked: false };
+  if (has("SUBMITTED") || has("OPS_REVIEW")) return { current: 4, blocked: false };
+  if (has("OPS_REJECTED")) return { current: 4, blocked: true };
   if (has("APPROVED")) return { current: 5, blocked: false };
   if (has("REJECTED")) return { current: 4, blocked: true };
   if (has("HANDED_OFF")) return { current: 6, blocked: false };
@@ -142,15 +148,17 @@ export function journeyPosition(stage: string, quotes: Quote[]): { current: numb
   return { current: rank[stage] ?? 0, blocked: false };
 }
 
-export const quoteSteps = ["Draft", "Submitted", "Approved", "With Operations"];
+/** A load's approval: the Sales Manager, then (a new customer's first load only) the Operations Manager. */
+export const quoteSteps = ["Draft", "Sales Manager", "Ops Manager", "With Operations"];
 
 export function quotePosition(stage?: string | null): { current: number; blocked: boolean } {
   switch (stage) {
-    case "SUBMITTED": return { current: 2, blocked: false };
-    case "APPROVED": return { current: 3, blocked: false };
+    case "SUBMITTED": return { current: 1, blocked: false };
+    case "APPROVED": case "OPS_REVIEW": return { current: 2, blocked: false };
+    case "OPS_REJECTED": return { current: 2, blocked: true };
     case "HANDED_OFF": return { current: 4, blocked: false };
     case "REJECTED": return { current: 1, blocked: true };
-    default: return { current: 1, blocked: false };
+    default: return { current: 0, blocked: false };
   }
 }
 

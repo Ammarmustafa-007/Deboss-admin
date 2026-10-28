@@ -28,6 +28,9 @@ export type Shipment = {
   customer_id?: string | null;
   amount_agreed?: number | string | null;
   sales_agent_name?: string | null;
+  /** A new customer's first load waiting for (or rejected at) the Operations Manager's review. */
+  ops_review?: "PENDING" | "REJECTED" | null;
+  customer_operations_agent_id?: string | null;
 } & LoadDetails;
 
 /** What the Operations Agent records on a load (migration 019). The carrier block is never sent to Sales. */

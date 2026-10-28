@@ -12,7 +12,7 @@ import { Tabs, type TabItem } from "@/components/ui/navigation";
 import { controlClass } from "@/components/ui/field";
 import { exceptionOpen, statusLabel, useOperationsDirectory, type Shipment } from "@/components/operations/model";
 
-type Filter = "all" | "unassigned" | "exceptions" | "active" | "DELIVERED" | "COMPLETED" | "CANCELLED";
+type Filter = "all" | "review" | "unassigned" | "exceptions" | "active" | "DELIVERED" | "COMPLETED" | "CANCELLED";
 
 export function ShipmentsScreen() {
   const router = useRouter();
@@ -34,7 +34,8 @@ export function ShipmentsScreen() {
 
   const active = (shipment: Shipment) => !["DELIVERED", "COMPLETED", "CANCELLED"].includes(shipment.status);
   const counts = {
-    unassigned: shipments.filter((shipment) => !shipment.assigned_to).length,
+    review: shipments.filter((shipment) => shipment.ops_review === "PENDING").length,
+    unassigned: shipments.filter((shipment) => !shipment.assigned_to && !shipment.ops_review).length,
     exceptions: shipments.filter(exceptionOpen).length,
     active: shipments.filter(active).length,
     DELIVERED: shipments.filter((shipment) => shipment.status === "DELIVERED").length,
@@ -43,6 +44,7 @@ export function ShipmentsScreen() {
   };
   const tabs: TabItem<Filter>[] = [
     { value: "all", label: "All", count: shipments.length },
+    { value: "review", label: "New customers to review", count: counts.review, hidden: !manager || !counts.review },
     { value: "unassigned", label: "Needs assignment", count: counts.unassigned, hidden: !manager || !counts.unassigned },
     { value: "exceptions", label: "Exceptions", count: counts.exceptions, hidden: !counts.exceptions },
     { value: "active", label: "In progress", count: counts.active },
@@ -54,7 +56,8 @@ export function ShipmentsScreen() {
   const term = search.trim().toLowerCase();
   const visible = shipments.filter((shipment) => {
     if (agent === "unassigned" ? Boolean(shipment.assigned_to) : agent && shipment.assigned_to !== agent) return false;
-    if (filter === "unassigned" && shipment.assigned_to) return false;
+    if (filter === "review" && shipment.ops_review !== "PENDING") return false;
+    if (filter === "unassigned" && (shipment.assigned_to || shipment.ops_review)) return false;
     if (filter === "exceptions" && !exceptionOpen(shipment)) return false;
     if (filter === "active" && !active(shipment)) return false;
     if ((filter === "DELIVERED" || filter === "COMPLETED" || filter === "CANCELLED") && shipment.status !== filter) return false;

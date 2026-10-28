@@ -18,7 +18,7 @@ import { LeadImport } from "@/components/sales/lead-import";
 import { LeadsSheet } from "@/components/sales/lead-details";
 import { useSession } from "@/components/app/session";
 
-type Filter = "all" | "LEAD" | "QUALIFIED" | "QUOTING" | "CUSTOMER" | "NOT_QUALIFIED" | "NOT_INTERESTED" | "review" | "handoff" | "rework";
+type Filter = "all" | "LEAD" | "QUALIFIED" | "QUOTING" | "CUSTOMER" | "NOT_QUALIFIED" | "NOT_INTERESTED" | "review" | "handoff" | "rework" | "ops_rejected";
 
 export function LeadsScreen() {
   const router = useRouter();
@@ -50,6 +50,7 @@ export function LeadsScreen() {
   const reviewCount = count((row) => row.action.key === "review");
   const handoffCount = count((row) => row.action.key === "handoff");
   const reworkCount = count((row) => row.action.key === "rework");
+  const opsRejectedCount = count((row) => row.action.key === "ops_rejected");
   const followUpsDue = count((row) => !closedStages.includes(row.lead.stage) && isPast(row.lead.next_follow_up_at));
 
   const tabs: TabItem<Filter>[] = [
@@ -57,12 +58,13 @@ export function LeadsScreen() {
     { value: "review", label: reviewer ? "Needs review" : "Awaiting approval", count: reviewCount, hidden: !reviewCount },
     { value: "handoff", label: reviewer ? "Ready to hand off" : "Approved", count: handoffCount, hidden: !handoffCount },
     { value: "rework", label: reviewer ? "Agent rework" : "Rework needed", count: reworkCount, hidden: !reworkCount },
+    { value: "ops_rejected", label: "Rejected by Operations", count: opsRejectedCount, hidden: !opsRejectedCount },
     ...pipelineStages.map((stage) => ({ value: stage, label: stageLabel[stage], count: byStage(stage), hidden: stage.startsWith("NOT_") && !byStage(stage) })),
   ];
 
   const term = search.trim().toLowerCase();
   const visible = rows.filter(({ lead, action }) => {
-    if (["review", "handoff", "rework"].includes(filter) ? action.key !== filter : filter !== "all" && lead.stage !== filter) return false;
+    if (["review", "handoff", "rework", "ops_rejected"].includes(filter) ? action.key !== filter : filter !== "all" && lead.stage !== filter) return false;
     if (owner && lead.owner_id !== owner) return false;
     return !term || `${lead.company_name} ${lead.contact_name ?? ""} ${lead.contact_email ?? ""}`.toLowerCase().includes(term);
   });
