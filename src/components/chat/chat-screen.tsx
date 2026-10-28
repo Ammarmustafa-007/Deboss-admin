@@ -8,12 +8,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
 import { useSession } from "@/components/app/session";
-import { useBrokerage } from "@/components/app/brokerage-context";
 import { Avatar, Card, EmptyState, Skeleton } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { TextField, controlClass } from "@/components/ui/field";
 import { Modal } from "@/components/ui/overlay";
-import { inboxKey, markRead, sendMessage, useChatStream, useInbox, useTyping, type ChatMessage, type Conversation } from "@/components/chat/chat-data";
+import { inboxKey, markRead, sendMessage, useChatApi, useChatStream, useInbox, useTyping, type ChatMessage, type Conversation } from "@/components/chat/chat-data";
 
 const emojis = ["😀", "😂", "😊", "😍", "👍", "👏", "🙏", "🎉", "🔥", "✅", "❌", "⚠️", "🚚", "📦", "📞", "💰", "⏰", "📍", "🤝", "👀", "😅", "😢", "😡", "❤️"];
 
@@ -35,6 +34,7 @@ function listTime(value: string) {
 function ChatAvatar({ conversation, size = "md" }: { conversation: Pick<Conversation, "kind" | "name" | "photo_url">; size?: "md" | "lg" }) {
   const box = size === "lg" ? "h-11 w-11" : "h-10 w-10";
   if (conversation.photo_url) return <span className={cn("shrink-0 overflow-hidden rounded-full bg-line-soft", box)}>{/* eslint-disable-next-line @next/next/no-img-element */}<img src={conversation.photo_url} alt="" className="h-full w-full object-cover" /></span>;
+  if (conversation.kind === "CHANNEL") return <span className={cn("grid shrink-0 place-items-center rounded-[12px] bg-brand-tint text-[15px] font-bold text-brand-deep", box)}>#</span>;
   if (conversation.kind === "GROUP") return <span className={cn("grid shrink-0 place-items-center rounded-full bg-aqua/15 text-aqua", box)}><UsersRound size={18} /></span>;
   return <Avatar name={conversation.name} className={box} />;
 }
@@ -54,7 +54,10 @@ export function ChatScreen() {
   useChatStream(() => { void queryClient.invalidateQueries({ queryKey: inboxKey }); });
 
   const term = search.trim().toLowerCase();
-  const visible = conversations.filter((conversation) => !term || conversation.name.toLowerCase().includes(term));
+  // Company channels stay pinned at the top (Announcements, Quotes, Updates), then everything else by latest message.
+  const channelOrder = { ANNOUNCEMENTS: 0, QUOTES: 1, UPDATES: 2 } as const;
+  const visible = conversations.filter((conversation) => !term || conversation.name.toLowerCase().includes(term))
+    .sort((left, right) => (left.channel_key ? channelOrder[left.channel_key] : 9) - (right.channel_key ? channelOrder[right.channel_key] : 9));
 
   return <div className="animate-rise">
     <Card className="grid h-[calc(100dvh-140px)] min-h-[520px] overflow-hidden lg:grid-cols-[340px_minmax(0,1fr)]">
@@ -88,7 +91,7 @@ export function ChatScreen() {
 }
 
 function ConversationPane({ conversation, me, onBack }: { conversation: Conversation; me: string; onBack: () => void }) {
-  const { api } = useBrokerage();
+  const { api } = useChatApi();
   const { profile } = useSession();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -156,6 +159,7 @@ function ConversationPane({ conversation, me, onBack }: { conversation: Conversa
         <p className="truncate font-semibold">{conversation.name}</p>
         <p className="truncate text-xs text-muted">{typingNames.length ? <span className="text-brand-deep">{typingNames.join(", ")} {typingNames.length === 1 ? "is" : "are"} typing…</span> : conversation.kind === "GROUP" ? conversation.members.map((member) => member.id === me ? "You" : member.full_name.split(" ")[0]).join(", ") : conversation.other?.role === "MANAGER" ? "Manager" : "Agent"}</p>
       </div>
+      {conversation.kind === "CHANNEL" && <span className="text-xs text-muted">{conversation.members.length} members</span>}
       {conversation.kind === "GROUP" && <Button size="sm" variant="ghost" icon={<Settings2 size={15} />} onClick={() => setSettings(true)}>{conversation.my_role === "ADMIN" ? "Group settings" : "Group info"}</Button>}
     </header>
     <div ref={scroller} onScroll={(event) => { const box = event.currentTarget; atBottom.current = box.scrollHeight - box.scrollTop - box.clientHeight < 80; }} className="min-h-0 flex-1 overflow-y-auto bg-[#FBFAF7] px-4 py-4">
@@ -166,11 +170,18 @@ function ConversationPane({ conversation, me, onBack }: { conversation: Conversa
           const mine = message.sender_id === me;
           const day = dayLabel(message.created_at); const showDay = index === 0 || day !== dayLabel(messages[index - 1].created_at);
           const firstOfRun = index === 0 || messages[index - 1].sender_id !== message.sender_id || showDay;
+          // System updates posted into a channel read as a centred card, not a person's bubble.
+          if (message.kind === "EVENT") return <li key={message.key ?? message.id}>
+            {showDay && <p className="my-3 text-center"><span className="rounded-full bg-white px-3 py-1 text-[11px] font-medium text-muted shadow-sm">{day}</span></p>}
+            <div className={cn("mx-auto my-2 flex max-w-[88%] items-start gap-2.5 rounded-[14px] border border-line-soft bg-white px-3.5 py-2.5 text-[13px] shadow-sm", message.fresh && "animate-pop")}>
+              <span className="min-w-0 flex-1"><span className="block whitespace-pre-wrap break-words leading-relaxed">{message.body}</span><span className="mt-0.5 block text-[10px] text-muted">{nameOf.get(message.sender_id) ?? "DEBOSS"} · {timeLabel(message.created_at)}</span></span>
+            </div>
+          </li>;
           return <li key={message.key ?? message.id}>
             {showDay && <p className="my-3 text-center"><span className="rounded-full bg-white px-3 py-1 text-[11px] font-medium text-muted shadow-sm">{day}</span></p>}
             <div className={cn("flex", mine ? "justify-end" : "justify-start", firstOfRun && "mt-2")}>
               <div className={cn("max-w-[78%] rounded-[16px] px-3.5 py-2 text-sm shadow-sm transition-opacity", mine ? "rounded-br-[6px] bg-brand text-ink" : "rounded-bl-[6px] bg-white", message.fresh && (mine ? "origin-bottom-right animate-msg-out" : "origin-bottom-left animate-msg-in"), message.pending && "opacity-80", message.failed && "ring-2 ring-danger/60 animate-shake")}>
-                {!mine && conversation.kind === "GROUP" && firstOfRun && <p className="mb-0.5 text-xs font-semibold text-aqua">{nameOf.get(message.sender_id) ?? "Former member"}</p>}
+                {!mine && conversation.kind !== "DIRECT" && firstOfRun && <p className="mb-0.5 text-xs font-semibold text-aqua">{nameOf.get(message.sender_id) ?? "Former member"}</p>}
                 <p className="whitespace-pre-wrap break-words leading-relaxed">{message.body}</p>
                 <p className={cn("mt-0.5 flex items-center justify-end gap-1 text-[10px]", mine ? "text-ink/60" : "text-muted")}>{message.failed ? "Not sent" : timeLabel(message.created_at)}{mine && !message.failed && (message.pending ? <Check size={12} className="opacity-50" /> : readByAll(message) ? <CheckCheck size={13} className="text-[#1d6fd8]" /> : <Check size={12} />)}</p>
               </div>
@@ -184,18 +195,19 @@ function ConversationPane({ conversation, me, onBack }: { conversation: Conversa
       </>}
     </div>
     {error && <p className="border-t border-danger/20 bg-danger/[.05] px-4 py-2 text-xs text-[#A5183F]">{error} <button type="button" className="ml-2 underline" onClick={() => setError(undefined)}>Dismiss</button></p>}
+    {conversation.can_post === false ? <p className="border-t border-line-soft bg-[#FAF8F4] px-4 py-3 text-center text-xs text-muted">Only managers and the Super Admin post in {conversation.name}.</p> :
     <form onSubmit={send} className="relative flex items-end gap-2 border-t border-line-soft bg-white px-3 py-3">
       {showEmojis && <div className="absolute bottom-full left-3 mb-2 grid origin-bottom-left grid-cols-8 gap-1 rounded-[14px] border border-line bg-white p-2 shadow-lg animate-pop">{emojis.map((emoji) => <button key={emoji} type="button" onClick={() => setDraft((current) => current + emoji)} className="grid h-9 w-9 place-items-center rounded-lg text-lg transition hover:scale-110 hover:bg-black/[.05] active:scale-95">{emoji}</button>)}</div>}
       <button type="button" onClick={() => setShowEmojis((value) => !value)} aria-label="Emojis" className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-control text-muted hover:bg-black/[.05]", showEmojis && "bg-black/[.05] text-ink")}><Smile size={20} /></button>
       <textarea value={draft} onChange={(event) => { setDraft(event.target.value); notify(); }} onKeyDown={onKey} rows={1} maxLength={4000} placeholder="Type a message" aria-label="Message" className={cn(controlClass, "max-h-32 min-h-10 resize-none py-2.5")} />
       <Button type="submit" variant="primary" icon={<Send size={15} />} disabled={!draft.trim()} className="h-10 shrink-0">Send</Button>
-    </form>
+    </form>}
     {settings && <GroupSettings conversation={conversation} me={me} onClose={() => setSettings(false)} />}
   </div>;
 }
 
 function NewMessage({ contacts, onClose, onOpen }: { contacts: { id: string; full_name: string; role: string; department: string | null }[]; onClose: () => void; onOpen: (id: string) => void }) {
-  const { api, report } = useBrokerage();
+  const { api, report } = useChatApi();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string>();
@@ -222,7 +234,7 @@ function NewMessage({ contacts, onClose, onOpen }: { contacts: { id: string; ful
 
 /** The admin (the team's manager) renames the group and sets its photo; members follow the team. */
 function GroupSettings({ conversation, me, onClose }: { conversation: Conversation; me: string; onClose: () => void }) {
-  const { api, report } = useBrokerage();
+  const { api, report } = useChatApi();
   const queryClient = useQueryClient();
   const admin = conversation.my_role === "ADMIN";
   const [name, setName] = useState(conversation.name);
@@ -262,7 +274,7 @@ function GroupSettings({ conversation, me, onClose }: { conversation: Conversati
 }
 
 /** Uploads a group photo and returns its public address. Also used by the team form. */
-export async function uploadGroupPhoto(api: ReturnType<typeof useBrokerage>["api"], file: File) {
+export async function uploadGroupPhoto(api: ReturnType<typeof useChatApi>["api"], file: File) {
   const slot = await responseData<{ signed_url: string; public_url: string }>(await api("/api/v1/chat/photo-upload-url", { method: "POST", body: JSON.stringify({ content_type: file.type, file_size: file.size }) }));
   const put = await fetch(slot.signed_url, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
   if (!put.ok) throw new Error("The photo could not be uploaded.");

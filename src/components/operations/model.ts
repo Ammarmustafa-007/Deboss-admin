@@ -60,24 +60,22 @@ export type ShipmentComment = { id: string; body: string; author_id?: string | n
 export type ShipmentDetail = { shipment: Shipment; documents: ShipmentDocument[]; events: ShipmentEvent[]; comments: ShipmentComment[]; invoice?: { invoice_number?: string; status?: string } | null };
 export type Directory = { users: { id: string; full_name: string; email?: string; role?: string }[]; teams: { id: string; name: string }[] };
 
-export const shipmentStatuses = ["BOOKED", "CARRIER_ASSIGNED", "PICKED_UP", "IN_TRANSIT", "DELIVERED", "COMPLETED", "EXCEPTION"];
-export const progressStatuses = shipmentStatuses.filter((status) => status !== "EXCEPTION");
+/** Load lifecycle (client flow v2). Completed is set automatically when the invoice is paid; exceptions are a flag, not a step. */
+export const shipmentStatuses = ["BOOKED", "PICKED_UP", "DELIVERED", "COMPLETED"];
+export const progressStatuses = shipmentStatuses;
 export const paymentStatuses = ["DRAFT", "SENT", "PENDING", "PAID", "OVERDUE", "CANCELLED"];
 export const documentTypes = ["BOL", "POD", "RATE_CONFIRMATION", "INVOICE", "OTHER"];
 
 export const statusLabel: Record<string, string> = { QUOTED: "Quoted", BOOKED: "Booked", CARRIER_ASSIGNED: "Carrier assigned", MISSED_PICKUP: "Missed pickup", PICKED_UP: "Picked up", IN_TRANSIT: "In transit", DELIVERED: "Delivered", COMPLETED: "Completed", EXCEPTION: "Exception", CANCELLED: "Cancelled" };
 
 /** Before pickup a load can still miss its pickup or be cancelled (each with a reason). */
-export const canMissPickup = (status: string) => ["BOOKED", "CARRIER_ASSIGNED"].includes(status);
-export const canCancel = (status: string) => ["BOOKED", "CARRIER_ASSIGNED", "MISSED_PICKUP"].includes(status);
+export const canMissPickup = (status: string) => status === "BOOKED";
+export const canCancel = (status: string) => ["BOOKED", "MISSED_PICKUP"].includes(status);
 
 /** The single forward step an agent takes next, as a clear action. */
 export const nextStatus: Record<string, { status: string; action: string }> = {
-  BOOKED: { status: "CARRIER_ASSIGNED", action: "Mark carrier assigned" },
-  CARRIER_ASSIGNED: { status: "PICKED_UP", action: "Mark picked up" },
-  PICKED_UP: { status: "IN_TRANSIT", action: "Mark in transit" },
-  IN_TRANSIT: { status: "DELIVERED", action: "Mark delivered" },
-  DELIVERED: { status: "COMPLETED", action: "Mark completed" },
+  BOOKED: { status: "PICKED_UP", action: "Mark picked up" },
+  PICKED_UP: { status: "DELIVERED", action: "Mark delivered" },
   MISSED_PICKUP: { status: "BOOKED", action: "Re-book load" },
 };
 
@@ -86,14 +84,15 @@ export const nextStatus: Record<string, { status: string; action: string }> = {
  * Exception is reported and resolved from the Exception tab, never picked here.
  */
 export function allowedStatuses(status: string) {
-  const index = progressStatuses.indexOf(status);
+  const manual = ["BOOKED", "PICKED_UP", "DELIVERED"]; // Completed comes from the paid invoice.
+  const index = manual.indexOf(status);
   if (index < 0) return [status];
-  const back = index > 0 && index < progressStatuses.indexOf("DELIVERED") ? [progressStatuses[index - 1]] : [];
-  const forward = index < progressStatuses.length - 1 ? [progressStatuses[index + 1]] : [];
+  const back = index > 0 && index < manual.indexOf("DELIVERED") ? [manual[index - 1]] : [];
+  const forward = index < manual.length - 1 ? [manual[index + 1]] : [];
   return [...back, status, ...forward];
 }
 
-/** Open when the shipment is in Exception status, or has an unresolved exception note. */
+/** An exception is open while it has a note and no resolution (older loads may still carry the retired Exception status). */
 export const exceptionOpen = (shipment: Shipment) => shipment.status === "EXCEPTION" || Boolean(shipment.exception_note && !shipment.exception_resolution);
 
 /** Agents and teams the manager can assign to. Only loaded for department managers, as before. */

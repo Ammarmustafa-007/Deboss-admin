@@ -41,7 +41,7 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
   const { shipment, documents, events, comments, invoice } = data;
   // While in exception, the progress line shows where the shipment was when it was raised.
   // A missed pickup or a cancellation also holds the line where the load was, in red.
-  const paused = ["EXCEPTION", "MISSED_PICKUP", "CANCELLED"].includes(shipment.status);
+  const paused = ["MISSED_PICKUP", "CANCELLED"].includes(shipment.status);
   const heldAt = (status: string) => { const from = events.find((event) => event.to_status === status)?.from_status; return from && progressStatuses.includes(from) ? from : "BOOKED"; };
   const lineStatus = paused ? heldAt(shipment.status) : shipment.status;
   const cancelled = shipment.status === "CANCELLED";
@@ -64,8 +64,9 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
 
     <Card className="px-4 py-5 sm:px-6">
       {/* An exception pauses the lifecycle: the line holds its place in red rather than disappearing. */}
-      <div className="overflow-x-auto"><Stepper steps={progressStatuses.map((status) => ({ label: statusLabel[status] }))} current={lineStatus === "COMPLETED" ? progressStatuses.length : Math.max(0, progressStatuses.indexOf(lineStatus))} tone={paused ? "danger" : "brand"} className="min-w-[560px]" /></div>
-      {shipment.status === "EXCEPTION" && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm"><AlertTriangle size={18} className="shrink-0 text-danger" /><p><b>Shipment in exception.</b> {shipment.exception_note ? shipment.exception_note : "Details are in the Exception tab."}</p></div>}
+      <div className="overflow-x-auto"><Stepper steps={progressStatuses.map((status) => ({ label: statusLabel[status] }))} current={lineStatus === "COMPLETED" ? progressStatuses.length : Math.max(0, progressStatuses.indexOf(lineStatus))} tone={paused || exceptionOpen(shipment) ? "danger" : "brand"} className="min-w-[480px]" /></div>
+      {exceptionOpen(shipment) && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm"><AlertTriangle size={18} className="shrink-0 text-danger" /><p><b>Open exception.</b> {shipment.exception_note ? shipment.exception_note : "Details are in the Exception tab."}</p></div>}
+      {shipment.status === "DELIVERED" && <p className="mt-4 text-xs text-muted">Delivered. The load completes automatically when its invoice is paid.</p>}
       {shipment.status === "MISSED_PICKUP" && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm animate-fade"><CircleSlash size={18} className="shrink-0 text-danger" /><p><b>Pickup missed.</b> {shipment.missed_pickup_reason} Re-book the load or cancel it.</p></div>}
       {shipment.ops_review === "PENDING" && (manager ? <OpsReview shipment={shipment} directory={directory.data} /> : <div className="mt-4 rounded-[12px] bg-accent/[.07] px-4 py-3 text-sm animate-fade"><b>New customer.</b> Waiting for the Operations Manager to approve this load and assign the customer&apos;s agent.</div>)}
       {cancelled && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-black/[.04] px-4 py-3 text-sm animate-fade"><Ban size={18} className="shrink-0 text-ink/60" /><p><b>Load cancelled{shipment.cancelled_at ? ` · ${dateTimeLabel(shipment.cancelled_at)}` : ""}.</b> {shipment.cancel_reason}</p></div>}
@@ -134,7 +135,7 @@ function StatusControl({ shipment }: { shipment: Shipment }) {
   const step = nextStatus[shipment.status];
   const move = (status: string, extra: Record<string, unknown> = {}) => run(`status:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}`, "PATCH", { status, ...extra }, status === "CANCELLED" ? "Load cancelled." : status === "MISSED_PICKUP" ? "Missed pickup recorded." : ["DELIVERED", "COMPLETED"].includes(status) ? `${statusLabel[status]}. Invoice created for billing.` : `Status: ${statusLabel[status]}.`);
   if (shipment.status === "CANCELLED" || shipment.ops_review === "PENDING") return null;
-  const locked = pending || ["EXCEPTION", "COMPLETED", "MISSED_PICKUP"].includes(shipment.status);
+  const locked = pending || ["COMPLETED", "MISSED_PICKUP"].includes(shipment.status);
   return <div className="flex flex-wrap items-center gap-2">
     {canMissPickup(shipment.status) && <Button variant="outline" icon={<CircleSlash size={15} />} disabled={pending} onClick={() => setAsking("MISSED_PICKUP")}>Missed pickup</Button>}
     {canCancel(shipment.status) && <Button variant="ghost" className="text-[#A5183F]" icon={<Ban size={15} />} disabled={pending} onClick={() => setAsking("CANCELLED")}>Cancel load</Button>}
@@ -231,7 +232,9 @@ function LoadForm({ shipment, canMarkInvoiceReady }: { shipment: Shipment; canMa
   return <Card>
     <form onSubmit={save}>
       <fieldset disabled={pending || locked} className="divide-y divide-line-soft">
-        {loadSections.slice(0, 1).map((section) => <section key={section.title} className="p-5"><h3 className="text-sm font-semibold">{section.title}</h3>{section.hint && <p className="mb-4 mt-0.5 text-xs text-muted">{section.hint}</p>}<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{section.fields.map(field)}</div></section>)}
+        {loadSections.slice(0, 1).map((section) => <section key={section.title} className="p-5"><h3 className="text-sm font-semibold">{section.title}</h3>{section.hint && <p className="mb-4 mt-0.5 text-xs text-muted">{section.hint}</p>}
+          {!locked && <CarrierPicker onPick={(values) => setForm((current) => ({ ...current, ...values }))} />}
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{section.fields.map(field)}</div></section>)}
         <section className="p-5"><h3 className="mb-4 text-sm font-semibold">Rate & profit</h3>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 xl:items-end">
             <TextField label="Carrier rate" type="number" min="0" step="0.01" inputMode="decimal" error={errors.carrier_rate} value={String(form.carrier_rate)} onChange={(event) => set("carrier_rate")(event.target.value)} />
@@ -259,6 +262,36 @@ function LoadForm({ shipment, canMarkInvoiceReady }: { shipment: Shipment; canMa
       </div>}
     </form>
   </Card>;
+}
+
+type SavedCarrier = { id: string; company_name: string; mc_number?: string | null; dot_number?: string | null; contact_name?: string | null; phone?: string | null; email?: string | null; dispatch_trucks: { unit_number: string; truck_type: string }[] };
+
+/** Fills the carrier fields from a carrier saved in the Dispatch module (approved ones only); every field stays editable. */
+function CarrierPicker({ onPick }: { onPick: (values: Record<string, string>) => void }) {
+  const { api } = useBrokerage();
+  const [term, setTerm] = useState("");
+  const [picked, setPicked] = useState<SavedCarrier | null>(null);
+  const search = term.trim();
+  const carriers = useQuery({ queryKey: ["brokerage", "saved-carriers", search], enabled: search.length >= 2, staleTime: 60_000, queryFn: async () => (await responseData<{ carriers: SavedCarrier[] }>(await api(`/api/v1/brokerage/carriers?q=${encodeURIComponent(search)}`))).carriers });
+  const choose = (carrier: SavedCarrier) => {
+    setPicked(carrier); setTerm("");
+    onPick({ carrier_name: carrier.company_name, carrier_mc: carrier.mc_number ?? carrier.dot_number ?? "", dispatcher_name: carrier.contact_name ?? "", dispatcher_phone: carrier.phone ?? "", dispatcher_email: carrier.email ?? "" });
+  };
+  return <div className="mb-4 rounded-[12px] border border-dashed border-line p-3">
+    <label className="block text-xs font-medium text-muted">Fill from a saved carrier
+      <input type="search" value={term} onChange={(event) => setTerm(event.target.value)} placeholder="Search Dispatch carriers by name, MC # or DOT #" className={cn(controlClass, "mt-1 h-10")} />
+    </label>
+    {search.length >= 2 && <ul className="mt-2 max-h-48 overflow-y-auto rounded-control border border-line-soft">
+      {carriers.isLoading ? <li className="px-3 py-2 text-xs text-muted">Searching…</li>
+        : (carriers.data ?? []).length ? carriers.data!.map((carrier) => <li key={carrier.id}><button type="button" onClick={() => choose(carrier)} className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-[#FAF8F4]"><span className="truncate font-medium">{carrier.company_name}</span><span className="shrink-0 text-xs text-muted">{carrier.mc_number ? `MC ${carrier.mc_number}` : carrier.dot_number ? `DOT ${carrier.dot_number}` : ""}</span></button></li>)
+        : <li className="px-3 py-2 text-xs text-muted">No approved carrier matches. Type the details below instead.</li>}
+    </ul>}
+    {picked && picked.dispatch_trucks.length > 0 && <label className="mt-3 block text-xs font-medium text-muted">Truck from {picked.company_name}
+      <select defaultValue="" onChange={(event) => { const truck = picked.dispatch_trucks[Number(event.target.value)]; if (truck) onPick({ truck_number: truck.unit_number, truck_type_size: humanize(truck.truck_type) }); }} className={cn(controlClass, "mt-1 h-10")}>
+        <option value="">Choose a truck (optional)</option>{picked.dispatch_trucks.map((truck, index) => <option key={index} value={index}>{truck.unit_number} · {humanize(truck.truck_type)}</option>)}
+      </select>
+    </label>}
+  </div>;
 }
 
 function Readout({ label, value, tone }: { label: string; value: string; tone?: "good" | "bad" }) {
@@ -345,16 +378,15 @@ function ExceptionPanel({ data, canResolve, directory }: { data: ShipmentDetail;
   const dirty = form.exception_note !== initial.exception_note || form.exception_resolution !== initial.exception_resolution;
   const pending = busy(`exception:${shipment.id}`);
   const history = events.filter((event) => event.event_type.includes("EXCEPTION"));
-  // Where the shipment was before the exception, so resolving puts it back on track.
-  const previous = events.find((event) => event.to_status === "EXCEPTION")?.from_status ?? (shipment.status === "EXCEPTION" ? "IN_TRANSIT" : shipment.status);
   const ownerName = directory?.users.find((user) => user.id === shipment.exception_owner_id)?.full_name;
 
   const save = (event: FormEvent) => {
     event.preventDefault();
+    // An exception is a flag on the load: reporting or resolving it never changes the load's status.
     void run(`exception:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}`, "PATCH", canResolve
-      ? { exception_note: form.exception_note || null, exception_resolution: form.exception_resolution || null, status: form.exception_note && !form.exception_resolution ? "EXCEPTION" : previous }
-      : { exception_note: form.exception_note || null, status: form.exception_note ? "EXCEPTION" : previous },
-    canResolve ? (form.exception_resolution ? `Exception resolved. Back to ${statusLabel[previous] ?? previous}.` : "Exception updated.") : "Exception reported to your manager.");
+      ? { exception_note: form.exception_note || null, exception_resolution: form.exception_resolution || null }
+      : { exception_note: form.exception_note || null },
+    canResolve ? (form.exception_resolution ? "Exception resolved." : "Exception updated.") : "Exception reported to your manager.");
   };
 
   return <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
@@ -363,7 +395,7 @@ function ExceptionPanel({ data, canResolve, directory }: { data: ShipmentDetail;
       <form onSubmit={save} className="space-y-4 p-5">
         <fieldset disabled={pending} className="space-y-4">
           <TextAreaField label="What went wrong" required maxLength={3000} value={form.exception_note} onChange={(event) => setForm({ ...form, exception_note: event.target.value })} />
-          {canResolve && <TextAreaField label="Resolution" hint={exceptionOpen(shipment) ? `Saving a resolution moves the shipment back to ${statusLabel[previous] ?? previous}.` : undefined} value={form.exception_resolution} onChange={(event) => setForm({ ...form, exception_resolution: event.target.value })} />}
+          {canResolve && <TextAreaField label="Resolution" hint={exceptionOpen(shipment) ? "Saving a resolution closes the exception; the load keeps its status." : undefined} value={form.exception_resolution} onChange={(event) => setForm({ ...form, exception_resolution: event.target.value })} />}
         </fieldset>
         <div className="flex justify-end gap-2">
           {dirty && <Button variant="ghost" onClick={() => setForm(initial)} disabled={pending}>Discard</Button>}

@@ -3,19 +3,28 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { responseData } from "@/lib/api";
-import { useOptionalBrokerage } from "@/components/app/brokerage-context";
+import { responseData, useApi } from "@/lib/api";
+import { useToast } from "@/components/ui/toast";
 
 /** Chat data: the inbox comes from the API; messages arrive live through Supabase Realtime. */
 
 export type ChatMember = { id: string; full_name: string; role: string | null; chat_role: "ADMIN" | "MEMBER"; last_read_at: string };
+/** API and toasts for chat. Plain ones (not the Brokerage workspace), so the Super Admin can use Company announcements too. */
+export function useChatApi() {
+  return { api: useApi(), report: useToast() };
+}
+
 export type ChatMessage = {
   id: string; conversation_id: string; sender_id: string; body: string; created_at: string; pending?: boolean; failed?: boolean;
+  /** EVENT: posted by the system into a channel (rate locked, load delivered…), shown as an update card. */
+  kind?: "USER" | "EVENT";
   /** Client-only: a stable render key (the optimistic id) and whether it arrived live, so it animates in once. */
   key?: string; fresh?: boolean;
 };
 export type Conversation = {
-  id: string; kind: "DIRECT" | "GROUP"; team_id: string | null; name: string; photo_url: string | null;
+  id: string; kind: "DIRECT" | "GROUP" | "CHANNEL"; team_id: string | null; name: string; photo_url: string | null;
+  /** Company channels: QUOTES, UPDATES, ANNOUNCEMENTS. Only managers and the Super Admin post announcements. */
+  channel_key?: "QUOTES" | "UPDATES" | "ANNOUNCEMENTS" | null; can_post?: boolean;
   last_message: ChatMessage | null; last_message_at: string; unread: number; my_role: "ADMIN" | "MEMBER";
   members: ChatMember[]; other: ChatMember | null;
 };
@@ -25,11 +34,11 @@ export type Inbox = { me: string; conversations: Conversation[]; contacts: Conta
 export const inboxKey = ["chat", "inbox"] as const;
 
 export function useInbox(enabled = true) {
-  const brokerage = useOptionalBrokerage();
+  const api = useApi();
   return useQuery({
     queryKey: inboxKey,
-    queryFn: async () => responseData<Inbox>(await brokerage!.api("/api/v1/chat/inbox")),
-    enabled: enabled && Boolean(brokerage),
+    queryFn: async () => responseData<Inbox>(await api("/api/v1/chat/inbox")),
+    enabled,
     staleTime: 15_000,
     refetchInterval: 60_000,
   });

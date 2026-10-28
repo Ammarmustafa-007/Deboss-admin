@@ -93,7 +93,9 @@ export type Attachment = { id: string; file_name: string; created_at?: string };
 /** The mined row a qualified lead came from (Fronters sheet). */
 export type FronterProspect = Record<string, string | boolean | null> & { fronter_name: string | null; qualified_at: string | null };
 export type LeadDetailData = { lead: Lead; activities: FeedItem[]; comments: FeedItem[]; customer: Customer | null; quotes: Quote[]; prospect?: FronterProspect | null };
-export type CustomerProfile = { customer: Customer; can_edit?: boolean; activities: FeedItem[]; comments: FeedItem[]; quotes: Quote[]; shipments: SalesShipment[] };
+/** A document Operations uploaded on one of the customer's loads (rate confirmations are never sent to Sales). */
+export type LoadDocument = { id: string; shipment_id: string; document_type: string; is_verified?: boolean; created_at?: string };
+export type CustomerProfile = { customer: Customer; can_edit?: boolean; activities: FeedItem[]; comments: FeedItem[]; quotes: Quote[]; shipments: SalesShipment[]; documents?: LoadDocument[] };
 /** Who handles the quote's customer in Operations (set once, on the customer's first approved load). */
 export type CustomerOperations = { department_id: string | null; department_name: string | null; agent_id: string | null; agent_name: string | null };
 export type QuoteDetail = { quote: Quote; customer_operations?: CustomerOperations | null; attachments: Attachment[]; events: FeedItem[]; comments: FeedItem[] };

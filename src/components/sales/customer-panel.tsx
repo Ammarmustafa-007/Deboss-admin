@@ -18,7 +18,7 @@ import { QuoteFile } from "@/components/sales/quote-panel";
 import { ReasonModal } from "@/components/operations/shipment-screen";
 import { LoadsSheet } from "@/components/sales/loads-sheet";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
-import { commercialStatuses, lane, operationsPosition, operationsSteps, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type Quote, type SalesShipment } from "@/components/sales/model";
+import { commercialStatuses, lane, operationsPosition, operationsSteps, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type LoadDocument, type Quote, type SalesShipment } from "@/components/sales/model";
 
 export function useCustomerProfile(customerId: string) {
   const { api } = useBrokerage();
@@ -79,7 +79,7 @@ export function CustomerPanel({ customerId, readOnly = false, onSyncFromLead }: 
     </div>
 
     {sheetOpen && <LoadsSheet customerId={customerId} shipments={data.shipments} quotes={data.quotes} canEdit={canEdit} onClose={() => setSheetOpen(false)} />}
-    {drawer && <ShipmentDrawer key={openShipment?.id ?? "new"} customerId={customerId} shipment={openShipment} quote={openShipment?.quote_id ? quotesById.get(openShipment.quote_id) : undefined} canEdit={canEdit} onClose={() => setDrawer(null)} onCreated={() => setDrawer(null)} />}
+    {drawer && <ShipmentDrawer key={openShipment?.id ?? "new"} customerId={customerId} shipment={openShipment} quote={openShipment?.quote_id ? quotesById.get(openShipment.quote_id) : undefined} documents={(data.documents ?? []).filter((document) => document.shipment_id === openShipment?.id)} canEdit={canEdit} onClose={() => setDrawer(null)} onCreated={() => setDrawer(null)} />}
   </div>;
 }
 
@@ -128,7 +128,7 @@ function shipmentForm(shipment?: SalesShipment) {
   };
 }
 
-function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreated }: { customerId: string; shipment?: SalesShipment; quote?: Quote; canEdit: boolean; onClose: () => void; onCreated: () => void }) {
+function ShipmentDrawer({ customerId, shipment, quote, documents = [], canEdit, onClose, onCreated }: { customerId: string; shipment?: SalesShipment; quote?: Quote; documents?: LoadDocument[]; canEdit: boolean; onClose: () => void; onCreated: () => void }) {
   const { api, report } = useBrokerage();
   const { run, busy, refresh, wrap } = useBrokerageAction();
   const initial = shipmentForm(shipment);
@@ -221,6 +221,7 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
     {shipment!.status === "MISSED_PICKUP" && <p className="mb-6 flex items-start gap-2.5 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm animate-fade"><CircleSlash size={17} className="mt-0.5 shrink-0 text-danger" /><span><b>Pickup missed.</b> {shipment!.missed_pickup_reason} Operations will re-book or cancel it.</span></p>}
     {shipment!.operations_department_id && <OperationsProgress shipment={shipment!} />}
     {shipment!.operations_department_id && <OperationsDetails shipment={shipment!} />}
+    {documents.length > 0 && <LoadDocuments documents={documents} />}
 
     {canEdit && !cancelled ? <form id="shipment-form" onSubmit={save}>
       <fieldset disabled={saving} className="space-y-6">
@@ -238,6 +239,24 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
     {cancelling && shipment && <ReasonModal kind="CANCELLED" reference={shipment.reference_number} pending={cancelPending} onClose={() => setCancelling(false)}
       onConfirm={async (reason) => { if (await run(`cancel-load:${shipment.id}`, `/api/v1/brokerage/sales-shipments/${shipment.id}`, "PATCH", { status: "CANCELLED", cancel_reason: reason }, "Load cancelled.") !== undefined) setCancelling(false); }} />}
   </Drawer>;
+}
+
+/** Documents Operations uploaded on the load (BOL, POD, invoices…); rate confirmations stay with Operations. */
+function LoadDocuments({ documents }: { documents: LoadDocument[] }) {
+  const { api, report } = useBrokerage();
+  const { busy, wrap } = useBrokerageAction();
+  const open = (id: string) => void wrap(`load-document:${id}`, async () => {
+    try { const result = await responseData<{ signed_url: string }>(await api(`/api/v1/brokerage/documents/${id}/download-url`)); window.open(result.signed_url, "_blank", "noopener,noreferrer"); }
+    catch (error) { report(errorMessage(error, "Document could not be opened."), "error"); }
+  });
+  return <div className="mb-6 rounded-[12px] border border-line-soft p-4">
+    <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold"><FileText size={15} className="text-info" />Documents from Operations</h3>
+    <ul className="divide-y divide-line-soft">{documents.map((document) => <li key={document.id} className="flex items-center gap-3 py-2">
+      <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{document.document_type.replaceAll("_", " ")}</span>{document.created_at && <span className="block text-xs text-muted">{dateTimeLabel(document.created_at)}</span>}</span>
+      <Chip tone={document.is_verified ? "success" : "brand"}>{document.is_verified ? "Verified" : "Pending review"}</Chip>
+      <Button size="sm" variant="ghost" pending={busy(`load-document:${document.id}`)} onClick={() => open(document.id)}>Open</Button>
+    </li>)}</ul>
+  </div>;
 }
 
 /** What Operations recorded, as Sales may see it: the agent, carrier rate and profit, and the pickup, delivery and commodity details (never the carrier's identity). */

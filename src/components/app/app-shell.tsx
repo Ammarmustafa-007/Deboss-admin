@@ -37,7 +37,8 @@ export function AppShell({ children }: { children: ReactNode }) {
     return !value;
   });
 
-  const chatUnread = useChatUnread(!isSuperAdmin && Boolean(brokerage));
+  // Everyone gets Chat; the Super Admin's holds only Company announcements.
+  const chatUnread = useChatUnread(isSuperAdmin || Boolean(brokerage));
   const baseGroups: NavGroup[] = isSuperAdmin || !brokerage ? adminNavigation : brokerage.fronter ? fronterNavigation({ manager: brokerage.manager }) : brokerage.dispatch ? dispatchNavigation({
     sales: brokerage.sales,
     manager: brokerage.manager,
@@ -48,7 +49,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     canMarkInvoiceReady: Boolean(brokerage.workspace.capabilities?.canMarkInvoiceReady),
   });
   // Chat goes into the first group of every non-admin workspace.
-  const groups: NavGroup[] = isSuperAdmin || !brokerage ? baseGroups : baseGroups.map((group, index) => index === 0 ? { ...group, items: [...group.items, chatItem(chatUnread)] } : group);
+  const groups: NavGroup[] = !isSuperAdmin && !brokerage ? baseGroups : baseGroups.map((group, index) => index === 0 ? { ...group, items: [...group.items, chatItem(chatUnread)] } : group);
   const current = activeItem(groups, pathname);
   const roleLabel = isSuperAdmin ? "Super Admin" : brokerage?.manager ? "Department manager" : brokerage?.teamLead ? (brokerage.fullLead ? "Team lead · Full access" : "Team lead") : "Agent";
   const areaLabel = isSuperAdmin ? "Administration" : `${brokerage?.dispatch ? "Dispatch" : "Brokerage"} · ${brokerage?.fronter ? "Fronters" : humanize(brokerage?.workspace.department?.function ?? (brokerage?.sales ? "SALES" : "OPERATIONS"))}`;
