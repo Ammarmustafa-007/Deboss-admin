@@ -16,7 +16,7 @@ export type SheetColumn<T> = {
   key: keyof T & string;
   label: string;
   width?: number;
-  type?: "text" | "select" | "boolean";
+  type?: "text" | "select" | "boolean" | "date" | "number";
   options?: { value: string; label: string }[];
   placeholder?: string;
   required?: boolean;
@@ -132,7 +132,7 @@ function Cell<T>({ column, value, disabled, dataCell, onCommit, onKey, onPaste }
   if (column.type === "select") return <select data-cell={dataCell} value={original} disabled={disabled} onKeyDown={onKey} onChange={(event) => onCommit(event.target.value || null)} className={cn(base, "cursor-pointer pr-5")}>
     <option value="">{column.placeholder ?? "—"}</option>{column.options?.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
   </select>;
-  return <input data-cell={dataCell} value={draft} disabled={disabled} placeholder={column.placeholder} title={draft.length > 18 ? draft : undefined} onFocus={() => setEditing(true)} onChange={(event) => setDraft(event.target.value)} onKeyDown={onKey} onPaste={onPaste}
+  return <input data-cell={dataCell} type={column.type === "date" ? "date" : column.type === "number" ? "number" : "text"} min={column.type === "number" ? 0 : undefined} step={column.type === "number" ? "any" : undefined} value={draft} disabled={disabled} placeholder={column.placeholder} title={draft.length > 18 ? draft : undefined} onFocus={() => setEditing(true)} onChange={(event) => setDraft(event.target.value)} onKeyDown={onKey} onPaste={onPaste}
     onBlur={() => { setEditing(false); if (draft.trim() !== original.trim()) { if (column.required && !draft.trim()) { setDraft(original); return; } onCommit(draft.trim() || null); } }} className={base} />;
 }
 

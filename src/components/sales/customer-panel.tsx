@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Ban, ChevronRight, CircleSlash, FileText, Package, Plus, RefreshCw, Send, Truck, UserRound } from "lucide-react";
+import { Ban, ChevronRight, CircleSlash, FileText, Maximize2, Package, Plus, RefreshCw, Send, Truck, UserRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
@@ -16,6 +16,7 @@ import { FilePicker, SelectField, TextAreaField, TextField } from "@/components/
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { QuoteFile } from "@/components/sales/quote-panel";
 import { ReasonModal } from "@/components/operations/shipment-screen";
+import { LoadsSheet } from "@/components/sales/loads-sheet";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { commercialStatuses, lane, operationsPosition, operationsSteps, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type Quote, type SalesShipment } from "@/components/sales/model";
 
@@ -29,6 +30,7 @@ export function CustomerPanel({ customerId, readOnly = false, onSyncFromLead }: 
   const profile = useCustomerProfile(customerId);
   const { run, busy } = useBrokerageAction();
   const [drawer, setDrawer] = useState<{ shipment?: SalesShipment } | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   if (profile.isLoading) return <div className="space-y-4"><Skeleton className="h-40 rounded-card" /><Skeleton className="h-64 rounded-card" /></div>;
   if (profile.isError || !profile.data) return <Card><EmptyState title="Customer unavailable" body={errorMessage(profile.error, "This customer could not be loaded.")} /></Card>;
@@ -42,7 +44,10 @@ export function CustomerPanel({ customerId, readOnly = false, onSyncFromLead }: 
     <CustomerDetails key={data.customer.updated_at ?? data.customer.id} data={data} canEdit={canEdit} onSyncFromLead={canEdit ? onSyncFromLead : undefined} />
 
     <Card>
-      <CardHeader title="Shipments" subtitle={`${data.shipments.length} on record`} actions={canEdit && <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => setDrawer({})}>Add shipment</Button>} />
+      <CardHeader title="Shipments" subtitle={`${data.shipments.length} on record`} actions={<span className="flex gap-2">
+        {data.shipments.length > 0 && <Button variant="outline" size="sm" icon={<Maximize2 size={14} />} onClick={() => setSheetOpen(true)}>Open sheet</Button>}
+        {canEdit && <Button variant="primary" size="sm" icon={<Plus size={14} />} onClick={() => setDrawer({})}>Add shipment</Button>}
+      </span>} />
       {data.shipments.length ? <ul className="divide-y divide-line-soft">
         {data.shipments.map((shipment) => {
           const quote = shipment.quote_id ? quotesById.get(shipment.quote_id) : undefined;
@@ -73,6 +78,7 @@ export function CustomerPanel({ customerId, readOnly = false, onSyncFromLead }: 
       </Card>
     </div>
 
+    {sheetOpen && <LoadsSheet customerId={customerId} shipments={data.shipments} quotes={data.quotes} canEdit={canEdit} onClose={() => setSheetOpen(false)} />}
     {drawer && <ShipmentDrawer key={openShipment?.id ?? "new"} customerId={customerId} shipment={openShipment} quote={openShipment?.quote_id ? quotesById.get(openShipment.quote_id) : undefined} canEdit={canEdit} onClose={() => setDrawer(null)} onCreated={() => setDrawer(null)} />}
   </div>;
 }
