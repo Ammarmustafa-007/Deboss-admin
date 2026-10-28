@@ -1,20 +1,21 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, FileText, Package, Plus, RefreshCw, Send, Truck } from "lucide-react";
+import { Ban, ChevronRight, CircleSlash, FileText, Package, Plus, RefreshCw, Send, Truck, UserRound } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
-import { dateLabel, money } from "@/lib/format";
+import { dateLabel, dateTimeLabel, money } from "@/lib/format";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { Card, CardHeader, Chip, EmptyState, Skeleton, StatusChip, toneFor } from "@/components/ui/surface";
 import { Stepper } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
 import { Drawer } from "@/components/ui/overlay";
 import { documentAccept, documentProblem } from "@/lib/documents";
-import { FilePicker, SelectField, TextField } from "@/components/ui/field";
+import { FilePicker, SelectField, TextAreaField, TextField } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { QuoteFile } from "@/components/sales/quote-panel";
+import { ReasonModal } from "@/components/operations/shipment-screen";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { commercialStatuses, lane, operationsPosition, operationsSteps, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type Quote, type SalesShipment } from "@/components/sales/model";
 
@@ -47,9 +48,9 @@ export function CustomerPanel({ customerId, readOnly = false, onSyncFromLead }: 
           const quote = shipment.quote_id ? quotesById.get(shipment.quote_id) : undefined;
           return <li key={shipment.id}><button type="button" onClick={() => setDrawer({ shipment })} className="group flex w-full flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3.5 text-left transition-colors hover:bg-[#FAF8F4]">
             <span className="grid h-9 w-9 shrink-0 place-items-center rounded-control bg-aqua/12 text-aqua"><Truck size={17} /></span>
-            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{shipment.reference_number}</span><span className="block truncate text-xs text-muted">{lane(shipment)}{shipment.equipment_type ? ` · ${shipment.equipment_type}` : ""}</span></span>
-            <span className="flex flex-wrap items-center gap-1.5"><StatusChip status={shipment.sales_status ?? shipment.status} />{quote && <Chip tone={toneFor(quote.stage)}>{quoteStageLabel[quote.stage] ?? quote.stage}</Chip>}</span>
-            <span className="w-24 text-right text-sm font-semibold tabular-nums">{money(shipment.amount_agreed ?? shipment.amount_quoted)}</span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{shipment.reference_number}</span><span className="block truncate text-xs text-muted">{lane(shipment)}{shipment.miles != null ? ` · ${shipment.miles} mi` : ""}{shipment.equipment_type ? ` · ${shipment.equipment_type}` : ""}{shipment.operations_agent_name ? ` · Ops: ${shipment.operations_agent_name}` : ""}</span></span>
+            <span className="flex flex-wrap items-center gap-1.5">{shipment.status === "MISSED_PICKUP" ? <StatusChip status="MISSED_PICKUP" label="Missed pickup" /> : <StatusChip status={shipment.sales_status ?? shipment.status} />}{quote && shipment.sales_status !== "CANCELLED" && <Chip tone={toneFor(quote.stage)}>{quoteStageLabel[quote.stage] ?? quote.stage}</Chip>}</span>
+            <span className="w-28 text-right"><span className="block text-sm font-semibold tabular-nums">{money(shipment.amount_agreed ?? shipment.amount_quoted)}</span>{shipment.profit != null && <span className={cn("block text-[11px] font-medium tabular-nums", shipment.profit < 0 ? "text-[#A5183F]" : "text-[#14693A]")}>Profit {money(shipment.profit)}{shipment.profit_pct != null ? ` · ${shipment.profit_pct}%` : ""}</span>}</span>
             <ChevronRight size={16} className="text-muted transition-transform group-hover:translate-x-0.5" />
           </button></li>;
         })}
@@ -114,6 +115,10 @@ function shipmentForm(shipment?: SalesShipment) {
     pickup_date: shipment?.pickup_date ?? "",
     delivery_date: shipment?.delivery_date ?? "",
     status: shipment?.sales_status ?? "QUOTED",
+    miles: shipment?.miles == null ? "" : String(shipment.miles),
+    commodity_product: shipment?.commodity_product ?? "",
+    commodity_weight: shipment?.commodity_weight ?? "",
+    load_notes: shipment?.load_notes ?? "",
   };
 }
 
@@ -137,7 +142,7 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
     event.preventDefault();
     void wrap("save-shipment", async () => {
       try {
-        const body = { ...form, equipment_type: form.equipment_type || null, quoted_rate: form.quoted_rate === "" ? null : Number(form.quoted_rate), agreed_rate: form.agreed_rate === "" ? null : Number(form.agreed_rate), pickup_date: form.pickup_date || null, delivery_date: form.delivery_date || null };
+        const body = { ...form, equipment_type: form.equipment_type || null, quoted_rate: form.quoted_rate === "" ? null : Number(form.quoted_rate), agreed_rate: form.agreed_rate === "" ? null : Number(form.agreed_rate), pickup_date: form.pickup_date || null, delivery_date: form.delivery_date || null, miles: form.miles === "" ? null : Number(form.miles), commodity_product: form.commodity_product.trim() || null, commodity_weight: form.commodity_weight.trim() || null, load_notes: form.load_notes.trim() || null };
         const path = shipment ? `/api/v1/brokerage/sales-shipments/${shipment.id}` : `/api/v1/brokerage/customers/${customerId}/shipments`;
         const result = await responseData<{ shipment?: SalesShipment }>(await api(path, { method: shipment ? "PATCH" : "POST", body: JSON.stringify(body) }));
         const quoteId = shipment?.quote_id ?? result?.shipment?.quote_id;
@@ -158,14 +163,22 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
     });
   };
 
-  const canSubmit = canEdit && quote && ["DRAFT", "REJECTED"].includes(quote.stage);
+  const cancelled = shipment?.sales_status === "CANCELLED" || shipment?.status === "CANCELLED";
+  const canSubmit = canEdit && !cancelled && quote && ["DRAFT", "REJECTED"].includes(quote.stage);
+  const canCancelLoad = canEdit && !cancelled && Boolean(shipment) && !shipment?.operations_department_id;
+  const [cancelling, setCancelling] = useState(false);
+  const cancelPending = busy(`cancel-load:${shipment?.id}`);
   const { current, blocked } = quotePosition(quote?.stage);
 
   const lanes = <div className="grid gap-4 sm:grid-cols-2">
     <TextField label="Reference number" required minLength={3} maxLength={64} value={form.reference_number} onChange={(event) => set("reference_number")(event.target.value)} wrapperClassName="sm:col-span-2" />
     <TextField label="Pickup" required minLength={2} maxLength={180} value={form.pickup_location} onChange={(event) => set("pickup_location")(event.target.value)} />
     <TextField label="Delivery" required minLength={2} maxLength={180} value={form.delivery_location} onChange={(event) => set("delivery_location")(event.target.value)} />
-    <TextField label="Equipment" maxLength={120} value={form.equipment_type} onChange={(event) => set("equipment_type")(event.target.value)} wrapperClassName="sm:col-span-2" />
+    <TextField label="Truck / equipment" maxLength={120} value={form.equipment_type} onChange={(event) => set("equipment_type")(event.target.value)} />
+    <TextField label="Miles" type="number" min="0" step="0.1" value={form.miles} onChange={(event) => set("miles")(event.target.value)} />
+    <TextField label="Commodity" maxLength={160} value={form.commodity_product} onChange={(event) => set("commodity_product")(event.target.value)} />
+    <TextField label="Weight" maxLength={60} placeholder="e.g. 42,000 lbs" value={form.commodity_weight} onChange={(event) => set("commodity_weight")(event.target.value)} />
+    <TextAreaField label="Notes" maxLength={2000} value={form.load_notes} onChange={(event) => set("load_notes")(event.target.value)} wrapperClassName="sm:col-span-2" className="min-h-16" />
   </div>;
   const rates = <div className="grid gap-4 sm:grid-cols-2">
     <TextField label="Quoted rate" type="number" min="0" value={form.quoted_rate} onChange={(event) => set("quoted_rate")(event.target.value)} />
@@ -187,7 +200,8 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
   </Drawer>;
 
   return <Drawer open onClose={onClose} dismissible={!saving && !submitting} className="max-w-2xl" title={shipment!.reference_number} subtitle={lane(shipment!)}
-    footer={canEdit ? <>
+    footer={canEdit && !cancelled ? <>
+      {canCancelLoad && <Button variant="ghost" className="mr-auto text-[#A5183F]" icon={<Ban size={14} />} disabled={saving || submitting} onClick={() => setCancelling(true)}>Cancel load</Button>}
       {dirty && <Button variant="ghost" onClick={() => { setForm(initial); setFile(null); }} disabled={saving}>Discard</Button>}
       <Button variant={canSubmit && !dirty ? "outline" : "ink"} type="submit" form="shipment-form" pending={saving} pendingLabel="Saving…" disabled={!dirty}>Save changes</Button>
       {canSubmit && <Button variant="primary" icon={<Send size={15} />} pending={submitting} pendingLabel="Submitting…" disabled={dirty || saving} title={dirty ? "Save your changes first" : undefined} onClick={() => void run(`submit-quote:${quote!.id}`, `/api/v1/brokerage/quotes/${quote!.id}/submit`, "POST", undefined, "Shipment submitted to the Sales Manager for review.")}>{quote!.stage === "REJECTED" ? "Resubmit for approval" : "Submit for approval"}</Button>}
@@ -197,22 +211,47 @@ function ShipmentDrawer({ customerId, shipment, quote, canEdit, onClose, onCreat
       {quote.stage === "REJECTED" && <p className="mt-4 rounded-lg bg-danger/[.07] px-3.5 py-2.5 text-sm text-[#A5183F]"><b>Returned for rework.</b>{quote.rejection_note ? ` ${quote.rejection_note}` : ""}</p>}
     </div>}
 
+    {cancelled && <p className="mb-6 flex items-start gap-2.5 rounded-[12px] bg-black/[.04] px-4 py-3 text-sm animate-fade"><Ban size={17} className="mt-0.5 shrink-0 text-ink/60" /><span><b>Load cancelled{shipment!.cancelled_at ? ` · ${dateTimeLabel(shipment!.cancelled_at)}` : ""}.</b> {shipment!.cancel_reason}</span></p>}
+    {shipment!.status === "MISSED_PICKUP" && <p className="mb-6 flex items-start gap-2.5 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm animate-fade"><CircleSlash size={17} className="mt-0.5 shrink-0 text-danger" /><span><b>Pickup missed.</b> {shipment!.missed_pickup_reason} Operations will re-book or cancel it.</span></p>}
     {shipment!.operations_department_id && <OperationsProgress shipment={shipment!} />}
+    {shipment!.operations_department_id && <OperationsDetails shipment={shipment!} />}
 
-    {canEdit ? <form id="shipment-form" onSubmit={save}>
+    {canEdit && !cancelled ? <form id="shipment-form" onSubmit={save}>
       <fieldset disabled={saving} className="space-y-6">
         <section><h3 className="mb-3 text-sm font-semibold">Lane</h3>{lanes}</section>
         <section><h3 className="mb-3 text-sm font-semibold">Rates & dates</h3>{rates}</section>
       </fieldset>
     </form> : <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2">
-      {[["Lane", lane(shipment!)], ["Equipment", shipment!.equipment_type || "—"], ["Quoted rate", money(shipment!.amount_quoted)], ["Agreed rate", money(shipment!.amount_agreed)], ["Pickup date", dateLabel(shipment!.pickup_date)], ["Delivery date", dateLabel(shipment!.delivery_date)], ["Commercial status", shipment!.sales_status ?? shipment!.status ?? "—"]].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs font-medium text-muted">{label}</dt><dd className="mt-0.5 text-sm font-semibold">{value}</dd></div>)}
+      {[["Lane", lane(shipment!)], ["Truck / equipment", shipment!.equipment_type || "—"], ["Miles", shipment!.miles == null ? "—" : String(shipment!.miles)], ["Commodity", shipment!.commodity_product || "—"], ["Weight", shipment!.commodity_weight || "—"], ["Notes", shipment!.load_notes || "—"], ["Quoted rate", money(shipment!.amount_quoted)], ["Agreed rate", money(shipment!.amount_agreed)], ["Pickup date", dateLabel(shipment!.pickup_date)], ["Delivery date", dateLabel(shipment!.delivery_date)], ["Commercial status", shipment!.sales_status ?? shipment!.status ?? "—"]].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs font-medium text-muted">{label}</dt><dd className="mt-0.5 text-sm font-semibold">{value}</dd></div>)}
     </dl>}
 
     {quote && <div className={cn("mt-8 border-t border-line-soft pt-6")}>
       <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold"><FileText size={15} />Quote file</h3>
-      <QuoteFile quoteId={quote.id} readOnly={!canEdit} />
+      <QuoteFile quoteId={quote.id} readOnly={!canEdit || cancelled} />
     </div>}
+    {cancelling && shipment && <ReasonModal kind="CANCELLED" reference={shipment.reference_number} pending={cancelPending} onClose={() => setCancelling(false)}
+      onConfirm={async (reason) => { if (await run(`cancel-load:${shipment.id}`, `/api/v1/brokerage/sales-shipments/${shipment.id}`, "PATCH", { status: "CANCELLED", cancel_reason: reason }, "Load cancelled.") !== undefined) setCancelling(false); }} />}
   </Drawer>;
+}
+
+/** What Operations recorded, as Sales may see it: the agent, carrier rate and profit, and the pickup, delivery and commodity details (never the carrier's identity). */
+function OperationsDetails({ shipment }: { shipment: SalesShipment }) {
+  const groups: [string, [string, string | null | undefined][]][] = [
+    ["Pickup", [["Facility", shipment.pickup_facility], ["Address", shipment.pickup_address], ["Contact", shipment.pickup_contact], ["PO #", shipment.pickup_po], ["Notes", shipment.pickup_notes]]],
+    ["Delivery", [["Facility", shipment.delivery_facility], ["Address", shipment.delivery_address], ["Contact", shipment.delivery_contact], ["Notes", shipment.delivery_notes]]],
+    ["Commodity", [["Product", shipment.commodity_product], ["Weight", shipment.commodity_weight], ["Pallets / skids / pieces", shipment.commodity_pieces]]],
+  ];
+  const filled = groups.map(([title, rows]) => [title, rows.filter(([, value]) => value)] as const).filter(([, rows]) => rows.length);
+  const tone = shipment.profit == null ? "" : shipment.profit < 0 ? "text-[#A5183F]" : "text-[#14693A]";
+  return <div className="mb-6 space-y-4 rounded-[12px] border border-line-soft p-4">
+    <div className="grid gap-3 sm:grid-cols-4">
+      <div className="sm:col-span-1"><p className="text-xs text-muted">Operations agent</p><p className="mt-0.5 flex items-center gap-1.5 text-sm font-semibold"><UserRound size={13} className="text-aqua" />{shipment.operations_agent_name ?? "Not assigned yet"}</p></div>
+      <div><p className="text-xs text-muted">Carrier rate</p><p className="mt-0.5 text-sm font-semibold tabular-nums">{shipment.carrier_rate == null ? "—" : money(shipment.carrier_rate)}</p></div>
+      <div><p className="text-xs text-muted">Profit</p><p className={cn("mt-0.5 text-sm font-semibold tabular-nums", tone)}>{shipment.profit == null ? "—" : money(shipment.profit)}</p></div>
+      <div><p className="text-xs text-muted">Profit %</p><p className={cn("mt-0.5 text-sm font-semibold tabular-nums", tone)}>{shipment.profit_pct == null ? "—" : `${shipment.profit_pct}%`}</p></div>
+    </div>
+    {filled.length > 0 && <div className="grid gap-4 border-t border-line-soft pt-4 sm:grid-cols-3">{filled.map(([title, rows]) => <dl key={title}><p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted">{title}</p>{rows.map(([label, value]) => <div key={label} className="mb-1.5"><dt className="text-[11px] text-muted">{label}</dt><dd className="text-[13px] font-medium break-words">{value}</dd></div>)}</dl>)}</div>}
+  </div>;
 }
 
 function OperationsProgress({ shipment }: { shipment: SalesShipment }) {
@@ -221,7 +260,7 @@ function OperationsProgress({ shipment }: { shipment: SalesShipment }) {
     <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
       <h3 className="flex items-center gap-2 text-sm font-semibold"><Truck size={15} className="text-aqua" />Operations progress</h3>
       <span className="flex flex-wrap gap-1.5">
-        {exception && <Chip tone="danger">Exception in Operations</Chip>}
+        {exception && <Chip tone={shipment.status === "CANCELLED" ? "neutral" : "danger"}>{shipment.status === "CANCELLED" ? "Cancelled" : shipment.status === "MISSED_PICKUP" ? "Missed pickup" : "Exception in Operations"}</Chip>}
         {invoice?.invoice_number && <Chip tone={toneFor(invoice.status)}>{invoice.invoice_number}{invoice.status ? ` · ${invoice.status.charAt(0) + invoice.status.slice(1).toLowerCase()}` : ""}</Chip>}
       </span>
     </div>

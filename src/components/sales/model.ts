@@ -15,6 +15,15 @@ export type Lead = {
   owner_id?: string | null;
   team_id?: string | null;
   updated_at?: string;
+  fronter_prospect_id?: string | null;
+} & LeadDetails;
+
+/** Company details on a lead (migration 018): filled by Sales, or carried over from a Fronter's sheet. */
+export type LeadDetails = {
+  operator_name?: string | null; operator_number?: string | null; truck_type?: string | null; load_type?: string | null; shipping_volume?: string | null;
+  commodity?: string | null; lanes?: string | null; physical_address?: string | null; other_locations?: string | null; billing_address?: string | null;
+  billing_contact?: string | null; billing_phone?: string | null; billing_email?: string | null; payment_terms?: string | null; w9_received?: boolean | null;
+  ein?: string | null; website?: string | null;
 };
 
 export type Quote = {
@@ -44,6 +53,13 @@ export type SalesShipment = {
   delivery_date?: string | null;
   sales_status?: string | null;
   status?: string | null;
+  /** From Operations (migration 019). Carrier identity is never sent to Sales; the rate and profit are. */
+  carrier_rate?: number | string | null; profit?: number | null; profit_pct?: number | null; operations_agent_name?: string | null;
+  pickup_facility?: string | null; pickup_address?: string | null; pickup_contact?: string | null; pickup_notes?: string | null; pickup_po?: string | null;
+  delivery_facility?: string | null; delivery_address?: string | null; delivery_contact?: string | null; delivery_notes?: string | null;
+  commodity_product?: string | null; commodity_weight?: string | null; commodity_pieces?: string | null;
+  missed_pickup_reason?: string | null; cancel_reason?: string | null; cancelled_at?: string | null;
+  miles?: number | string | null; load_notes?: string | null;
   operations_department_id?: string | null;
   brokerage_invoices?: { invoice_number?: string; status?: string } | { invoice_number?: string; status?: string }[] | null;
 };
@@ -79,12 +95,20 @@ export type LeadDetailData = { lead: Lead; activities: FeedItem[]; comments: Fee
 export type CustomerProfile = { customer: Customer; can_edit?: boolean; activities: FeedItem[]; comments: FeedItem[]; quotes: Quote[]; shipments: SalesShipment[] };
 export type QuoteDetail = { quote: Quote; attachments: Attachment[]; events: FeedItem[]; comments: FeedItem[] };
 
-export const pipelineStages = ["NEW", "CONTACTED", "QUALIFIED", "CUSTOMER", "LOST"] as const;
-export const editableStages = ["NEW", "CONTACTED", "QUALIFIED", "LOST"];
+/**
+ * Lead statuses (client flow v2): Lead -> Qualified -> Quoting -> Customer, or Not qualified / Not interested.
+ * Agents pick from `editableStages`; Quoting and Customer follow the lead's loads automatically.
+ */
+export const pipelineStages = ["LEAD", "QUALIFIED", "QUOTING", "CUSTOMER", "NOT_QUALIFIED", "NOT_INTERESTED"] as const;
+export const editableStages = ["LEAD", "QUALIFIED", "NOT_QUALIFIED", "NOT_INTERESTED"];
+/** Statuses that end a lead's pipeline (counted as closed, not open). */
+export const closedStages = ["CUSTOMER", "NOT_QUALIFIED", "NOT_INTERESTED"];
+/** Statuses agents can no longer move by hand. */
+export const automaticStages = ["QUOTING", "CUSTOMER"];
 export const commercialStatuses = ["QUOTED", "BOOKED", "DELIVERED", "PAID"];
 export const activityTypes = ["CALL", "CALLBACK", "EMAIL", "NOTE", "FOLLOW_UP", "APPOINTMENT"];
 
-export const stageLabel: Record<string, string> = { NEW: "New", CONTACTED: "Contacted", QUALIFIED: "Qualified", CUSTOMER: "Customer", LOST: "Not interested" };
+export const stageLabel: Record<string, string> = { LEAD: "Lead", QUALIFIED: "Qualified", QUOTING: "Quoting", CUSTOMER: "Customer", NOT_QUALIFIED: "Not qualified", NOT_INTERESTED: "Not interested", NEW: "Lead", CONTACTED: "Lead", LOST: "Not interested" };
 
 export type NextAction = { key: "review" | "handoff" | "rework" | "operations" | "draft" | "none"; label: string; tone: Tone };
 
@@ -101,20 +125,21 @@ export function nextAction(quotes: Quote[], manager: boolean): NextAction {
 
 export const quoteStageLabel: Record<string, string> = { DRAFT: "Draft", SUBMITTED: "Awaiting approval", APPROVED: "Approved", REJECTED: "Returned for rework", HANDED_OFF: "With Operations" };
 
-export const journeySteps = ["Lead", "Customer", "Quote submitted", "Approved", "With Operations"];
+export const journeySteps = ["Lead", "Qualified", "Quoting", "Customer", "Approved", "With Operations"];
 
 /**
- * Index of the current journey step (steps before it are complete).
- * Driven only by conversion and quotes; the agent's pipeline stage never moves it.
- * With several quotes, the one still waiting on someone wins, matching `nextAction`.
+ * Index of the current journey step (steps before it are complete): the lead status up to Customer,
+ * then the approval of its loads. With several quotes, the one still waiting on someone wins, matching `nextAction`.
  */
-export function journeyPosition(converted: boolean, quotes: Quote[]): { current: number; blocked: boolean } {
-  const has = (stage: string) => quotes.some((quote) => quote.stage === stage);
-  if (has("SUBMITTED")) return { current: 3, blocked: false };
-  if (has("APPROVED")) return { current: 4, blocked: false };
-  if (has("REJECTED")) return { current: 2, blocked: true };
-  if (has("HANDED_OFF")) return { current: 5, blocked: false };
-  return { current: converted ? 2 : 1, blocked: false };
+export function journeyPosition(stage: string, quotes: Quote[]): { current: number; blocked: boolean } {
+  const has = (value: string) => quotes.some((quote) => quote.stage === value);
+  if (has("SUBMITTED")) return { current: 4, blocked: false };
+  if (has("APPROVED")) return { current: 5, blocked: false };
+  if (has("REJECTED")) return { current: 4, blocked: true };
+  if (has("HANDED_OFF")) return { current: 6, blocked: false };
+  if (stage === "NOT_QUALIFIED" || stage === "NOT_INTERESTED") return { current: 0, blocked: true };
+  const rank: Record<string, number> = { LEAD: 0, NEW: 0, CONTACTED: 0, QUALIFIED: 1, QUOTING: 2, CUSTOMER: 3 };
+  return { current: rank[stage] ?? 0, blocked: false };
 }
 
 export const quoteSteps = ["Draft", "Submitted", "Approved", "With Operations"];
@@ -138,11 +163,12 @@ export const operationsSteps = ["Booked", "Picked up", "Delivered", "Invoiced", 
 /** Where a handed-off shipment is in Operations, read from the same shipment record and its invoice. */
 export function operationsPosition(shipment: SalesShipment): { current: number; exception: boolean; invoice?: { invoice_number?: string; status?: string } } {
   const invoice = Array.isArray(shipment.brokerage_invoices) ? shipment.brokerage_invoices[0] : shipment.brokerage_invoices ?? undefined;
-  const reached: Record<string, number> = { BOOKED: 0, CARRIER_ASSIGNED: 0, PICKED_UP: 1, IN_TRANSIT: 1, DELIVERED: 2, COMPLETED: 2, EXCEPTION: 0 };
+  const reached: Record<string, number> = { BOOKED: 0, CARRIER_ASSIGNED: 0, MISSED_PICKUP: 0, CANCELLED: 0, PICKED_UP: 1, IN_TRANSIT: 1, DELIVERED: 2, COMPLETED: 2, EXCEPTION: 0 };
   // An exception pauses the shipment where it was; the line holds that place in red instead of falling back.
   const status = shipment.status === "EXCEPTION" ? shipment.status_before_exception ?? "BOOKED" : shipment.status ?? "BOOKED";
   let step = reached[status] ?? 0;
   if (invoice) step = Math.max(step, 3);
   if (invoice?.status === "PAID") step = 4;
-  return { current: step + 1, exception: shipment.status === "EXCEPTION", invoice };
+  // A missed pickup or a cancellation also shows the line in red at Booked.
+  return { current: step + 1, exception: ["EXCEPTION", "MISSED_PICKUP", "CANCELLED"].includes(shipment.status ?? ""), invoice };
 }

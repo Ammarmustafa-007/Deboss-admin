@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertCircle, BadgeCheck, CalendarClock, ChevronRight, ClipboardList, Download, Hourglass, Plus, Search, Send, Upload, UserRoundCheck, UsersRound } from "lucide-react";
+import { AlertCircle, BadgeCheck, CalendarClock, ChevronRight, ClipboardList, Download, Hourglass, Maximize2, Plus, Search, Send, Upload, UserRoundCheck, UsersRound } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { dateLabel, isPast, money } from "@/lib/format";
@@ -11,12 +11,14 @@ import { Card, Chip, EmptyState, KpiCard, PageHeader, StatusChip } from "@/compo
 import { Tabs, type TabItem } from "@/components/ui/navigation";
 import { Button, LinkButton } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
-import { nextAction, stageLabel, type Lead, type Quote } from "@/components/sales/model";
+import { closedStages, nextAction, pipelineStages, stageLabel, type Lead, type Quote } from "@/components/sales/model";
 import { useTeamDirectory } from "@/components/sales/directory";
 import { BulkBar, exportLeadsExcel } from "@/components/sales/lead-bulk";
 import { LeadImport } from "@/components/sales/lead-import";
+import { LeadsSheet } from "@/components/sales/lead-details";
+import { useSession } from "@/components/app/session";
 
-type Filter = "all" | "NEW" | "CONTACTED" | "QUALIFIED" | "CUSTOMER" | "LOST" | "review" | "handoff" | "rework";
+type Filter = "all" | "LEAD" | "QUALIFIED" | "QUOTING" | "CUSTOMER" | "NOT_QUALIFIED" | "NOT_INTERESTED" | "review" | "handoff" | "rework";
 
 export function LeadsScreen() {
   const router = useRouter();
@@ -33,6 +35,11 @@ export function LeadsScreen() {
   const [owner, setOwner] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [importing, setImporting] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const { profile } = useSession();
+  // Same editing rights as the lead page: the owner and Team Leads edit; managers review (read-only), as there.
+  const canEditLead = (lead: Lead) => !manager && (lead.owner_id === profile.id || teamLead);
+  const stageLocked = (lead: Lead) => ["QUOTING", "CUSTOMER"].includes(lead.stage) || quotes.some((quote) => quote.lead_id === lead.id);
   const directory = useTeamDirectory(showOwner);
   const agents = (directory.data?.users ?? []).filter((user) => user.role === "AGENT");
   const ownerName = (id?: string | null) => directory.data?.users.find((user) => user.id === id)?.full_name;
@@ -43,14 +50,14 @@ export function LeadsScreen() {
   const reviewCount = count((row) => row.action.key === "review");
   const handoffCount = count((row) => row.action.key === "handoff");
   const reworkCount = count((row) => row.action.key === "rework");
-  const followUpsDue = count((row) => !["CUSTOMER", "LOST"].includes(row.lead.stage) && isPast(row.lead.next_follow_up_at));
+  const followUpsDue = count((row) => !closedStages.includes(row.lead.stage) && isPast(row.lead.next_follow_up_at));
 
   const tabs: TabItem<Filter>[] = [
     { value: "all", label: "All", count: rows.length },
     { value: "review", label: reviewer ? "Needs review" : "Awaiting approval", count: reviewCount, hidden: !reviewCount },
     { value: "handoff", label: reviewer ? "Ready to hand off" : "Approved", count: handoffCount, hidden: !handoffCount },
     { value: "rework", label: reviewer ? "Agent rework" : "Rework needed", count: reworkCount, hidden: !reworkCount },
-    ...(["NEW", "CONTACTED", "QUALIFIED", "CUSTOMER", "LOST"] as const).map((stage) => ({ value: stage, label: stageLabel[stage], count: byStage(stage) })),
+    ...pipelineStages.map((stage) => ({ value: stage, label: stageLabel[stage], count: byStage(stage), hidden: stage.startsWith("NOT_") && !byStage(stage) })),
   ];
 
   const term = search.trim().toLowerCase();
@@ -70,6 +77,7 @@ export function LeadsScreen() {
     <PageHeader title="Sales pipeline" subtitle={manager ? "Every lead in your department" : teamLead ? "Your team's leads and customers" : "Your leads and customers"} actions={<>
       <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportLeadsExcel(visible.map(({ lead }) => lead), ownerName)} disabled={!visible.length}>Export</Button>
       <Button variant="outline" icon={<Upload size={15} />} onClick={() => setImporting(true)}>Import</Button>
+      <Button variant="outline" icon={<Maximize2 size={15} />} onClick={() => setSheetOpen(true)}>Open sheet</Button>
       {!manager && <LinkButton href="/app/sales/new" variant="primary" icon={<Plus size={16} />}>New lead</LinkButton>}
     </>} />
 
@@ -80,7 +88,7 @@ export function LeadsScreen() {
         <KpiCard label="Review required" value={reviewCount} icon={Hourglass} tone="accent" hint={reviewCount ? "Quotes waiting for your decision" : "Nothing waiting"} />
         <KpiCard label="Ready for Operations" value={handoffCount} icon={Send} tone="aqua" />
       </> : <>
-        <KpiCard label="Open leads" value={rows.filter((row) => !["CUSTOMER", "LOST"].includes(row.lead.stage)).length} icon={ClipboardList} tone="brand" />
+        <KpiCard label="Open leads" value={rows.filter((row) => !closedStages.includes(row.lead.stage)).length} icon={ClipboardList} tone="brand" />
         <KpiCard label="Customers" value={byStage("CUSTOMER")} icon={UsersRound} tone="success" />
         <KpiCard label="Awaiting approval" value={reviewCount} icon={Hourglass} tone="accent" />
         <KpiCard label="Follow-ups due" value={followUpsDue} icon={CalendarClock} tone={followUpsDue ? "danger" : "info"} />
@@ -114,7 +122,7 @@ export function LeadsScreen() {
             </tr></thead>
             <tbody>
               {visible.map(({ lead, action }) => {
-                const overdue = !["CUSTOMER", "LOST"].includes(lead.stage) && isPast(lead.next_follow_up_at);
+                const overdue = !closedStages.includes(lead.stage) && isPast(lead.next_follow_up_at);
                 return <tr key={lead.id} onClick={() => router.push(`/app/sales/leads/${lead.id}`)} className="group cursor-pointer border-t border-line-soft transition-colors hover:bg-[#FAF8F4]">
                   {canBulk && <td className="pl-5" onClick={(event) => event.stopPropagation()}><input type="checkbox" aria-label={`Select ${lead.company_name}`} checked={selected.includes(lead.id)} onChange={() => toggle(lead.id)} className="h-4 w-4" /></td>}
                   <td className={cn("py-3.5", canBulk ? "px-3" : "px-5")}><Link href={`/app/sales/leads/${lead.id}`} onClick={(event) => event.stopPropagation()} className="font-semibold hover:text-brand-deep">{lead.company_name}</Link><p className="mt-0.5 text-xs text-muted">{lead.contact_name || "No contact"}{lead.contact_email ? ` · ${lead.contact_email}` : ""}</p></td>
@@ -142,5 +150,6 @@ export function LeadsScreen() {
       </div>
     </Card>
     {importing && <LeadImport onClose={() => setImporting(false)} />}
+    {sheetOpen && <LeadsSheet leads={visible.map(({ lead }) => lead)} total={leads.length} ownerName={showOwner ? ownerName : undefined} canEdit={canEditLead} stageLocked={stageLocked} canCreate={!manager} onClose={() => setSheetOpen(false)} />}
   </div>;
 }

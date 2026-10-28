@@ -15,8 +15,9 @@ import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { CustomerPanel } from "@/components/sales/customer-panel";
 import { QuoteList } from "@/components/sales/quote-panel";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
+import { LeadDetailsCard } from "@/components/sales/lead-details";
 import { useTeamDirectory, type DirectoryPerson, type DirectoryTeam } from "@/components/sales/directory";
-import { activityTypes, editableStages, journeyPosition, journeySteps, nextAction, stageLabel, type FeedItem, type FronterProspect, type Lead, type LeadDetailData } from "@/components/sales/model";
+import { activityTypes, automaticStages, editableStages, journeyPosition, journeySteps, nextAction, stageLabel, type FeedItem, type Lead, type LeadDetailData } from "@/components/sales/model";
 
 type TabKey = "quotes" | "details" | "activity" | "comments" | "customer";
 
@@ -63,12 +64,12 @@ function LeadView({ data, manager, teamLead }: { data: LeadDetailData; manager: 
       </span>}
       actions={<>
         {action.key !== "none" && <Chip tone={action.tone} className="h-8 px-3 text-[13px]">{action.label}</Chip>}
-        {!customer && !quotes.length && lead.stage !== "CUSTOMER" && <StageControl lead={lead} />}
+        {!quotes.length && !automaticStages.includes(lead.stage) && <StageControl lead={lead} />}
         <Button variant="outline" icon={lead.archived_at ? <ArchiveRestore size={15} /> : <Archive size={15} />} pending={busy(`archive:${lead.id}`)} onClick={() => void toggleArchive()}>{lead.archived_at ? "Restore" : "Archive"}</Button>
       </>}
     />
 
-    <Journey converted={Boolean(customer) || lead.stage === "CUSTOMER"} quotes={quotes} />
+    <Journey stage={lead.stage} quotes={quotes} />
 
     <Tabs<TabKey> value={tab} onChange={setTab} items={manager ? [
       { value: "quotes", label: "Quotes & approval", count: quotes.length },
@@ -87,7 +88,7 @@ function LeadView({ data, manager, teamLead }: { data: LeadDetailData; manager: 
       {tab === "quotes" && <QuoteList quotes={quotes} lead={lead} customerId={customer?.id} />}
       {tab === "details" && <div className="space-y-6">
         {manager ? <><Assignment lead={lead} directory={directory.data} /><LeadFacts lead={lead} /></> : caps.canAssignLeads ? <><Assignment lead={lead} directory={directory.data} /><LeadForm lead={lead} /></> : <LeadForm lead={lead} />}
-        {data.prospect && <FromFronters prospect={data.prospect} />}
+        <LeadDetailsCard key={lead.updated_at} lead={lead} editable={!manager} prospect={data.prospect} />
       </div>}
       {tab === "activity" && <ActivityTab lead={lead} activities={activities} manager={manager} />}
       {tab === "comments" && <CommentsTab leadId={lead.id} comments={comments} manager={manager} />}
@@ -96,11 +97,11 @@ function LeadView({ data, manager, teamLead }: { data: LeadDetailData; manager: 
   </div>;
 }
 
-function Journey({ converted, quotes }: { converted: boolean; quotes: LeadDetailData["quotes"] }) {
-  const { current, blocked } = journeyPosition(converted, quotes);
+function Journey({ stage, quotes }: { stage: string; quotes: LeadDetailData["quotes"] }) {
+  const { current, blocked } = journeyPosition(stage, quotes);
   const rejected = quotes.find((quote) => quote.stage === "REJECTED");
   return <Card className="px-4 py-5 sm:px-6">
-    <div className="overflow-x-auto"><Stepper steps={journeySteps.map((label, index) => ({ label, hint: blocked && index === current ? "Returned for rework" : undefined }))} current={current} tone={blocked ? "danger" : "brand"} className="min-w-[620px]" /></div>
+    <div className="overflow-x-auto"><Stepper steps={journeySteps.map((label, index) => ({ label, hint: blocked && index === current ? (current === 0 ? stageLabel[stage] : "Returned for rework") : undefined }))} current={current} tone={blocked ? "danger" : "brand"} className="min-w-[620px]" /></div>
     {blocked && rejected?.rejection_note && <p className="mt-4 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm text-[#A5183F]"><b>Manager note:</b> {rejected.rejection_note}</p>}
   </Card>;
 }
@@ -213,22 +214,6 @@ function LeadFacts({ lead }: { lead: Lead }) {
   </Card>;
 }
 
-const prospectFields: [string, string][] = [
-  ["Operator", "operator_name"], ["Operator number", "operator_number"], ["Shipping contact", "shipping_contact"], ["Phone", "phone"], ["Email", "email"], ["Truck type", "truck_type"], ["FTL / LTL", "load_type"],
-  ["Shipping volume", "shipping_volume"], ["Commodity", "commodity"], ["Lanes", "lanes"], ["Physical address", "physical_address"], ["Other locations", "other_locations"], ["Billing address", "billing_address"],
-  ["Billing contact", "billing_contact"], ["Billing phone", "billing_phone"], ["Billing email", "billing_email"], ["Payment terms", "payment_terms"], ["W-9 received", "w9_received"], ["EIN #", "ein"], ["Website", "website"],
-];
-
-/** What the Fronter gathered before qualifying the lead. */
-function FromFronters({ prospect }: { prospect: FronterProspect }) {
-  const facts = prospectFields.map(([label, key]) => [label, key === "w9_received" ? (prospect[key] ? "Yes" : "No") : key === "load_type" && prospect[key] === "BOTH" ? "Both" : prospect[key]] as const).filter(([, value]) => value !== null && value !== "");
-  return <Card>
-    <CardHeader title="From Fronters" subtitle={`Mined and qualified by ${prospect.fronter_name ?? "a Fronter"}${prospect.qualified_at ? ` · ${dateTimeLabel(prospect.qualified_at)}` : ""}`} />
-    <dl className="grid gap-x-6 gap-y-5 p-5 sm:grid-cols-2 xl:grid-cols-4">{facts.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs font-medium text-muted">{label}</dt><dd className="mt-0.5 break-words text-sm font-semibold">{String(value)}</dd></div>)}</dl>
-    {prospect.notes && <div className="border-t border-line-soft p-5"><p className="text-xs font-medium text-muted">Fronter notes</p><p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">{String(prospect.notes)}</p></div>}
-  </Card>;
-}
-
 function ActivityTab({ lead, activities, manager }: { lead: Lead; activities: FeedItem[]; manager: boolean }) {
   const { run, busy } = useBrokerageAction();
   const [form, setForm] = useState({ activity_type: "CALL", body: "", due_at: "" });
@@ -272,8 +257,14 @@ function CommentsTab({ leadId, comments, manager }: { leadId: string; comments: 
 
 function CustomerTab({ lead, customerId }: { lead: Lead; customerId: string | null }) {
   const { run, busy } = useBrokerageAction();
-  const convert = () => run(`convert:${lead.id}`, `/api/v1/brokerage/leads/${lead.id}/convert`, "POST", undefined, customerId ? "Customer contact details synced from the lead." : "Customer workspace created.");
-  if (!customerId) return <Card><EmptyState icon={UserRoundPlus} title="Not a customer yet" body="Convert this lead to open its customer record and start adding shipments." action={<Button variant="primary" pending={busy(`convert:${lead.id}`)} pendingLabel="Creating customer…" onClick={() => void convert()}>Convert to customer</Button>} /></Card>;
+  const convert = () => run(`convert:${lead.id}`, `/api/v1/brokerage/leads/${lead.id}/convert`, "POST", undefined, customerId ? "Customer contact details synced from the lead." : "Customer profile opened.");
+  const qualify = () => run(`stage:${lead.id}`, `/api/v1/brokerage/leads/${lead.id}`, "PATCH", { stage: "QUALIFIED" }, "Lead qualified. Its customer profile is ready for quotes.");
+  // Qualifying a lead opens its customer profile. Leads qualified before that change open theirs here, once.
+  if (!customerId) {
+    if (["NOT_QUALIFIED", "NOT_INTERESTED"].includes(lead.stage)) return <Card><EmptyState icon={UserRoundPlus} title={`This lead is ${stageLabel[lead.stage].toLowerCase()}`} body="Move it back to Lead or Qualified to work it again." /></Card>;
+    if (lead.stage === "QUALIFIED") return <Card><EmptyState icon={UserRoundPlus} title="Open the customer profile" body="This lead is qualified. Open its profile to add quotes and loads." action={<Button variant="primary" pending={busy(`convert:${lead.id}`)} pendingLabel="Opening…" onClick={() => void convert()}>Open customer profile</Button>} /></Card>;
+    return <Card><EmptyState icon={UserRoundPlus} title="Qualify this lead first" body="Marking the lead Qualified opens its customer profile, where you add quotes and loads." action={<Button variant="primary" pending={busy(`stage:${lead.id}`)} pendingLabel="Qualifying…" onClick={() => void qualify()}>Mark qualified</Button>} /></Card>;
+  }
   return <CustomerPanel customerId={customerId} onSyncFromLead={{ run: () => void convert(), pending: busy(`convert:${lead.id}`) }} />;
 }
 

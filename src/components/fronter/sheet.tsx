@@ -1,8 +1,10 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Lock, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Lock, Minimize2, Sheet as SheetIcon, Trash2 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { Button } from "@/components/ui/button";
 
 /**
  * A light spreadsheet grid: click a cell to edit, Enter or leaving the cell saves, arrow keys move between rows,
@@ -132,4 +134,26 @@ function Cell<T>({ column, value, disabled, dataCell, onCommit, onKey, onPaste }
   </select>;
   return <input data-cell={dataCell} value={draft} disabled={disabled} placeholder={column.placeholder} title={draft.length > 18 ? draft : undefined} onFocus={() => setEditing(true)} onChange={(event) => setDraft(event.target.value)} onKeyDown={onKey} onPaste={onPaste}
     onBlur={() => { setEditing(false); if (draft.trim() !== original.trim()) { if (column.required && !draft.trim()) { setDraft(original); return; } onCommit(draft.trim() || null); } }} className={base} />;
+}
+
+/** A sheet over the whole window (sidebar included), so every column has room. Esc or "Close sheet" returns to the page. */
+export function FullSheet({ title, noun, count, total, tools, onClose, children }: { title: string; noun: [string, string]; count: number; total: number; tools?: ReactNode; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape" && !(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLSelectElement) && !document.querySelector('[role="dialog"]')) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", onKey); };
+  }, [onClose]);
+  if (typeof document === "undefined") return null;
+  const word = (n: number) => n === 1 ? noun[0] : noun[1];
+  return createPortal(<div role="region" aria-label={title} className="fixed inset-0 z-40 flex flex-col bg-canvas animate-fade">
+    <header className="flex items-center gap-3 border-b border-line bg-white px-4 py-3 sm:px-6">
+      <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-brand-tint text-brand-deep"><SheetIcon size={17} /></span>
+      <div className="min-w-0 flex-1"><h2 className="text-base font-bold">{title}</h2><p className="text-xs text-muted">{count === total ? `${total} ${word(total)}` : `${count} of ${total} ${word(total)}`} · click a cell to edit, paste rows from Excel</p></div>
+      <Button variant="ink" icon={<Minimize2 size={15} />} onClick={onClose}>Close sheet</Button>
+    </header>
+    {tools && <div className="space-y-3 px-4 pt-3 sm:px-6">{tools}</div>}
+    <div className="min-h-0 flex-1 px-4 py-3 sm:px-6">{children}</div>
+  </div>, document.body);
 }

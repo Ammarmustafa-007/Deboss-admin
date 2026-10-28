@@ -20,7 +20,7 @@ export function useChangeCount<T>(value: T) {
 
 /** Statuses that read as a win get the celebratory effect; setbacks get a short shake; everything else a pop. */
 const wins = new Set(["QUALIFIED", "CUSTOMER", "APPROVED", "PAID", "COMPLETED", "DELIVERED", "ONBOARDED", "RUNNING", "ACTIVE", "BOOKED", "HANDED_OFF", "SIGNED_OFF", "COLLECTED"]);
-const setbacks = new Set(["REJECTED", "LOST", "RETURNED", "EXCEPTION", "OVERDUE", "NOT_QUALIFIED", "NOT_INTERESTED", "CANCELLED", "DISCARDED", "INACTIVE", "DNC"]);
+const setbacks = new Set(["REJECTED", "LOST", "RETURNED", "EXCEPTION", "OVERDUE", "NOT_QUALIFIED", "NOT_INTERESTED", "CANCELLED", "DISCARDED", "INACTIVE", "DNC", "MISSED_PICKUP"]);
 export function statusMotion(status?: string | null) {
   return status && wins.has(status) ? "win" : status && setbacks.has(status) ? "setback" : "change";
 }

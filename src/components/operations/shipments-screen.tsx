@@ -12,7 +12,7 @@ import { Tabs, type TabItem } from "@/components/ui/navigation";
 import { controlClass } from "@/components/ui/field";
 import { exceptionOpen, statusLabel, useOperationsDirectory, type Shipment } from "@/components/operations/model";
 
-type Filter = "all" | "unassigned" | "exceptions" | "active" | "DELIVERED" | "COMPLETED";
+type Filter = "all" | "unassigned" | "exceptions" | "active" | "DELIVERED" | "COMPLETED" | "CANCELLED";
 
 export function ShipmentsScreen() {
   const router = useRouter();
@@ -32,13 +32,14 @@ export function ShipmentsScreen() {
   const teams = directory.data?.teams ?? [];
   const nameOf = (id?: string | null) => users.find((user) => user.id === id)?.full_name;
 
-  const active = (shipment: Shipment) => !["DELIVERED", "COMPLETED"].includes(shipment.status);
+  const active = (shipment: Shipment) => !["DELIVERED", "COMPLETED", "CANCELLED"].includes(shipment.status);
   const counts = {
     unassigned: shipments.filter((shipment) => !shipment.assigned_to).length,
     exceptions: shipments.filter(exceptionOpen).length,
     active: shipments.filter(active).length,
     DELIVERED: shipments.filter((shipment) => shipment.status === "DELIVERED").length,
     COMPLETED: shipments.filter((shipment) => shipment.status === "COMPLETED").length,
+    CANCELLED: shipments.filter((shipment) => shipment.status === "CANCELLED").length,
   };
   const tabs: TabItem<Filter>[] = [
     { value: "all", label: "All", count: shipments.length },
@@ -47,6 +48,7 @@ export function ShipmentsScreen() {
     { value: "active", label: "In progress", count: counts.active },
     { value: "DELIVERED", label: "Delivered", count: counts.DELIVERED },
     { value: "COMPLETED", label: "Completed", count: counts.COMPLETED },
+    { value: "CANCELLED", label: "Cancelled", count: counts.CANCELLED, hidden: !counts.CANCELLED },
   ];
 
   const term = search.trim().toLowerCase();
@@ -55,7 +57,7 @@ export function ShipmentsScreen() {
     if (filter === "unassigned" && shipment.assigned_to) return false;
     if (filter === "exceptions" && !exceptionOpen(shipment)) return false;
     if (filter === "active" && !active(shipment)) return false;
-    if ((filter === "DELIVERED" || filter === "COMPLETED") && shipment.status !== filter) return false;
+    if ((filter === "DELIVERED" || filter === "COMPLETED" || filter === "CANCELLED") && shipment.status !== filter) return false;
     // Search what people look shipments up by: reference, customer, agent or carrier.
     return !term || [shipment.reference_number, shipment.customer_name, nameOf(shipment.assigned_to), shipment.carrier_name].some((value) => value?.toLowerCase().includes(term));
   });

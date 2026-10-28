@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BarChart3, Boxes, CheckCircle2, ChevronDown, Download, Lock, Maximize2, Minimize2, Plus, Search, Sheet as SheetIcon, Target, Trash2, UserRoundCheck } from "lucide-react";
-import { createPortal } from "react-dom";
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { AlertTriangle, BarChart3, Boxes, CheckCircle2, ChevronDown, Download, Lock, Maximize2, Plus, Search, Sheet as SheetIcon, Target, Trash2, UserRoundCheck } from "lucide-react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { dateLabel, money } from "@/lib/format";
 import { errorMessage, responseData } from "@/lib/api";
@@ -17,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { SelectField, TextAreaField, TextField, controlClass } from "@/components/ui/field";
 import { Drawer, Modal } from "@/components/ui/overlay";
 import { Tabs, type TabItem } from "@/components/ui/navigation";
-import { Sheet, type SheetColumn } from "@/components/fronter/sheet";
+import { FullSheet, Sheet, type SheetColumn } from "@/components/fronter/sheet";
 import { StatusMotion } from "@/components/ui/motion";
 
 export type Prospect = {
@@ -220,7 +219,7 @@ export function MiningScreen() {
         : <EmptyState icon={SheetIcon} title={list.length ? "Nothing matches this view" : "No companies yet"} body={list.length ? "Try another tab or search." : "Add a company above, or open the sheet and paste rows from Excel."} />}
     </Card>
 
-    {sheetOpen && <FullSheet count={visible.length} total={list.length} onClose={() => setSheetOpen(false)} tools={tools}>
+    {sheetOpen && <FullSheet title="Lead mining sheet" noun={["company", "companies"]} count={visible.length} total={list.length} onClose={() => setSheetOpen(false)} tools={tools}>
       {prospects.isLoading ? <Skeleton className="h-64" /> : <Sheet columns={sheetColumns} rows={visible} locked={(row) => !row.editable} rowTone={(row) => statusTone[row.status]} busy={(row) => busyIds.has(row.id)} maxHeight="calc(100dvh - 232px)"
         onChange={(row, key, value) => void patch(row, { [key]: value })}
         onPasteRows={(rows) => void addRows(rows.map((row) => ({ company_name: row.company_name || "", ...row })), (added, skipped) => `${added} pasted row${added === 1 ? "" : "s"} added${skipped ? `, ${skipped} skipped (each row needs a company name)` : ""}.`)}
@@ -232,27 +231,6 @@ export function MiningScreen() {
       onDelete={async () => { if (await remove(opened)) setOpenId(null); }} />}
     {qualifying && <QualifyModal prospect={qualifying} agents={agentList} onClose={() => setQualifying(null)} onConfirm={(agentId) => { const row = qualifying; setQualifying(null); void patch(row, { status: "QUALIFIED", assigned_to: agentId }, `${row.company_name} sent to Sales as a qualified lead.`); }} />}
   </div>;
-}
-
-/** The sheet over the whole window (sidebar included), so every column has room. */
-function FullSheet({ count, total, tools, onClose, children }: { count: number; total: number; tools: ReactNode; onClose: () => void; children: ReactNode }) {
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape" && !(document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLSelectElement) && !document.querySelector('[role="dialog"]')) onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", onKey); };
-  }, [onClose]);
-  if (typeof document === "undefined") return null;
-  return createPortal(<div role="region" aria-label="Lead mining sheet" className="fixed inset-0 z-40 flex flex-col bg-canvas animate-fade">
-    <header className="flex items-center gap-3 border-b border-line bg-white px-4 py-3 sm:px-6">
-      <span className="grid h-9 w-9 place-items-center rounded-[10px] bg-brand-tint text-brand-deep"><SheetIcon size={17} /></span>
-      <div className="min-w-0 flex-1"><h2 className="text-base font-bold">Lead mining sheet</h2><p className="text-xs text-muted">{count === total ? `${total} compan${total === 1 ? "y" : "ies"}` : `${count} of ${total} companies`} · click a cell to edit, paste rows from Excel</p></div>
-      <Button variant="ink" icon={<Minimize2 size={15} />} onClick={onClose}>Close sheet</Button>
-    </header>
-    <div className="space-y-3 px-4 pt-3 sm:px-6">{tools}</div>
-    <div className="min-h-0 flex-1 px-4 py-3 sm:px-6">{children}</div>
-  </div>, document.body);
 }
 
 const cardSections: { title: string; fields: (keyof Prospect & string)[] }[] = [

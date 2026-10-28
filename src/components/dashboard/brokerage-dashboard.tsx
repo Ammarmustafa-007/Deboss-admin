@@ -9,7 +9,7 @@ import { MyEarnings } from "@/components/finance/my-earnings";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { Card, CardHeader, Chip, EmptyState, IconTile, KpiCard, StatusChip, type Tone } from "@/components/ui/surface";
 import { LinkButton } from "@/components/ui/button";
-import { nextAction, stageLabel, type Lead, type Quote } from "@/components/sales/model";
+import { closedStages, nextAction, stageLabel, type Lead, type Quote } from "@/components/sales/model";
 import { exceptionOpen, statusLabel, type Shipment } from "@/components/operations/model";
 
 type Attention = { href: string; icon: LucideIcon; tone: Tone; title: string; detail: string };
@@ -50,7 +50,7 @@ function SalesDashboard({ unread }: { unread: number }) {
   const leads = (workspace.leads ?? []) as Lead[];
   const quotes = (workspace.quotes ?? []) as Quote[];
   const quotesFor = (lead: Lead) => quotes.filter((quote) => quote.lead_id === lead.id);
-  const open = leads.filter((lead) => !["CUSTOMER", "LOST"].includes(lead.stage));
+  const open = leads.filter((lead) => !closedStages.includes(lead.stage));
   const overdue = open.filter((lead) => isPast(lead.next_follow_up_at));
   const review = leads.filter((lead) => nextAction(quotesFor(lead), supervisor).key === "review");
   const handoff = leads.filter((lead) => nextAction(quotesFor(lead), supervisor).key === "handoff");

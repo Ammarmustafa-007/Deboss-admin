@@ -44,7 +44,7 @@ export function BulkBar({ leads, agents, onClear, ownerName }: { leads: Lead[]; 
   });
 
   const archived = leads.filter((lead) => lead.archived_at);
-  const stageable = leads.filter((lead) => lead.stage !== "CUSTOMER");
+  const stageable = leads.filter((lead) => !["QUOTING", "CUSTOMER"].includes(lead.stage));
   const anyBusy = busy();
 
   return <div className="flex flex-wrap items-center gap-2 border-t border-brand/30 bg-brand-tint/60 px-5 py-3 animate-fade">
@@ -69,6 +69,6 @@ export function BulkBar({ leads, agents, onClear, ownerName }: { leads: Lead[]; 
     <Button size="sm" variant="outline" icon={<Download size={13} />} disabled={anyBusy} onClick={() => void exportLeadsExcel(leads, ownerName)}>Export</Button>
 
     <button type="button" onClick={onClear} disabled={anyBusy} aria-label="Clear selection" className="ml-auto grid h-8 w-8 place-items-center rounded-lg text-muted hover:bg-black/5 hover:text-ink"><X size={16} /></button>
-    {stage && stageable.length < leads.length && <p className="basis-full text-xs text-muted">Customers keep their stage; {stageable.length} of {leads.length} will move.</p>}
+    {stage && stageable.length < leads.length && <p className="basis-full text-xs text-muted">Quoting and Customer leads follow their loads; {stageable.length} of {leads.length} will move.</p>}
   </div>;
 }
