@@ -10,7 +10,7 @@ import { errorMessage, responseData } from "@/lib/api";
 import { downloadExcel, periodLabel } from "@/lib/excel";
 import { useSession } from "@/components/app/session";
 import { useBrokerage } from "@/components/app/brokerage-context";
-import { MyEarnings } from "@/components/finance/my-earnings";
+import { MyPerformance } from "@/components/finance/my-performance";
 import { Card, CardHeader, EmptyState, KpiCard, PageHeader, Skeleton, StatusChip } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { SelectField, TextAreaField, TextField, controlClass } from "@/components/ui/field";
@@ -351,7 +351,7 @@ export function FronterDashboard() {
       {waiting.length ? <ul className="divide-y divide-line-soft">{waiting.map((row) => <li key={row.id} className="flex items-center gap-3 px-5 py-3"><span className="min-w-0 flex-1"><span className="block truncate font-semibold">{row.company_name}</span><span className="block truncate text-xs text-muted">{[row.shipping_contact, row.phone, row.commodity].filter(Boolean).join(" · ") || "No details yet"}</span></span><StatusChip status="CONTACTED" label="Contacted" /></li>)}</ul>
         : <EmptyState icon={SheetIcon} title="Nothing waiting" body="Mark rows Contacted as you work them; they show up here." />}
     </Card>
-    <MyEarnings />
+    <MyPerformance />
   </div>;
 }
 

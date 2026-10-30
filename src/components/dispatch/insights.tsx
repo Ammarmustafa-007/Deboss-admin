@@ -10,7 +10,7 @@ import { errorMessage, responseData } from "@/lib/api";
 import { downloadExcel, periodLabel, type ExcelSheet } from "@/lib/excel";
 import { useSession } from "@/components/app/session";
 import { useBrokerage } from "@/components/app/brokerage-context";
-import { MyEarnings } from "@/components/finance/my-earnings";
+import { MyPerformance } from "@/components/finance/my-performance";
 import { Card, CardHeader, EmptyState, IconTile, KpiCard, PageHeader, Skeleton, StatusChip, humanize, type Tone } from "@/components/ui/surface";
 import { Button, LinkButton } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
@@ -113,7 +113,7 @@ export function DispatchDashboard() {
         </>}</div>
       </Card>
     </div>
-    <MyEarnings />
+    <MyPerformance />
   </div>;
 }
 

@@ -1,123 +1,116 @@
 "use client";
 
-import { BadgePercent, Pencil, Plus, Trash2, UserCog } from "lucide-react";
+import { BadgePercent, Pencil, Plus, Save, Trash2, UserRoundX } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { cn } from "@/lib/cn";
+import { dateLabel } from "@/lib/format";
 import { useAdminAction } from "@/components/admin/admin-data";
 import { Avatar, Card, CardHeader, Chip, EmptyState, PageHeader, Skeleton } from "@/components/ui/surface";
+import { Tabs } from "@/components/ui/navigation";
 import { Button } from "@/components/ui/button";
-import { Drawer, Modal } from "@/components/ui/overlay";
+import { Drawer } from "@/components/ui/overlay";
 import { SelectField, TextField } from "@/components/ui/field";
-import { basisDescription, basisLabel, roleLabel, useCompensation, type Basis, type RoleKey, type Setting, type StaffMember, cash } from "@/components/finance/finance-data";
+import { exitLabel, pkr, roleLabel, useEmployees, useHrRules, type Employee, type ExitType, type HrRules, type Tier } from "@/components/finance/finance-data";
 
-type Editing = { kind: "role"; roleKey: RoleKey; setting: Setting | null } | { kind: "person"; person?: StaffMember; setting: Setting | null };
-
+/** Each person's base salary and joining date, and the amounts, percentages and targets everyone is paid on. */
 export function CompensationScreen() {
-  const data = useCompensation();
-  const { run, busy } = useAdminAction();
-  const [editing, setEditing] = useState<Editing | null>(null);
-  const [removing, setRemoving] = useState<StaffMember | null>(null);
-
-  if (data.isLoading) return <div className="space-y-6"><Skeleton className="h-10 w-72" /><Skeleton className="h-64 rounded-card" /><Skeleton className="h-48 rounded-card" /></div>;
-  if (data.isError || !data.data) return <Card><EmptyState icon={BadgePercent} title="Compensation unavailable" body={data.error?.message} /></Card>;
-
-  const { roles, overrides, people } = data.data;
-  const personById = new Map(people.map((person) => [person.id, person]));
-  const roleSetting = (key: RoleKey) => roles.find((role) => role.role_key === key)?.setting ?? null;
-  const unset = roles.filter((role) => !role.setting && role.people > 0);
-
+  const [tab, setTab] = useState<"employees" | "rules">("employees");
   return <div className="space-y-6 animate-rise">
-    <PageHeader title="Compensation" subtitle="Base salary and commission per role. A personal override replaces the role default." />
-
-    {unset.length > 0 && <p className="rounded-card border border-brand/40 bg-brand-tint px-5 py-3.5 text-sm"><b>{unset.length} role{unset.length === 1 ? "" : "s"} not set yet</b> · payroll shows $0 for {unset.reduce((sum, role) => sum + role.people, 0)} people until they are.</p>}
-
-    <Card>
-      <CardHeader title="Role defaults" />
-      <ul className="divide-y divide-line-soft">{roles.map((role) => <li key={role.role_key} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
-        <div className="min-w-56 flex-1"><p className="font-semibold">{roleLabel[role.role_key]}</p><p className="text-xs text-muted">{role.people} active {role.people === 1 ? "person" : "people"}</p></div>
-        {role.setting ? <SettingSummary setting={role.setting} /> : <Chip tone="brand">Not set</Chip>}
-        <Button size="sm" variant="outline" icon={<Pencil size={13} />} onClick={() => setEditing({ kind: "role", roleKey: role.role_key, setting: role.setting })}>{role.setting ? "Edit" : "Set up"}</Button>
-      </li>)}</ul>
-    </Card>
-
-    <Card>
-      <CardHeader title="Personal overrides" subtitle="For individual deals that differ from the role" actions={<Button size="sm" variant="primary" icon={<Plus size={14} />} onClick={() => setEditing({ kind: "person", setting: null })}>Add override</Button>} />
-      {overrides.length ? <ul className="divide-y divide-line-soft">{overrides.map((override) => {
-        const person = personById.get(override.user_id);
-        if (!person) return null;
-        return <li key={override.user_id} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
-          <div className="flex min-w-56 flex-1 items-center gap-3"><Avatar name={person.full_name} /><div className="min-w-0"><p className="truncate font-semibold">{person.full_name}</p><p className="truncate text-xs text-muted">{roleLabel[person.role_key]} · {person.department_name ?? "—"}</p></div></div>
-          <SettingSummary setting={override} />
-          <span className="flex gap-1.5">
-            <Button size="sm" variant="outline" icon={<Pencil size={13} />} onClick={() => setEditing({ kind: "person", person, setting: override })}>Edit</Button>
-            <Button size="sm" variant="ghost" icon={<Trash2 size={13} />} onClick={() => setRemoving(person)} aria-label={`Remove override for ${person.full_name}`} />
-          </span>
-        </li>;
-      })}</ul> : <EmptyState icon={UserCog} title="No personal overrides" body="Everyone is paid on their role default." />}
-    </Card>
-
-    {editing && <SettingDrawer key={editing.kind === "role" ? editing.roleKey : editing.person?.id ?? "new"} editing={editing} people={people.filter((person) => person.is_active && !overrides.some((override) => override.user_id === person.id))} roleSetting={roleSetting} onClose={() => setEditing(null)} />}
-
-    <Modal open={Boolean(removing)} onClose={() => setRemoving(null)} dismissible={!busy()} title="Remove override?"
-      footer={<><Button variant="ghost" onClick={() => setRemoving(null)} disabled={busy()}>Cancel</Button><Button variant="danger" pending={busy("remove")} pendingLabel="Removing…" onClick={async () => { if (removing && await run("remove", `/api/v1/admin/compensation/users/${removing.id}`, "DELETE", undefined, "Override removed.", "Unable to remove the override.")) setRemoving(null); }}>Remove</Button></>}>
-      <p className="text-sm text-muted"><b className="text-ink">{removing?.full_name}</b> goes back to the {removing ? roleLabel[removing.role_key] : ""} default.</p>
-    </Modal>
+    <PageHeader title="Compensation" subtitle="Only the Super Admin can see or change these. Every change is logged." />
+    <Tabs value={tab} onChange={setTab} items={[{ value: "employees", label: "Employees" }, { value: "rules", label: "Commission rules" }]} />
+    {tab === "employees" ? <Employees /> : <Rules />}
   </div>;
 }
 
-function SettingSummary({ setting }: { setting: Setting }) {
-  return <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-    <div><dt className="text-xs text-muted">Base / month</dt><dd className="font-semibold tabular-nums">{cash(setting.base_salary)}</dd></div>
-    <div><dt className="text-xs text-muted">Commission</dt><dd className="font-semibold tabular-nums">{setting.commission_rate}%</dd></div>
-    <div><dt className="text-xs text-muted">Basis</dt><dd className="font-semibold">{basisLabel[setting.commission_basis]}</dd></div>
-  </dl>;
+function Employees() {
+  const data = useEmployees();
+  const [editing, setEditing] = useState<Employee | null>(null);
+  if (data.isLoading) return <Skeleton className="h-80 rounded-card" />;
+  if (data.isError || !data.data) return <Card><EmptyState icon={BadgePercent} title="Employees unavailable" body={data.error?.message} /></Card>;
+  const { employees } = data.data;
+  const missing = employees.filter((person) => person.is_active && !person.configured).length;
+  return <>
+    {missing > 0 && <p className="rounded-card border border-brand/40 bg-brand-tint px-5 py-3.5 text-sm"><b>{missing} {missing === 1 ? "person has" : "people have"} no base salary yet.</b> Payroll counts them at 0 until it is entered.</p>}
+    <Card>{employees.length ? <ul className="divide-y divide-line-soft">{employees.map((person) => <li key={person.id} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3.5">
+      <div className="flex min-w-56 flex-1 items-center gap-3"><Avatar name={person.full_name} /><div className="min-w-0"><p className="truncate font-semibold">{person.full_name}</p><p className="truncate text-xs text-muted">{roleLabel[person.role_key]} · {person.department_name ?? "—"}</p></div></div>
+      <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm"><div><dt className="text-xs text-muted">Base / month</dt><dd className="font-semibold tabular-nums">{person.configured ? pkr(person.base_salary_pkr) : "Not set"}</dd></div><div><dt className="text-xs text-muted">Joined</dt><dd className="font-semibold">{dateLabel(person.joined_on)}</dd></div></dl>
+      {person.exit_type ? <Chip tone="danger">Last day {dateLabel(person.last_working_day!)}</Chip> : !person.is_active ? <Chip>Inactive</Chip> : null}
+      <Button size="sm" variant="outline" icon={<Pencil size={13} />} onClick={() => setEditing(person)}>Edit</Button>
+    </li>)}</ul> : <EmptyState icon={BadgePercent} title="No employees yet" body="People appear here once they are added under Users." />}</Card>
+    {editing && <EmployeeDrawer key={editing.id} person={editing} colleagues={employees.filter((other) => other.is_active && other.id !== editing.id && other.department_id === editing.department_id)} managers={editing.role_key.endsWith("MANAGER") ? [] : employees.filter((other) => other.is_active && other.department_id === editing.department_id && other.role_key.endsWith("MANAGER"))} onClose={() => setEditing(null)} />}
+  </>;
 }
 
-function SettingDrawer({ editing, people, roleSetting, onClose }: { editing: Editing; people: StaffMember[]; roleSetting: (key: RoleKey) => Setting | null; onClose: () => void }) {
+function EmployeeDrawer({ person, colleagues, managers, onClose }: { person: Employee; colleagues: Employee[]; managers: Employee[]; onClose: () => void }) {
   const { run, busy } = useAdminAction();
-  const [personId, setPersonId] = useState(editing.kind === "person" ? editing.person?.id ?? "" : "");
-  const person = editing.kind === "person" ? editing.person ?? people.find((candidate) => candidate.id === personId) : undefined;
-  const roleKey = editing.kind === "role" ? editing.roleKey : person?.role_key;
-  const start = editing.setting ?? (roleKey ? roleSetting(roleKey) : null);
-  const [form, setForm] = useState({ base_salary: start ? String(start.base_salary) : "", commission_rate: start ? String(start.commission_rate) : "", commission_basis: (start?.commission_basis ?? "APPROVED_GROSS") as Basis });
-  const pending = busy("save");
-  const rate = Number(form.commission_rate || 0);
-
-  // Pick a person first: prefill from their role default.
-  const pickPerson = (id: string) => {
-    setPersonId(id);
-    const picked = people.find((candidate) => candidate.id === id);
-    const fallback = picked ? roleSetting(picked.role_key) : null;
-    if (fallback) setForm({ base_salary: String(fallback.base_salary), commission_rate: String(fallback.commission_rate), commission_basis: fallback.commission_basis });
-  };
-
+  const [form, setForm] = useState({ base: person.base_salary_pkr ? String(person.base_salary_pkr) : "", joined: person.joined_on, manager: person.manager_id ?? "" });
+  const [leaving, setLeaving] = useState({ day: "", type: "NOTICE_SERVED" as ExitType, reassign: "" });
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    const body = { base_salary: Number(form.base_salary || 0), commission_rate: rate, commission_basis: form.commission_basis };
-    const path = editing.kind === "role" ? `/api/v1/admin/compensation/roles/${editing.roleKey}` : `/api/v1/admin/compensation/users/${person?.id}`;
-    if (await run("save", path, "PUT", body, "Compensation saved.", "Unable to save compensation.")) onClose();
+    if (await run("save", `/api/v1/admin/hr/employees/${person.id}`, "PUT", { base_salary_pkr: Number(form.base || 0), joined_on: form.joined, manager_id: form.manager || null }, "Employee saved.", "Unable to save.")) onClose();
   };
-
-  return <Drawer open onClose={onClose} dismissible={!pending}
-    title={editing.kind === "role" ? roleLabel[editing.roleKey] : editing.person ? editing.person.full_name : "Add personal override"}
-    subtitle={editing.kind === "role" ? "Default for everyone in this role" : person ? `${roleLabel[person.role_key]} · overrides the role default` : "Choose who this applies to"}
-    footer={<><Button variant="ghost" onClick={onClose} disabled={pending}>Cancel</Button><Button type="submit" form="compensation-form" variant="primary" pending={pending} pendingLabel="Saving…" disabled={editing.kind === "person" && !person}>Save</Button></>}>
-    <form id="compensation-form" onSubmit={save} className="space-y-5">
-      {editing.kind === "person" && !editing.person && <SelectField label="Person" required value={personId} placeholder="Select a person" onChange={(event) => pickPerson(event.target.value)} options={people.map((candidate) => ({ value: candidate.id, label: `${candidate.full_name} · ${roleLabel[candidate.role_key]}` }))} />}
-      <fieldset disabled={pending || (editing.kind === "person" && !person)} className="space-y-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <TextField label="Base salary per month" required type="number" min="0" step="0.01" value={form.base_salary} onChange={(event) => setForm({ ...form, base_salary: event.target.value })} hint={form.base_salary ? cash(form.base_salary) : undefined} />
-          <TextField label="Commission %" required type="number" min="0" max="100" step="0.01" value={form.commission_rate} onChange={(event) => setForm({ ...form, commission_rate: event.target.value })} />
-        </div>
-        <div>
-          <p className="mb-2 text-[13px] font-medium text-ink/80">Commission is paid on</p>
-          <div className="grid gap-2">{(["APPROVED_GROSS", "COLLECTED"] as const).map((basis) => <label key={basis} className={cn("flex cursor-pointer gap-3 rounded-control border p-3.5 transition-colors", form.commission_basis === basis ? "border-brand bg-brand-tint/60" : "border-line hover:border-[#CFC8BA]")}>
-            <input type="radio" name="basis" checked={form.commission_basis === basis} onChange={() => setForm({ ...form, commission_basis: basis })} className="mt-0.5 h-4 w-4" />
-            <span><span className="block text-sm font-semibold">{basisLabel[basis]}</span><span className="block text-xs text-muted">{basisDescription(basis, roleKey)}</span></span>
-          </label>)}</div>
-        </div>
-        <div className="rounded-control bg-canvas px-4 py-3 text-sm">Example: on <b>{cash(10000)}</b> {basisLabel[form.commission_basis].toLowerCase()}, commission is <b>{cash(10000 * rate / 100)}</b> and the month totals <b>{cash(Number(form.base_salary || 0) + 10000 * rate / 100)}</b>.</div>
-      </fieldset>
+  const recordExit = async () => {
+    if (await run("exit", `/api/v1/admin/hr/employees/${person.id}/exit`, "POST", { last_working_day: leaving.day, exit_type: leaving.type, reassign_to: leaving.reassign || null }, "Exit recorded.", "Unable to record the exit.")) onClose();
+  };
+  const cancelExit = async () => { if (await run("cancel", `/api/v1/admin/hr/employees/${person.id}/exit`, "DELETE", {}, "Exit cancelled.", "Unable to cancel the exit.")) onClose(); };
+  return <Drawer open onClose={onClose} dismissible={!busy()} title={person.full_name} subtitle={`${roleLabel[person.role_key]} · ${person.department_name ?? "—"}`}
+    footer={<><Button variant="ghost" onClick={onClose} disabled={busy()}>Cancel</Button><Button type="submit" form="employee-form" variant="primary" pending={busy("save")} pendingLabel="Saving…">Save</Button></>}>
+    <form id="employee-form" onSubmit={save} className="grid gap-4 sm:grid-cols-2">
+      <TextField label="Base salary per month (PKR)" required type="number" min="0" step="1" value={form.base} onChange={(event) => setForm({ ...form, base: event.target.value })} />
+      <TextField label="Joining date" required type="date" value={form.joined} onChange={(event) => setForm({ ...form, joined: event.target.value })} />
+      {managers.length > 1 && <SelectField label="Manager" hint="This department has two managers, so each team has its own profit and loss." wrapperClassName="sm:col-span-2" placeholder="Choose a manager" value={form.manager} options={managers.map((manager) => ({ value: manager.id, label: manager.full_name }))} onChange={(event) => setForm({ ...form, manager: event.target.value })} />}
     </form>
+    <div className="mt-8 border-t border-line pt-5">
+      <h3 className="flex items-center gap-2 text-sm font-semibold"><UserRoundX size={15} />Leaving the company</h3>
+      {person.exit_type ? <div className="mt-3 space-y-3 text-sm">
+        <p>Last working day <b>{dateLabel(person.last_working_day!)}</b> · {exitLabel[person.exit_type]}</p>
+        <Button size="sm" variant="outline" onClick={cancelExit} pending={busy("cancel")} pendingLabel="Cancelling…">Cancel this exit</Button>
+      </div> : <div className="mt-3 space-y-4">
+        <p className="text-xs text-muted">The login is removed after the last working day. Nothing is deleted. Without notice or when fired, only base salary for days worked is paid.</p>
+        <TextField label="Last working day" type="date" value={leaving.day} onChange={(event) => setLeaving({ ...leaving, day: event.target.value })} />
+        <SelectField label="Reason" value={leaving.type} options={(Object.keys(exitLabel) as ExitType[]).map((value) => ({ value, label: exitLabel[value] }))} onChange={(event) => setLeaving({ ...leaving, type: event.target.value as ExitType })} />
+        <SelectField label="Hand their clients and leads to" placeholder="Decide later" value={leaving.reassign} options={colleagues.map((colleague) => ({ value: colleague.id, label: colleague.full_name }))} onChange={(event) => setLeaving({ ...leaving, reassign: event.target.value })} />
+        <Button variant="danger" disabled={!leaving.day} pending={busy("exit")} pendingLabel="Saving…" onClick={recordExit}>Record exit</Button>
+      </div>}
+    </div>
   </Drawer>;
+}
+
+function Rules() {
+  const data = useHrRules();
+  if (data.isLoading) return <Skeleton className="h-80 rounded-card" />;
+  if (data.isError || !data.data) return <Card><EmptyState icon={BadgePercent} title="Rules unavailable" body={data.error?.message} /></Card>;
+  return <RulesForm key={JSON.stringify(data.data.rules)} initial={data.data.rules} />;
+}
+
+const tierGroups = [{ key: "dispatcher", title: "Dispatcher" }, { key: "brokerage_sales", title: "Brokerage Sales Agent" }, { key: "brokerage_operations", title: "Brokerage Operations Agent" }] as const;
+const shareLabels = { DISPATCH_SALES_MANAGER: "Dispatch Sales Manager", DISPATCH_MANAGER: "Dispatch Operations Manager", BROKERAGE_SALES_MANAGER: "Brokerage Sales Manager", BROKERAGE_OPERATIONS_MANAGER: "Brokerage Operations Manager" } as const;
+
+function RulesForm({ initial }: { initial: HrRules }) {
+  const { run, busy } = useAdminAction();
+  const [rules, setRules] = useState(initial);
+  const number = (value: string) => Number(value) || 0;
+  const setTiers = (key: (typeof tierGroups)[number]["key"], tiers: Tier[]) => setRules({ ...rules, [key]: { tiers } });
+  return <form className="space-y-6" onSubmit={async (event) => { event.preventDefault(); await run("rules", "/api/v1/admin/hr/rules", "PUT", rules, "Rules saved.", "Unable to save the rules."); }}>
+    <div className="grid gap-6 xl:grid-cols-3">{tierGroups.map(({ key, title }) => <Card key={key}>
+      <CardHeader title={title} subtitle="Gross needed and rate. The rate reached applies to everything above the first target." />
+      <div className="space-y-3 px-5 pb-5">
+        {rules[key].tiers.map((tier, index) => <div key={index} className="flex items-end gap-2">
+          <TextField label={index ? "From $" : "First target $"} type="number" min="0" value={String(tier.from)} onChange={(event) => setTiers(key, rules[key].tiers.map((row, at) => at === index ? { ...row, from: number(event.target.value) } : row))} />
+          <TextField label="Rate %" type="number" min="0" max="100" step="0.01" value={String(tier.rate)} onChange={(event) => setTiers(key, rules[key].tiers.map((row, at) => at === index ? { ...row, rate: number(event.target.value) } : row))} />
+          <Button type="button" size="sm" variant="ghost" icon={<Trash2 size={13} />} aria-label="Remove level" disabled={rules[key].tiers.length === 1} onClick={() => setTiers(key, rules[key].tiers.filter((_, at) => at !== index))} />
+        </div>)}
+        <Button type="button" size="sm" variant="outline" icon={<Plus size={13} />} onClick={() => setTiers(key, [...rules[key].tiers, { from: 0, rate: 0 }])}>Add level</Button>
+      </div>
+    </Card>)}</div>
+    <div className="grid gap-6 lg:grid-cols-2">
+      <Card><CardHeader title="Sales and Fronters" /><div className="grid gap-4 px-5 pb-5 sm:grid-cols-2">
+        <TextField label="Dispatch Sales: active sales needed" type="number" min="0" value={String(rules.dispatch_sales.min_active_sales)} onChange={(event) => setRules({ ...rules, dispatch_sales: { ...rules.dispatch_sales, min_active_sales: number(event.target.value) } })} />
+        <TextField label="Dispatch Sales: rate %" type="number" min="0" max="100" step="0.01" value={String(rules.dispatch_sales.rate)} onChange={(event) => setRules({ ...rules, dispatch_sales: { ...rules.dispatch_sales, rate: number(event.target.value) } })} />
+        <TextField label="Fronter: per qualified lead (PKR)" type="number" min="0" value={String(rules.fronter_per_lead_pkr)} onChange={(event) => setRules({ ...rules, fronter_per_lead_pkr: number(event.target.value) })} />
+        <TextField label="Paid leaves per month" type="number" min="0" value={String(rules.paid_leaves_per_month)} onChange={(event) => setRules({ ...rules, paid_leaves_per_month: number(event.target.value) })} />
+      </div></Card>
+      <Card><CardHeader title="Manager share of net profit" /><div className="grid gap-4 px-5 pb-5 sm:grid-cols-2">{(Object.keys(shareLabels) as (keyof typeof shareLabels)[]).map((key) => <TextField key={key} label={`${shareLabels[key]} %`} type="number" min="0" max="100" step="0.01" value={String(rules.manager_share[key])} onChange={(event) => setRules({ ...rules, manager_share: { ...rules.manager_share, [key]: number(event.target.value) } })} />)}</div></Card>
+    </div>
+    <div className="flex justify-end"><Button type="submit" variant="primary" icon={<Save size={15} />} pending={busy("rules")} pendingLabel="Saving…">Save rules</Button></div>
+  </form>;
 }

@@ -1,9 +1,15 @@
-import { Ban, BadgePercent, Boxes, MessagesSquare, Sheet, BarChart3, Bell, Building2, Container, Contact, Goal, LayoutDashboard, MapPinned, ReceiptText, Settings, ShieldCheck, TrendingUp, Truck, UsersRound, Wallet, type LucideIcon } from "lucide-react";
+import { Ban, BadgePercent, CalendarCheck, Gauge, Landmark, Boxes, MessagesSquare, Sheet, BarChart3, Bell, Building2, Container, Contact, Goal, LayoutDashboard, MapPinned, ReceiptText, Settings, ShieldCheck, TrendingUp, Truck, UsersRound, Wallet, type LucideIcon } from "lucide-react";
 import type { Tone } from "@/components/ui/surface";
 
 /** `hidden` items stay routable (title, access check) but are not listed in the sidebar. */
 export type NavItem = { href: string; label: string; icon: LucideIcon; tone: Tone; badge?: number; hidden?: boolean };
 export type NavGroup = { label: string; items: NavItem[] };
+
+/** What every department manager gets for their own people. */
+const managerPeople: NavItem[] = [
+  { href: "/app/attendance", label: "Attendance", icon: CalendarCheck, tone: "info" },
+  { href: "/app/team-performance", label: "Team performance", icon: Gauge, tone: "aqua" },
+];
 
 export const adminNavigation: NavGroup[] = [
   { label: "Overview", items: [{ href: "/app", label: "Dashboard", icon: LayoutDashboard, tone: "brand" }] },
@@ -13,6 +19,9 @@ export const adminNavigation: NavGroup[] = [
   ] },
   { label: "Finance", items: [
     { href: "/app/admin/payroll", label: "Payroll", icon: Wallet, tone: "brand" },
+    { href: "/app/admin/attendance", label: "Attendance", icon: CalendarCheck, tone: "info" },
+    { href: "/app/admin/costs", label: "Costs and P&L", icon: Landmark, tone: "accent" },
+    { href: "/app/admin/performance", label: "Performance", icon: Gauge, tone: "aqua" },
     { href: "/app/admin/compensation", label: "Compensation", icon: BadgePercent, tone: "success" },
   ] },
   { label: "Account", items: [
@@ -36,6 +45,7 @@ export function fronterNavigation({ manager }: FronterAccess): NavGroup[] {
   if (manager) groups.push({ label: "Management", items: [
     { href: "/app/teams", label: "Teams", icon: UsersRound, tone: "accent" },
     { href: "/app/access", label: "Fronter access", icon: ShieldCheck, tone: "info" },
+    ...managerPeople,
   ] });
   groups.push({ label: "Insights", items: [
     { href: "/app/reports", label: "Reports", icon: BarChart3, tone: "info" },
@@ -57,6 +67,7 @@ export function brokerageNavigation({ sales, manager, canMarkInvoiceReady }: Bro
   if (manager) groups.push({ label: "Management", items: [
     { href: "/app/teams", label: "Teams", icon: UsersRound, tone: "accent" },
     { href: "/app/access", label: "Agent access", icon: ShieldCheck, tone: "info" },
+    ...managerPeople,
   ] });
   groups.push({ label: "Insights", items: [
     { href: "/app/reports", label: "Reports", icon: BarChart3, tone: "info" },
@@ -80,6 +91,7 @@ export function dispatchNavigation({ sales, manager, invoices }: DispatchAccess)
     { href: "/app/teams", label: "Teams", icon: UsersRound, tone: "accent" },
     { href: "/app/access", label: sales ? "Agent access" : "Dispatcher access", icon: ShieldCheck, tone: "info" },
     { href: "/app/dispatch/targets", label: "Targets", icon: Goal, tone: "brand" },
+    ...managerPeople,
   ] });
   groups.push({ label: "Insights", items: [
     { href: "/app/reports", label: "Reports", icon: BarChart3, tone: "info" },

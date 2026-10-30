@@ -5,7 +5,7 @@ import { AlertTriangle, ArrowRight, Bell, CalendarClock, CheckCircle2, ChevronRi
 import { cn } from "@/lib/cn";
 import { dateLabel, isPast, money } from "@/lib/format";
 import { useSession } from "@/components/app/session";
-import { MyEarnings } from "@/components/finance/my-earnings";
+import { MyPerformance } from "@/components/finance/my-performance";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { Card, CardHeader, Chip, EmptyState, IconTile, KpiCard, StatusChip, type Tone } from "@/components/ui/surface";
 import { LinkButton } from "@/components/ui/button";
@@ -36,7 +36,7 @@ export function BrokerageDashboard() {
 
     {sales ? <SalesDashboard unread={unread} /> : <OperationsDashboard unread={unread} />}
 
-    <MyEarnings />
+    <MyPerformance />
 
     {permissions.length > 0 && <Card className="flex flex-wrap items-center gap-3 px-5 py-4">
       <span className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck size={16} className="text-brand" />Delegated rights</span>
