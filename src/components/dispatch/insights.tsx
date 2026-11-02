@@ -105,7 +105,7 @@ export function DispatchDashboard() {
           : <EmptyState icon={ShieldCheck} title="You're all caught up" />}
       </Card>
       {hidden ? <ActiveSales trucks={report.data?.trucks ?? []} loading={report.isLoading} /> : <Card>
-        <CardHeader title={me ? "My targets" : "This month"} subtitle={report.data ? `Gross from loads · ${periodLabel(report.data.month_start, undefined)}` : undefined} />
+        <CardHeader title={me ? "My targets" : "This month"} subtitle={report.data ? `Gross from paid invoices · ${periodLabel(report.data.month_start, undefined)}` : undefined} />
         <div className="space-y-5 p-5">{report.isLoading ? <Skeleton className="h-24" /> : me ? <>
           <TargetBar label="This week" value={me.week_gross} target={me.weekly_target} />
           <TargetBar label="This month" value={me.month_gross} target={me.monthly_target} />
@@ -192,7 +192,7 @@ export function DispatchReportsScreen() {
   };
 
   return <div className="space-y-6 animate-rise">
-    <PageHeader title={sales ? (r?.team_view ? "Dispatch sales performance" : "My dispatch sales") : (r?.team_view ? "Dispatch performance" : "My dispatch results")} subtitle={hidden ? "Your carriers, trucks and active sales" : "Gross from loads, invoiced revenue (gross × charge %), targets and collections"} actions={<Button variant="ink" icon={<Download size={15} />} disabled={!r} onClick={exportExcel}>Export Excel</Button>} />
+    <PageHeader title={sales ? (r?.team_view ? "Dispatch sales performance" : "My dispatch sales") : (r?.team_view ? "Dispatch performance" : "My dispatch results")} subtitle={hidden ? "Your carriers, trucks and active sales" : "Gross from paid invoices, invoiced revenue, targets and collections"} actions={<Button variant="ink" icon={<Download size={15} />} disabled={!r} onClick={exportExcel}>Export Excel</Button>} />
     <Card className="flex flex-wrap items-end gap-3 px-5 py-4">
       <label className="flex flex-col text-xs font-medium text-muted">From<input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
       <label className="flex flex-col text-xs font-medium text-muted">To<input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
@@ -210,7 +210,7 @@ export function DispatchReportsScreen() {
             <KpiCard label="Active sales (period)" value={r.totals.active_sales} tone="aqua" />
             <KpiCard label="Active sales in total" value={r.totals.active_sales_total} tone="accent" />
           </> : <>
-            <KpiCard label="Gross (loads)" value={money(r.totals.gross)} hint={`${r.totals.loads} loads`} tone="aqua" />
+            <KpiCard label="Gross (paid)" value={money(r.totals.gross)} hint={`${r.totals.loads} loads`} tone="aqua" />
             <KpiCard label="Invoiced revenue" value={money(r.totals.revenue)} hint={`${money(r.totals.outstanding)} outstanding`} tone="accent" />
           </>}
         </div>

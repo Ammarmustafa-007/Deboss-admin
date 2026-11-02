@@ -35,9 +35,12 @@ function TruckView({ data }: { data: TruckDetail }) {
   const [dnc, setDnc] = useState(false);
   const thisWeek = weekStart();
   const live = loads.filter((load) => load.status !== "CANCELLED");
-  const weekGross = live.filter((load) => load.week_start === thisWeek).reduce((sum, load) => sum + Number(load.rate), 0);
+  // Gross is what the company was paid: paid invoices, by the day they were paid (client feedback).
+  const paid = data.invoices.filter((invoice) => invoice.status === "PAID" && invoice.paid_at);
+  const paidSince = (day: string) => paid.filter((invoice) => String(invoice.paid_at).slice(0, 10) >= day).reduce((sum, invoice) => sum + Number(invoice.amount_paid), 0);
+  const weekGross = paidSince(thisWeek);
   const monthStart = `${new Date().toISOString().slice(0, 7)}-01`;
-  const monthGross = live.filter((load) => load.pickup_date >= monthStart).reduce((sum, load) => sum + Number(load.rate), 0);
+  const monthGross = paidSince(monthStart);
   const weeklyTarget = Number(data.targets.find((target) => target.period_type === "WEEKLY")?.amount ?? 0);
   const status = (next: string, success: string, extra: Record<string, unknown> = {}) => void run("status", `/api/v1/dispatch/trucks/${truck.id}`, "PATCH", { status: next, ...extra }, success);
   const closed = ["DNC", "DISCARDED"].includes(truck.status);
@@ -60,8 +63,8 @@ function TruckView({ data }: { data: TruckDetail }) {
     {rights.assign && !closed && <AssignCard data={data} />}
 
     {rights.money_hidden ? <ActiveSaleCard since={truck.sale_active_since} /> : <><div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-      <KpiCard label="Gross this week" value={money(weekGross)} hint={weeklyTarget ? `Target ${money(weeklyTarget)} · ${Math.round((weekGross / weeklyTarget) * 100)}%` : weekLabel(thisWeek)} tone="brand" />
-      <KpiCard label="Gross this month" value={money(monthGross)} tone="aqua" />
+      <KpiCard label="Gross this week (paid)" value={money(weekGross)} hint={weeklyTarget ? `Target ${money(weeklyTarget)} · ${Math.round((weekGross / weeklyTarget) * 100)}%` : weekLabel(thisWeek)} tone="brand" />
+      <KpiCard label="Gross this month (paid)" value={money(monthGross)} tone="aqua" />
       <KpiCard label="Charge %" value={pct(carrier.charge_percent)} hint={carrier.payment_method ? paymentLabel[carrier.payment_method] : "Payment method not set"} tone="accent" />
       <KpiCard label="Loads logged" value={live.length} tone="success" />
     </div></>}
@@ -125,7 +128,7 @@ function LoadsTab({ data }: { data: TruckDetail }) {
   return <div className="space-y-4">
     {canLog && <div className="flex justify-end"><Button variant="primary" icon={<Plus size={15} />} onClick={() => setEditing("new")}>Log a load</Button></div>}
     {weeks.length ? weeks.map(([week, rows]) => { const gross = rows.filter((load) => load.status !== "CANCELLED").reduce((sum, load) => sum + Number(load.rate), 0); return <Card key={week}>
-      <CardHeader title={`Week ${weekLabel(week)}`} subtitle={`${rows.filter((load) => load.status !== "CANCELLED").length} loads · gross ${money(gross)}`} />
+      <CardHeader title={`Week ${weekLabel(week)}`} subtitle={`${rows.filter((load) => load.status !== "CANCELLED").length} loads · loads total ${money(gross)}`} />
       <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
         <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2 font-medium">Load</th><th className="px-3 py-2 font-medium">Pickup</th><th className="px-3 py-2 font-medium">Delivery</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 text-right font-medium">Miles</th><th className="px-3 py-2 text-right font-medium">Rate</th><th className="w-20" /></tr></thead>
         <tbody>{rows.map((load) => <tr key={load.id} className={cn("border-t border-line-soft", load.status === "CANCELLED" && "text-muted line-through decoration-ink/30")}>
@@ -141,7 +144,7 @@ function LoadsTab({ data }: { data: TruckDetail }) {
           </span>}</td>
         </tr>)}</tbody>
       </table></div>
-    </Card>; }) : <Card><EmptyState icon={ReceiptText} title="No loads yet" body={canLog ? "Log each load as it's booked. Weekly gross adds up automatically." : "Loads appear once the Dispatcher logs them."} /></Card>}
+    </Card>; }) : <Card><EmptyState icon={ReceiptText} title="No loads yet" body={canLog ? "Log each load as it's booked, then bill the loads you choose on an invoice." : "Loads appear once the Dispatcher logs them."} /></Card>}
     {editing && <LoadModal truckId={truck.id} load={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} />}
   </div>;
 }
@@ -170,7 +173,7 @@ function LoadModal({ truckId, load, onClose }: { truckId: string; load?: Load; o
       <div className="grid grid-cols-2 gap-3"><TextField label="Pickup zip" maxLength={10} value={form.pickup_zip} onChange={(event) => set("pickup_zip")(event.target.value)} /><TextField label="Pickup date" type="date" required value={form.pickup_date} onChange={(event) => set("pickup_date")(event.target.value)} /></div>
       <TextField label="Delivery city" maxLength={120} value={form.delivery_city} onChange={(event) => set("delivery_city")(event.target.value)} />
       <div className="grid grid-cols-2 gap-3"><TextField label="Delivery zip" maxLength={10} value={form.delivery_zip} onChange={(event) => set("delivery_zip")(event.target.value)} /><TextField label="Delivery date" type="date" error={dateError} value={form.delivery_date} onChange={(event) => set("delivery_date")(event.target.value)} /></div>
-      <TextField label="Rate (gross)" type="number" required min="0" step="0.01" inputMode="decimal" error={rateError} value={form.rate} onChange={(event) => set("rate")(event.target.value)} />
+      <TextField label="Rate" type="number" required min="0" step="0.01" inputMode="decimal" error={rateError} value={form.rate} onChange={(event) => set("rate")(event.target.value)} />
       <div className="grid grid-cols-2 gap-3"><TextField label="Miles" type="number" min="0" step="1" value={form.miles} onChange={(event) => set("miles")(event.target.value)} /><SelectField label="Status" required value={form.status} onChange={(event) => set("status")(event.target.value)} options={Object.entries(loadStatusLabel).map(([value, label]) => ({ value, label }))} /></div>
       <TextAreaField label="Notes" maxLength={1000} value={form.notes} onChange={(event) => set("notes")(event.target.value)} wrapperClassName="sm:col-span-2" />
     </fieldset></form>
@@ -190,9 +193,9 @@ function InvoicesTab({ data }: { data: TruckDetail }) {
   const create = () => void run("create-invoice", `/api/v1/dispatch/trucks/${truck.id}/invoices`, "POST", { load_ids: chosen.map((load) => load.id) }, "Invoice created as a draft.").then((result) => { if (result !== undefined) setPicked([]); });
   return <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
     <Card>
-      <CardHeader title="Invoices" subtitle="Invoice = gross of its loads × the carrier's charge %" />
+      <CardHeader title="Invoices" subtitle="Invoice = its loads' total × the carrier's charge %" />
       {invoices.length ? <ul className="divide-y divide-line-soft">{invoices.map((invoice) => <li key={invoice.id}><Link href={`/app/dispatch/invoices?open=${invoice.id}`} className="flex flex-wrap items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]">
-        <div className="min-w-0 flex-1"><p className="font-semibold">{invoice.invoice_number}</p><p className="text-xs text-muted">{weekLabel(invoice.week_start)} · gross {money(invoice.gross_amount)} × {pct(invoice.charge_percent)}</p></div>
+        <div className="min-w-0 flex-1"><p className="font-semibold">{invoice.invoice_number}</p><p className="text-xs text-muted">{weekLabel(invoice.week_start)} · loads {money(invoice.gross_amount)} × {pct(invoice.charge_percent)}</p></div>
         <b className="tabular-nums">{money(invoice.amount)}</b><StatusChip status={invoice.status} label={invoiceStatusLabel[invoice.status]} />
       </Link></li>)}</ul> : <p className="p-6 text-center text-sm text-muted">No invoices yet.</p>}
     </Card>
@@ -205,7 +208,7 @@ function InvoicesTab({ data }: { data: TruckDetail }) {
             <span className="min-w-0 flex-1"><span className="block truncate font-medium">{load.load_number || [load.pickup_city, load.delivery_city].filter(Boolean).join(" → ") || "Load"}</span><span className="block text-xs text-muted">{dateLabel(load.pickup_date)} · {weekLabel(load.week_start ?? weekStart(load.pickup_date))}</span></span>
             <b className="tabular-nums">{money(load.rate)}</b>
           </label></li>)}</ul>
-          <dl className="grid grid-cols-2 gap-y-2 rounded-[12px] bg-[#FBFAF7] p-4 text-sm"><dt className="text-muted">Loads</dt><dd className="text-right">{chosen.length}</dd><dt className="text-muted">Gross</dt><dd className="text-right font-semibold tabular-nums">{money(gross)}</dd><dt className="text-muted">Charge</dt><dd className="text-right">{pct(carrier.charge_percent)}</dd><dt className="text-muted">Invoice</dt><dd className="text-right text-base font-bold tabular-nums">{money(fee)}</dd>{chosen[0] && <><dt className="text-muted">Due</dt><dd className="text-right">{dateLabel(addDays(weekStart(chosen[0].pickup_date), 13))}</dd></>}</dl>
+          <dl className="grid grid-cols-2 gap-y-2 rounded-[12px] bg-[#FBFAF7] p-4 text-sm"><dt className="text-muted">Loads</dt><dd className="text-right">{chosen.length}</dd><dt className="text-muted">Loads total</dt><dd className="text-right font-semibold tabular-nums">{money(gross)}</dd><dt className="text-muted">Charge</dt><dd className="text-right">{pct(carrier.charge_percent)}</dd><dt className="text-muted">Invoice</dt><dd className="text-right text-base font-bold tabular-nums">{money(fee)}</dd>{chosen[0] && <><dt className="text-muted">Due</dt><dd className="text-right">{dateLabel(addDays(weekStart(chosen[0].pickup_date), 13))}</dd></>}</dl>
           <Button variant="primary" className="w-full" icon={<ReceiptText size={15} />} disabled={!chosen.length} pending={busy("create-invoice")} pendingLabel="Creating…" onClick={create}>Create invoice</Button>
         </> : <p className="text-sm text-muted">Every load is already on an invoice.</p>}
     </div></Card>}

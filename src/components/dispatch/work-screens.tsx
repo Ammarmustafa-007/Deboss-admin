@@ -52,7 +52,7 @@ export function LoadsScreen() {
     </form></Card>
     <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
       <KpiCard label="Loads found" value={live.length} icon={MapPinned} tone="brand" />
-      <KpiCard label="Gross" value={money(live.reduce((sum, load) => sum + Number(load.rate), 0))} tone="success" />
+      <KpiCard label="Loads total" value={money(live.reduce((sum, load) => sum + Number(load.rate), 0))} tone="success" />
       <KpiCard label="Miles" value={live.reduce((sum, load) => sum + Number(load.miles ?? 0), 0).toLocaleString()} tone="aqua" className="col-span-2 xl:col-span-1" />
     </div>
     <Card>{loads.isLoading ? <div className="space-y-2 p-5">{[0, 1, 2].map((index) => <Skeleton key={index} className="h-12" />)}</div>
@@ -114,7 +114,7 @@ export function DispatchInvoicesScreen() {
         : invoices.isError ? <EmptyState icon={AlertTriangle} title="Invoices unavailable" body={errorMessage(invoices.error)} />
         : visible.length ? <ul className="divide-y divide-line-soft">{visible.map((invoice) => <li key={invoice.id}><button type="button" onClick={() => open(invoice.id)} className="flex w-full flex-wrap items-center gap-3 px-5 py-3.5 text-left hover:bg-[#FAF8F4]">
           <div className="min-w-0 flex-1"><p className="truncate font-semibold">{invoice.invoice_number}</p><p className="truncate text-xs text-muted">{invoice.carrier?.company_name} · {invoice.truck?.unit_number} · {weekLabel(invoice.week_start)} · {invoice.dispatcher_name}</p></div>
-          <span className="hidden text-right text-xs text-muted sm:block">gross {money(invoice.gross_amount)}<br />× {pct(invoice.charge_percent)}</span>
+          <span className="hidden text-right text-xs text-muted sm:block">loads {money(invoice.gross_amount)}<br />× {pct(invoice.charge_percent)}</span>
           <b className="w-24 text-right tabular-nums">{money(invoice.amount)}</b>
           <StatusChip status={invoice.overdue ? "OVERDUE" : invoice.status} label={invoice.overdue ? "Overdue" : invoiceStatusLabel[invoice.status]} />
           {invoice.signed_off_at && <Chip tone="success">Signed off</Chip>}
@@ -149,7 +149,7 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
       <div className="flex flex-wrap items-center gap-2"><StatusChip status={invoice.overdue ? "OVERDUE" : invoice.status} label={invoice.overdue ? "Overdue" : invoiceStatusLabel[invoice.status]} />{invoice.signed_off_at && <Chip tone="success">Signed off {dateLabel(invoice.signed_off_at)}</Chip>}</div>
       {invoice.review_note && invoice.status === "DRAFT" && <p className="rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm text-[#A5183F]"><b>Returned:</b> {invoice.review_note}</p>}
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-[14px] border border-line-soft bg-[#FBFAF7] p-4 text-sm sm:grid-cols-3">
-        <div><dt className="text-xs text-muted">Gross (loads)</dt><dd className="font-semibold tabular-nums">{money(invoice.gross_amount)}</dd></div>
+        <div><dt className="text-xs text-muted">Loads total</dt><dd className="font-semibold tabular-nums">{money(invoice.gross_amount)}</dd></div>
         <div><dt className="text-xs text-muted">Charge %</dt><dd className="font-semibold">{pct(invoice.charge_percent)}</dd></div>
         <div><dt className="text-xs text-muted">Invoice amount</dt><dd className="text-base font-bold tabular-nums">{money(invoice.amount)}</dd></div>
         <div><dt className="text-xs text-muted">Paid</dt><dd className="tabular-nums">{money(invoice.amount_paid)}</dd></div>
@@ -164,6 +164,10 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         {data.rights.dispatcher && invoice.status === "DRAFT" && <div className="flex flex-wrap gap-2">
           <Button variant="primary" icon={<Send size={15} />} pending={pending} pendingLabel="Submitting…" onClick={() => act("SUBMIT", "Invoice submitted to the Dispatch Manager.")}>Submit for review</Button>
           <Button variant="outline" icon={<RotateCcw size={15} />} disabled={pending} onClick={() => act("RECALCULATE", "Invoice recalculated from its loads.")}>Recalculate</Button>
+        </div>}
+        {data.rights.dispatcher && !data.rights.reviewer && invoice.status === "SUBMITTED" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-line-soft p-4">
+          <p className="text-sm text-muted">Waiting for the Dispatch Manager. Recall it to change it and send it again.</p>
+          <Button variant="outline" icon={<RotateCcw size={15} />} pending={pending} pendingLabel="Recalling…" onClick={() => act("RECALL", "Invoice recalled to Draft.")}>Recall</Button>
         </div>}
         {data.rights.reviewer && ["SUBMITTED", "FORWARDED"].includes(invoice.status) && <div className="space-y-3 rounded-[14px] border border-brand/40 p-4">
           <p className="text-sm font-semibold">{invoice.status === "SUBMITTED" ? "Review this invoice" : "Forwarded to accounting"}</p>
@@ -209,7 +213,7 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   </Drawer>;
 }
 
-/** Corrections: the Dispatcher on a Draft, the Dispatch Manager at any stage. A corrected gross recalculates the amount. */
+/** Corrections: the Dispatcher on a Draft, the Dispatch Manager at any stage. A corrected loads total recalculates the amount. */
 function InvoiceFigures({ invoice }: { invoice: DispatchInvoice }) {
   const { run, busy } = useBrokerageAction();
   const start = { gross: String(invoice.gross_amount), percent: String(invoice.charge_percent), amount: String(invoice.amount), paid: String(invoice.amount_paid) };
@@ -225,7 +229,7 @@ function InvoiceFigures({ invoice }: { invoice: DispatchInvoice }) {
   return <form onSubmit={save} className="space-y-3 rounded-[14px] border border-line-soft p-4">
     <p className="text-sm font-semibold">Edit figures{invoice.status !== "DRAFT" ? <span className="ml-2 font-normal text-muted">· changes are logged</span> : null}</p>
     <div className="grid gap-3 sm:grid-cols-2">
-      <TextField label="Gross" type="number" min="0" step="0.01" inputMode="decimal" value={form.gross} onChange={(event) => setForm({ ...form, gross: event.target.value })} hint="Changing it recalculates the amount" />
+      <TextField label="Loads total" type="number" min="0" step="0.01" inputMode="decimal" value={form.gross} onChange={(event) => setForm({ ...form, gross: event.target.value })} hint="Changing it recalculates the amount" />
       <TextField label="Charge %" type="number" min="0" max="100" step="0.01" inputMode="decimal" value={form.percent} onChange={(event) => setForm({ ...form, percent: event.target.value })} />
       <TextField label="Invoice amount" type="number" min="0" step="0.01" inputMode="decimal" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} hint="Type an amount to override the calculation" />
       {paidEditable && <TextField label="Amount paid" type="number" min="0" step="0.01" inputMode="decimal" value={form.paid} onChange={(event) => setForm({ ...form, paid: event.target.value })} />}
@@ -275,7 +279,7 @@ export function TargetsScreen() {
   const { api, sales } = useBrokerage();
   const targets = useQuery({ queryKey: ["brokerage", "dispatch", "targets"], queryFn: async () => responseData<{ can_edit: boolean; people: TargetPerson[] }>(await api("/api/v1/dispatch/targets")), staleTime: 30_000 });
   return <div className="space-y-6 animate-rise">
-    <PageHeader title="Targets" subtitle={`Weekly and monthly gross targets for each ${sales ? "agent" : "Dispatcher"}. Progress shows on dashboards and reports.`} />
+    <PageHeader title="Targets" subtitle={`Weekly and monthly gross targets for each ${sales ? "agent" : "Dispatcher"}, measured on paid invoices. Progress shows on dashboards and reports.`} />
     <Card>{targets.isLoading ? <div className="space-y-2 p-5">{[0, 1].map((index) => <Skeleton key={index} className="h-12" />)}</div>
       : targets.data?.people.length ? <ul className="divide-y divide-line-soft">{targets.data.people.map((person) => <TargetRow key={person.id} person={person} editable={targets.data!.can_edit} />)}</ul>
       : <EmptyState icon={Goal} title={`No ${sales ? "agents" : "Dispatchers"} yet`} />}
