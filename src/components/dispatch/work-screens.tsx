@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Ban, Banknote, CheckCircle2, Clock, Download, Forward, Goal, MapPinned, ReceiptText, RotateCcw, Search, Send, ShieldCheck, XCircle } from "lucide-react";
+import { AlertTriangle, Ban, Banknote, CheckCircle2, Clock, Download, Forward, Goal, MapPinned, Plus, ReceiptText, RotateCcw, Save, Search, Send, ShieldCheck, Trash2, XCircle } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { dateLabel, dateTimeLabel, money } from "@/lib/format";
@@ -15,7 +15,7 @@ import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { Card, Chip, EmptyState, KpiCard, PageHeader, Skeleton, StatusChip, humanize } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { TextAreaField, TextField, controlClass } from "@/components/ui/field";
-import { Drawer } from "@/components/ui/overlay";
+import { Drawer, Modal } from "@/components/ui/overlay";
 import { Tabs, type TabItem } from "@/components/ui/navigation";
 import { CommentFeed, Composer } from "@/components/sales/feed";
 import { invoiceStatusLabel, loadStatusLabel, pct, truckTypeLabel, useDispatchInvoices, weekLabel, type DispatchInvoice, type Load } from "@/components/dispatch/model";
@@ -101,7 +101,7 @@ export function DispatchInvoicesScreen() {
   const open = (id: string | null) => router.replace(id ? `/app/dispatch/invoices?open=${id}` : "/app/dispatch/invoices", { scroll: false });
 
   return <div className="space-y-6 animate-rise">
-    <PageHeader title="Weekly invoices" subtitle={sales ? "Invoices for your carriers' trucks · sign off paid sales" : reviewer ? "Review the Dispatchers' weekly invoices and forward them to accounting" : "Create, submit and track your trucks' weekly invoices"} />
+    <PageHeader title="Invoices" subtitle={sales ? "Invoices for your carriers' trucks · sign off paid sales" : reviewer ? "Review, correct and forward the Dispatchers' invoices to accounting" : "Create, submit and track your trucks' invoices"} />
     <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
       <KpiCard label="Invoiced" value={money(sum(list, "amount"))} icon={ReceiptText} tone="brand" />
       <KpiCard label="Collected" value={money(sum(list, "amount_paid"))} icon={Banknote} tone="success" />
@@ -113,19 +113,19 @@ export function DispatchInvoicesScreen() {
       {invoices.isLoading ? <div className="space-y-2 p-5">{[0, 1, 2].map((index) => <Skeleton key={index} className="h-14" />)}</div>
         : invoices.isError ? <EmptyState icon={AlertTriangle} title="Invoices unavailable" body={errorMessage(invoices.error)} />
         : visible.length ? <ul className="divide-y divide-line-soft">{visible.map((invoice) => <li key={invoice.id}><button type="button" onClick={() => open(invoice.id)} className="flex w-full flex-wrap items-center gap-3 px-5 py-3.5 text-left hover:bg-[#FAF8F4]">
-          <div className="min-w-0 flex-1"><p className="truncate font-semibold">{invoice.invoice_number}</p><p className="truncate text-xs text-muted">{invoice.carrier?.company_name} · {invoice.truck?.unit_number} · week {weekLabel(invoice.week_start)} · {invoice.dispatcher_name}</p></div>
+          <div className="min-w-0 flex-1"><p className="truncate font-semibold">{invoice.invoice_number}</p><p className="truncate text-xs text-muted">{invoice.carrier?.company_name} · {invoice.truck?.unit_number} · {weekLabel(invoice.week_start)} · {invoice.dispatcher_name}</p></div>
           <span className="hidden text-right text-xs text-muted sm:block">gross {money(invoice.gross_amount)}<br />× {pct(invoice.charge_percent)}</span>
           <b className="w-24 text-right tabular-nums">{money(invoice.amount)}</b>
           <StatusChip status={invoice.overdue ? "OVERDUE" : invoice.status} label={invoice.overdue ? "Overdue" : invoiceStatusLabel[invoice.status]} />
           {invoice.signed_off_at && <Chip tone="success">Signed off</Chip>}
         </button></li>)}</ul>
-        : <EmptyState icon={ReceiptText} title={list.length ? "Nothing in this view" : "No weekly invoices yet"} body={!list.length && !sales ? "Dispatchers create them from a truck's Weekly invoices tab." : undefined} />}
+        : <EmptyState icon={ReceiptText} title={list.length ? "Nothing in this view" : "No invoices yet"} body={!list.length && !sales ? "Dispatchers create them from a truck's Invoices tab by choosing its loads." : undefined} />}
     </Card>
     {openId && <InvoiceDrawer id={openId} onClose={() => open(null)} />}
   </div>;
 }
 
-type InvoiceDetail = { invoice: DispatchInvoice; loads: Load[]; comments: { id: string; body: string; author_name?: string; created_at: string; can_delete?: boolean }[]; history: { id: string; action: string; actor_name?: string | null; created_at: string; detail?: { from_status?: string; to_status?: string } }[]; rights: { dispatcher: boolean; reviewer: boolean; sign_off: boolean } };
+type InvoiceDetail = { invoice: DispatchInvoice; loads: Load[]; available_loads: Load[]; comments: { id: string; body: string; author_name?: string; created_at: string; can_delete?: boolean }[]; history: { id: string; action: string; actor_name?: string | null; created_at: string; detail?: { from_status?: string; to_status?: string } }[]; rights: { dispatcher: boolean; reviewer: boolean; sign_off: boolean; edit: boolean } };
 
 function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const { api } = useBrokerage();
@@ -140,7 +140,11 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const paidAmount = paid === "" ? undefined : Number(paid);
   const paidError = paid !== "" && (!Number.isFinite(paidAmount) || (paidAmount ?? 0) < 0) ? "Enter an amount of 0 or more." : undefined;
 
-  return <Drawer open onClose={onClose} dismissible={!pending} title={invoice?.invoice_number ?? "Weekly invoice"} subtitle={invoice ? `${invoice.carrier?.company_name} · ${invoice.truck?.unit_number} · week ${weekLabel(invoice.week_start)}` : undefined} className="max-w-2xl">
+  const [deleting, setDeleting] = useState(false);
+  const remove = () => void run("invoice-delete", `/api/v1/dispatch/invoices/${id}`, "DELETE", undefined, "Invoice deleted. Its loads can be invoiced again.").then((result) => { if (result !== undefined) { setDeleting(false); onClose(); } });
+  const removeLoad = (loadId: string) => void run(`invoice-load:${loadId}`, `/api/v1/dispatch/invoices/${id}`, "PATCH", { remove_load_ids: [loadId] }, "Load removed from the invoice.");
+
+  return <Drawer open onClose={onClose} dismissible={!pending} title={invoice?.invoice_number ?? "Invoice"} subtitle={invoice ? `${invoice.carrier?.company_name} · ${invoice.truck?.unit_number} · ${weekLabel(invoice.week_start)}` : undefined} className="max-w-2xl">
     {detail.isLoading || !data || !invoice ? (detail.isError ? <EmptyState icon={AlertTriangle} title="Invoice unavailable" body={errorMessage(detail.error)} /> : <div className="space-y-3"><Skeleton className="h-24" /><Skeleton className="h-40" /></div>) : <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2"><StatusChip status={invoice.overdue ? "OVERDUE" : invoice.status} label={invoice.overdue ? "Overdue" : invoiceStatusLabel[invoice.status]} />{invoice.signed_off_at && <Chip tone="success">Signed off {dateLabel(invoice.signed_off_at)}</Chip>}</div>
       {invoice.review_note && invoice.status === "DRAFT" && <p className="rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm text-[#A5183F]"><b>Returned:</b> {invoice.review_note}</p>}
@@ -159,8 +163,7 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
       <div className="space-y-3">
         {data.rights.dispatcher && invoice.status === "DRAFT" && <div className="flex flex-wrap gap-2">
           <Button variant="primary" icon={<Send size={15} />} pending={pending} pendingLabel="Submitting…" onClick={() => act("SUBMIT", "Invoice submitted to the Dispatch Manager.")}>Submit for review</Button>
-          <Button variant="outline" icon={<RotateCcw size={15} />} disabled={pending} onClick={() => act("RECALCULATE", "Invoice recalculated from the week's loads.")}>Recalculate</Button>
-          <Button variant="ghost" icon={<XCircle size={15} />} disabled={pending} onClick={() => act("CANCEL", "Invoice cancelled.")} className="text-[#C4254B]">Cancel</Button>
+          <Button variant="outline" icon={<RotateCcw size={15} />} disabled={pending} onClick={() => act("RECALCULATE", "Invoice recalculated from its loads.")}>Recalculate</Button>
         </div>}
         {data.rights.reviewer && ["SUBMITTED", "FORWARDED"].includes(invoice.status) && <div className="space-y-3 rounded-[14px] border border-brand/40 p-4">
           <p className="text-sm font-semibold">{invoice.status === "SUBMITTED" ? "Review this invoice" : "Forwarded to accounting"}</p>
@@ -181,9 +184,20 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         </div>}
       </div>
 
-      <section><h3 className="mb-2 text-sm font-semibold">Loads in this week</h3>{data.loads.length ? <ul className="divide-y divide-line-soft rounded-[12px] border border-line-soft">{data.loads.map((load) => <li key={load.id} className={cn("flex items-center gap-3 px-4 py-2.5 text-sm", load.status === "CANCELLED" && "text-muted line-through")}>
-        <span className="w-20 shrink-0 text-xs text-muted">{dateLabel(load.pickup_date)}</span><span className="min-w-0 flex-1 truncate">{[load.pickup_city, load.pickup_zip].filter(Boolean).join(" ") || "—"} → {[load.delivery_city, load.delivery_zip].filter(Boolean).join(" ") || "—"}</span><b className="tabular-nums">{money(load.rate)}</b>
-      </li>)}</ul> : <p className="text-sm text-muted">No loads.</p>}</section>
+      {data.rights.edit && <InvoiceFigures key={`${invoice.gross_amount}-${invoice.charge_percent}-${invoice.amount}-${invoice.amount_paid}`} invoice={invoice} />}
+
+      <section><h3 className="mb-2 text-sm font-semibold">Loads on this invoice</h3>{data.loads.length ? <ul className="divide-y divide-line-soft rounded-[12px] border border-line-soft">{data.loads.map((load) => <li key={load.id} className={cn("flex items-center gap-3 px-4 py-2.5 text-sm", load.status === "CANCELLED" && "text-muted line-through")}>
+        <span className="w-20 shrink-0 text-xs text-muted">{dateLabel(load.pickup_date)}</span><span className="min-w-0 flex-1 truncate">{load.load_number ? `${load.load_number} · ` : ""}{[load.pickup_city, load.pickup_zip].filter(Boolean).join(" ") || "—"} → {[load.delivery_city, load.delivery_zip].filter(Boolean).join(" ") || "—"}</span><b className="tabular-nums">{money(load.rate)}</b>
+        {data.rights.edit && data.loads.length > 1 && <Button size="sm" variant="ghost" aria-label="Remove load from invoice" disabled={busy(`invoice-load:${load.id}`)} onClick={() => removeLoad(load.id)} className="text-[#C4254B]"><XCircle size={14} /></Button>}
+      </li>)}</ul> : <p className="text-sm text-muted">No loads.</p>}
+        {data.rights.edit && <AddLoads invoiceId={invoice.id} loads={data.available_loads} />}
+      </section>
+
+      {data.rights.edit && <div className="flex justify-end"><Button variant="ghost" icon={<Trash2 size={15} />} onClick={() => setDeleting(true)} className="text-[#C4254B]">Delete invoice</Button></div>}
+      <Modal open={deleting} onClose={() => setDeleting(false)} dismissible={!busy("invoice-delete")} title="Delete this invoice?"
+        footer={<><Button variant="ghost" onClick={() => setDeleting(false)} disabled={busy("invoice-delete")}>Keep it</Button><Button variant="danger" icon={<Trash2 size={15} />} pending={busy("invoice-delete")} pendingLabel="Deleting…" onClick={remove}>Delete invoice</Button></>}>
+        <p className="text-sm text-muted">The invoice is removed and its {data.loads.length} load{data.loads.length === 1 ? "" : "s"} can go on another invoice. {invoice.status === "PAID" ? "It is paid, so its payment no longer counts in reports or payroll for months not yet finalized." : ""}</p>
+      </Modal>
 
       <section className="space-y-3"><h3 className="text-sm font-semibold">Comments</h3>
         <Composer placeholder="Add a comment" pending={busy("invoice-comment")} onSubmit={async (body) => (await run("invoice-comment", "/api/v1/dispatch/comments", "POST", { entity_type: "DISPATCH_INVOICE", entity_id: invoice.id, body }, "Comment added.")) !== undefined} />
@@ -193,6 +207,41 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
       <section><h3 className="mb-2 text-sm font-semibold">History</h3><ol className="space-y-2 text-sm">{data.history.map((row) => <li key={row.id} className="flex gap-3"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-success" /><span className="min-w-0 flex-1">{humanize(row.action.replace("DISPATCH_INVOICE_", ""))}{row.detail?.to_status ? ` → ${invoiceStatusLabel[row.detail.to_status] ?? row.detail.to_status}` : ""}<span className="block text-xs text-muted">{row.actor_name ?? "System"} · {dateTimeLabel(row.created_at)}</span></span></li>)}</ol></section>
     </div>}
   </Drawer>;
+}
+
+/** Corrections: the Dispatcher on a Draft, the Dispatch Manager at any stage. A corrected gross recalculates the amount. */
+function InvoiceFigures({ invoice }: { invoice: DispatchInvoice }) {
+  const { run, busy } = useBrokerageAction();
+  const start = { gross: String(invoice.gross_amount), percent: String(invoice.charge_percent), amount: String(invoice.amount), paid: String(invoice.amount_paid) };
+  const [form, setForm] = useState(start);
+  const paidEditable = ["FORWARDED", "PAID"].includes(invoice.status);
+  const bad = Object.entries(form).some(([key, value]) => (key !== "paid" || paidEditable) && (value === "" || !Number.isFinite(Number(value)) || Number(value) < 0)) || Number(form.percent) > 100;
+  const changes: Record<string, number> = {};
+  if (form.percent !== start.percent) changes.charge_percent = Number(form.percent);
+  if (form.gross !== start.gross) changes.gross_amount = Number(form.gross);
+  if (form.amount !== start.amount) changes.amount = Number(form.amount);
+  if (paidEditable && form.paid !== start.paid) changes.amount_paid = Number(form.paid);
+  const save = (event: FormEvent) => { event.preventDefault(); if (!bad && Object.keys(changes).length) void run("invoice-figures", `/api/v1/dispatch/invoices/${invoice.id}`, "PATCH", changes, "Invoice updated."); };
+  return <form onSubmit={save} className="space-y-3 rounded-[14px] border border-line-soft p-4">
+    <p className="text-sm font-semibold">Edit figures{invoice.status !== "DRAFT" ? <span className="ml-2 font-normal text-muted">· changes are logged</span> : null}</p>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <TextField label="Gross" type="number" min="0" step="0.01" inputMode="decimal" value={form.gross} onChange={(event) => setForm({ ...form, gross: event.target.value })} hint="Changing it recalculates the amount" />
+      <TextField label="Charge %" type="number" min="0" max="100" step="0.01" inputMode="decimal" value={form.percent} onChange={(event) => setForm({ ...form, percent: event.target.value })} />
+      <TextField label="Invoice amount" type="number" min="0" step="0.01" inputMode="decimal" value={form.amount} onChange={(event) => setForm({ ...form, amount: event.target.value })} hint="Type an amount to override the calculation" />
+      {paidEditable && <TextField label="Amount paid" type="number" min="0" step="0.01" inputMode="decimal" value={form.paid} onChange={(event) => setForm({ ...form, paid: event.target.value })} />}
+    </div>
+    <div className="flex justify-end"><Button type="submit" variant="outline" icon={<Save size={15} />} disabled={bad || !Object.keys(changes).length} pending={busy("invoice-figures")} pendingLabel="Saving…">Save figures</Button></div>
+  </form>;
+}
+
+function AddLoads({ invoiceId, loads }: { invoiceId: string; loads: Load[] }) {
+  const { run, busy } = useBrokerageAction();
+  const [picked, setPicked] = useState("");
+  if (!loads.length) return <p className="mt-2 text-xs text-muted">This truck has no other loads to add.</p>;
+  return <div className="mt-3 flex flex-wrap items-end gap-2">
+    <label className="flex min-w-56 flex-1 flex-col gap-1.5 text-[13px] font-medium text-ink/80">Add a load<select value={picked} onChange={(event) => setPicked(event.target.value)} className={cn(controlClass, "h-10")}><option value="">Choose a load not on an invoice</option>{loads.map((load) => <option key={load.id} value={load.id}>{dateLabel(load.pickup_date)} · {load.load_number || [load.pickup_city, load.delivery_city].filter(Boolean).join(" → ") || "Load"} · {money(load.rate)}</option>)}</select></label>
+    <Button variant="outline" icon={<Plus size={15} />} disabled={!picked} pending={busy("invoice-add-load")} pendingLabel="Adding…" onClick={() => void run("invoice-add-load", `/api/v1/dispatch/invoices/${invoiceId}`, "PATCH", { add_load_ids: [picked] }, "Load added to the invoice.").then((result) => { if (result !== undefined) setPicked(""); })} className="h-10">Add</Button>
+  </div>;
 }
 
 // ---- Do-Not-Call list (Figure 5 note) ----------------------------------------------------------------------------

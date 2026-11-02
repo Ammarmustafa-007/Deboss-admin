@@ -10,7 +10,9 @@ export type Truck = {
   id: string; carrier_id: string; unit_number: string; truck_type: string; equipment_notes?: string | null; status: string;
   dispatch_department_id?: string | null; assigned_to?: string | null; assigned_name?: string | null; team_id?: string | null; team_name?: string | null;
   dnc_reason?: string | null; activated_at?: string | null; created_at?: string; updated_at?: string;
-  carrier?: Carrier; week_gross?: number; week_loads?: number; last_load_date?: string | null;
+  carrier?: Carrier; week_gross?: number | null; week_loads?: number | null; last_load_date?: string | null;
+  /** When the truck paid its first invoice, making it an active sale. */
+  sale_active_since?: string | null;
 };
 export type Carrier = {
   id: string; department_id: string; owner_id: string; owner_name?: string | null; team_id?: string | null; team_name?: string | null;
@@ -27,7 +29,7 @@ export type Duplicate = { id: string; company_name: string; mc_number?: string |
 export type Load = {
   id: string; truck_id: string; dispatcher_id: string; dispatcher_name?: string | null; load_number?: string | null; broker_name?: string | null;
   pickup_city?: string | null; pickup_zip?: string | null; pickup_date: string; delivery_city?: string | null; delivery_zip?: string | null; delivery_date?: string | null;
-  rate: number | string; miles?: number | null; status: string; notes?: string | null; week_start?: string;
+  rate: number | string; miles?: number | null; status: string; notes?: string | null; week_start?: string; invoice_id?: string | null;
   truck?: { id: string; unit_number: string; truck_type: string }; carrier?: { id: string; company_name: string };
 };
 export type DispatchInvoice = {
@@ -39,11 +41,11 @@ export type DispatchInvoice = {
 export type CarrierDetail = {
   carrier: Carrier; trucks: Truck[]; documents: CarrierDocument[]; activities: Activity[]; comments: Comment[]; invoices: DispatchInvoice[];
   missing_documents: string[]; duplicates: Duplicate[];
-  rights: { edit: boolean; submit: boolean; review: boolean; assign: boolean; terms: boolean; sales_side: boolean };
+  rights: { edit: boolean; submit: boolean; review: boolean; assign: boolean; terms: boolean; sales_side: boolean; money_hidden?: boolean };
 };
 export type TruckDetail = {
   truck: Truck; carrier: Carrier; loads: Load[]; invoices: DispatchInvoice[]; comments: Comment[]; targets: { period_type: string; amount: number }[];
-  rights: { update: boolean; assign: boolean; terms: boolean; sales_side: boolean };
+  rights: { update: boolean; assign: boolean; terms: boolean; sales_side: boolean; money_hidden?: boolean };
 };
 export type DispatchDirectory = { users: { id: string; full_name: string }[]; teams: { id: string; name: string; team_lead_id?: string | null }[]; operations_departments: { id: string; name: string }[] };
 

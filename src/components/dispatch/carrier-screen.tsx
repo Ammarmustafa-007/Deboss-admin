@@ -62,7 +62,7 @@ function CarrierView({ data }: { data: CarrierDetail }) {
       { value: "documents", label: "Documents", count: data.documents.length, hidden: !rights.sales_side },
       { value: "activity", label: "Appointments & callbacks", count: data.activities.filter((row) => !row.completed_at).length, hidden: !rights.sales_side },
       { value: "comments", label: "Comments", count: data.comments.length },
-      { value: "invoices", label: "Weekly invoices", count: data.invoices.length, hidden: !data.invoices.length },
+      { value: "invoices", label: "Invoices", count: data.invoices.length, hidden: !data.invoices.length },
     ]} />
     <div key={tab} className="animate-fade">
       {tab === "overview" && <OverviewTab data={data} />}
@@ -73,8 +73,8 @@ function CarrierView({ data }: { data: CarrierDetail }) {
         <Composer placeholder="Add a comment" pending={busy("comment")} onSubmit={async (body) => (await run("comment", "/api/v1/dispatch/comments", "POST", { entity_type: "CARRIER", entity_id: carrier.id, body }, "Comment added.")) !== undefined} />
         <CommentFeed rows={data.comments} empty="No comments yet." busy={busy} onDelete={(row) => void run(`delete-comment:${row.id}`, `/api/v1/brokerage/comments/${row.id}`, "DELETE", undefined, "Comment deleted.")} />
       </div></Card>}
-      {tab === "invoices" && <Card><CardHeader title="Weekly invoices" /><ul className="divide-y divide-line-soft">{data.invoices.map((invoice) => <li key={invoice.id}><Link href={`/app/dispatch/invoices?open=${invoice.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]">
-        <div className="min-w-0 flex-1"><p className="font-semibold">{invoice.invoice_number}</p><p className="text-xs text-muted">Week {weekLabel(invoice.week_start)} · gross {money(invoice.gross_amount)}</p></div>
+      {tab === "invoices" && <Card><CardHeader title="Invoices" /><ul className="divide-y divide-line-soft">{data.invoices.map((invoice) => <li key={invoice.id}><Link href={`/app/dispatch/invoices?open=${invoice.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]">
+        <div className="min-w-0 flex-1"><p className="font-semibold">{invoice.invoice_number}</p><p className="text-xs text-muted">{weekLabel(invoice.week_start)} · gross {money(invoice.gross_amount)}</p></div>
         <b className="tabular-nums">{money(invoice.amount)}</b><StatusChip status={invoice.status} label={invoiceStatusLabel[invoice.status]} />{invoice.signed_off_at && <Chip tone="success">Signed off</Chip>}
       </Link></li>)}</ul></Card>}
     </div>
@@ -189,11 +189,12 @@ function TrucksTab({ data }: { data: CarrierDetail }) {
   };
   return <div className="space-y-6">
     <Card>
-      <CardHeader title="Trucks" subtitle="Each truck is a sale with its own Dispatcher, loads and weekly invoices" />
+      <CardHeader title="Trucks" subtitle="Each truck is a sale. It becomes active when it pays its first invoice." />
       {trucks.length ? <ul className="divide-y divide-line-soft">{trucks.map((truck) => <li key={truck.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
         <span className="grid h-9 w-9 place-items-center rounded-control bg-aqua/12 text-aqua"><TruckIcon size={17} /></span>
         <div className="min-w-0 flex-1"><p className="font-semibold">{truck.unit_number} <span className="font-normal text-muted">· {truckTypeLabel[truck.truck_type]}</span></p><p className="text-xs text-muted">{truck.equipment_notes || "No equipment notes"}{truck.assigned_name ? ` · Dispatcher: ${truck.assigned_name}` : ""}</p></div>
         <StatusChip status={truck.status} label={truckStatusLabel[truck.status]} />
+        {rights.sales_side && truck.status !== "PENDING" && (truck.sale_active_since ? <Chip tone="success">Active sale · {dateLabel(truck.sale_active_since)}</Chip> : <Chip tone="neutral">Not active yet</Chip>)}
         {truck.status !== "PENDING" && <Link href={`/app/dispatch/trucks/${truck.id}`} className="text-xs font-semibold text-brand-deep hover:underline">Open truck</Link>}
         {canAdd && truck.status === "PENDING" && <Button size="sm" variant="ghost" aria-label="Remove truck" disabled={busy(`remove-truck:${truck.id}`)} onClick={() => void run(`remove-truck:${truck.id}`, `/api/v1/dispatch/trucks/${truck.id}`, "DELETE", undefined, "Truck removed.")} className="text-[#C4254B]"><Trash2 size={14} /></Button>}
       </li>)}</ul> : <EmptyState icon={TruckIcon} title="No trucks yet" body="Add at least one truck before submitting." />}

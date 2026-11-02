@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Ban, PauseCircle, Pencil, PlayCircle, Plus, ReceiptText, ShieldAlert, Trash2 } from "lucide-react";
+import { Ban, CheckCircle2, Hourglass, PauseCircle, Pencil, PlayCircle, Plus, ReceiptText, ShieldAlert, Trash2 } from "lucide-react";
 import { use, useMemo, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { dateLabel, money } from "@/lib/format";
@@ -59,24 +59,32 @@ function TruckView({ data }: { data: TruckDetail }) {
 
     {rights.assign && !closed && <AssignCard data={data} />}
 
-    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+    {rights.money_hidden ? <ActiveSaleCard since={truck.sale_active_since} /> : <><div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
       <KpiCard label="Gross this week" value={money(weekGross)} hint={weeklyTarget ? `Target ${money(weeklyTarget)} · ${Math.round((weekGross / weeklyTarget) * 100)}%` : weekLabel(thisWeek)} tone="brand" />
       <KpiCard label="Gross this month" value={money(monthGross)} tone="aqua" />
       <KpiCard label="Charge %" value={pct(carrier.charge_percent)} hint={carrier.payment_method ? paymentLabel[carrier.payment_method] : "Payment method not set"} tone="accent" />
       <KpiCard label="Loads logged" value={live.length} tone="success" />
-    </div>
+    </div></>}
 
-    <Tabs<TabKey> value={tab} onChange={setTab} items={[{ value: "loads", label: "Loads", count: loads.length }, { value: "invoices", label: "Weekly invoices", count: data.invoices.length }, { value: "comments", label: "Comments", count: data.comments.length }]} />
+    <Tabs<TabKey> value={rights.money_hidden ? "comments" : tab} onChange={setTab} items={[{ value: "loads", label: "Loads", count: loads.length, hidden: rights.money_hidden }, { value: "invoices", label: "Invoices", count: data.invoices.length, hidden: rights.money_hidden }, { value: "comments", label: "Comments", count: data.comments.length }]} />
     <div key={tab} className="animate-fade">
-      {tab === "loads" && <LoadsTab data={data} />}
-      {tab === "invoices" && <InvoicesTab data={data} />}
-      {tab === "comments" && <Card className="max-w-3xl"><CardHeader title="Comments" /><div className="space-y-6 p-5">
+      {tab === "loads" && !rights.money_hidden && <LoadsTab data={data} />}
+      {tab === "invoices" && !rights.money_hidden && <InvoicesTab data={data} />}
+      {(tab === "comments" || rights.money_hidden) && <Card className="max-w-3xl"><CardHeader title="Comments" /><div className="space-y-6 p-5">
         <Composer placeholder="Add a comment on this truck" pending={busy("comment")} onSubmit={async (body) => (await run("comment", "/api/v1/dispatch/comments", "POST", { entity_type: "TRUCK", entity_id: truck.id, body }, "Comment added.")) !== undefined} />
         <CommentFeed rows={data.comments} empty="No comments yet." busy={busy} onDelete={(row) => void run(`delete-comment:${row.id}`, `/api/v1/brokerage/comments/${row.id}`, "DELETE", undefined, "Comment deleted.")} />
       </div></Card>}
     </div>
     <DncModal open={dnc} onClose={() => setDnc(false)} onConfirm={(reason) => { setDnc(false); status("DNC", "Truck moved to the Do-Not-Call list.", { dnc_reason: reason }); }} />
   </div>;
+}
+
+/** What a Dispatch Sales Agent sees instead of gross: whether the truck has become an active sale. */
+function ActiveSaleCard({ since }: { since?: string | null }) {
+  return <Card className="flex items-center gap-4 px-5 py-4">
+    {since ? <CheckCircle2 size={22} className="text-success" /> : <Hourglass size={22} className="text-accent" />}
+    <div><p className="font-semibold">{since ? "Active sale" : "Not active yet"}</p><p className="text-sm text-muted">{since ? `The truck paid its first invoice on ${dateLabel(since)}.` : "It becomes an active sale when it pays its first invoice."}</p></div>
+  </Card>;
 }
 
 function DncModal({ open, onClose, onConfirm }: { open: boolean; onClose: () => void; onConfirm: (reason: string) => void }) {
@@ -111,21 +119,23 @@ function LoadsTab({ data }: { data: TruckDetail }) {
     loads.forEach((load) => groups.set(load.week_start ?? weekStart(load.pickup_date), [...(groups.get(load.week_start ?? weekStart(load.pickup_date)) ?? []), load]));
     return [...groups.entries()].sort(([left], [right]) => right.localeCompare(left));
   }, [loads]);
-  const lockedWeeks = new Set(data.invoices.filter((invoice) => !["DRAFT", "CANCELLED"].includes(invoice.status)).map((invoice) => invoice.week_start));
+  // A load on a submitted invoice is locked for the Dispatcher; managers can still change it.
+  const invoiceOf = new Map(data.invoices.map((invoice) => [invoice.id, invoice]));
+  const locked = (load: Load) => { const invoice = load.invoice_id ? invoiceOf.get(load.invoice_id) : undefined; return Boolean(invoice && invoice.status !== "DRAFT" && !rights.assign); };
   return <div className="space-y-4">
     {canLog && <div className="flex justify-end"><Button variant="primary" icon={<Plus size={15} />} onClick={() => setEditing("new")}>Log a load</Button></div>}
     {weeks.length ? weeks.map(([week, rows]) => { const gross = rows.filter((load) => load.status !== "CANCELLED").reduce((sum, load) => sum + Number(load.rate), 0); return <Card key={week}>
-      <CardHeader title={`Week ${weekLabel(week)}`} subtitle={`${rows.filter((load) => load.status !== "CANCELLED").length} loads · gross ${money(gross)}`} actions={lockedWeeks.has(week) ? <Chip tone="info">Invoiced</Chip> : undefined} />
+      <CardHeader title={`Week ${weekLabel(week)}`} subtitle={`${rows.filter((load) => load.status !== "CANCELLED").length} loads · gross ${money(gross)}`} />
       <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
         <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2 font-medium">Load</th><th className="px-3 py-2 font-medium">Pickup</th><th className="px-3 py-2 font-medium">Delivery</th><th className="px-3 py-2 font-medium">Status</th><th className="px-3 py-2 text-right font-medium">Miles</th><th className="px-3 py-2 text-right font-medium">Rate</th><th className="w-20" /></tr></thead>
         <tbody>{rows.map((load) => <tr key={load.id} className={cn("border-t border-line-soft", load.status === "CANCELLED" && "text-muted line-through decoration-ink/30")}>
-          <td className="px-5 py-2.5"><p className="font-medium">{load.load_number || "—"}</p><p className="text-xs text-muted no-underline">{load.broker_name || "No broker"}</p></td>
+          <td className="px-5 py-2.5"><p className="font-medium">{load.load_number || "—"}{load.invoice_id && <Link href={`/app/dispatch/invoices?open=${load.invoice_id}`} className="ml-2 no-underline"><Chip tone="info">{invoiceOf.get(load.invoice_id)?.invoice_number ? "Invoiced" : "On an invoice"}</Chip></Link>}</p><p className="text-xs text-muted no-underline">{load.broker_name || "No broker"}</p></td>
           <td className="px-3 py-2.5 text-[13px]">{[load.pickup_city, load.pickup_zip].filter(Boolean).join(" ") || "—"}<p className="text-xs text-muted">{dateLabel(load.pickup_date)}</p></td>
           <td className="px-3 py-2.5 text-[13px]">{[load.delivery_city, load.delivery_zip].filter(Boolean).join(" ") || "—"}<p className="text-xs text-muted">{dateLabel(load.delivery_date)}</p></td>
           <td className="px-3 py-2.5"><StatusChip status={load.status === "BOOKED" ? "PENDING" : load.status} label={loadStatusLabel[load.status]} /></td>
           <td className="px-3 py-2.5 text-right tabular-nums">{load.miles ?? "—"}</td>
           <td className="px-3 py-2.5 text-right font-semibold tabular-nums">{money(load.rate)}</td>
-          <td className="px-3 py-2.5 text-right">{rights.update && !lockedWeeks.has(week) && <span className="inline-flex gap-1">
+          <td className="px-3 py-2.5 text-right">{rights.update && !locked(load) && <span className="inline-flex gap-1">
             <Button size="sm" variant="ghost" aria-label="Edit load" onClick={() => setEditing(load)}><Pencil size={13} /></Button>
             <Button size="sm" variant="ghost" aria-label="Delete load" disabled={busy(`delete-load:${load.id}`)} onClick={() => void run(`delete-load:${load.id}`, `/api/v1/dispatch/loads/${load.id}`, "DELETE", undefined, "Load deleted.")} className="text-[#C4254B]"><Trash2 size={13} /></Button>
           </span>}</td>
@@ -167,32 +177,37 @@ function LoadModal({ truckId, load, onClose }: { truckId: string; load?: Load; o
   </Modal>;
 }
 
-/** DP-8 and answer 2: the Dispatcher creates the weekly invoice from that week's loads. */
+/** The Dispatcher picks which loads go on an invoice, from any week. A truck can have several invoices. */
 function InvoicesTab({ data }: { data: TruckDetail }) {
   const { truck, carrier, invoices, loads, rights } = data;
   const { run, busy } = useBrokerageAction();
-  const invoiced = new Set(invoices.filter((invoice) => invoice.status !== "CANCELLED").map((invoice) => invoice.week_start));
-  const thisWeek = weekStart();
-  const weeks = [...new Set(loads.filter((load) => load.status !== "CANCELLED").map((load) => load.week_start ?? weekStart(load.pickup_date)))].filter((week) => week <= thisWeek && !invoiced.has(week)).sort().reverse();
-  const [week, setWeek] = useState(weeks[0] ?? "");
-  const chosen = weeks.includes(week) ? week : weeks[0] ?? "";
-  const gross = loads.filter((load) => load.status !== "CANCELLED" && (load.week_start ?? weekStart(load.pickup_date)) === chosen).reduce((sum, load) => sum + Number(load.rate), 0);
+  const free = loads.filter((load) => !load.invoice_id && load.status !== "CANCELLED").sort((left, right) => left.pickup_date.localeCompare(right.pickup_date));
+  const [picked, setPicked] = useState<string[]>([]);
+  const chosen = free.filter((load) => picked.includes(load.id));
+  const gross = chosen.reduce((sum, load) => sum + Number(load.rate), 0);
   const fee = carrier.charge_percent == null ? null : gross * Number(carrier.charge_percent) / 100;
-  return <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
+  const toggle = (id: string) => setPicked((current) => current.includes(id) ? current.filter((value) => value !== id) : [...current, id]);
+  const create = () => void run("create-invoice", `/api/v1/dispatch/trucks/${truck.id}/invoices`, "POST", { load_ids: chosen.map((load) => load.id) }, "Invoice created as a draft.").then((result) => { if (result !== undefined) setPicked([]); });
+  return <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
     <Card>
-      <CardHeader title="Weekly invoices" subtitle="Invoice = week's gross × the carrier's charge %" />
+      <CardHeader title="Invoices" subtitle="Invoice = gross of its loads × the carrier's charge %" />
       {invoices.length ? <ul className="divide-y divide-line-soft">{invoices.map((invoice) => <li key={invoice.id}><Link href={`/app/dispatch/invoices?open=${invoice.id}`} className="flex flex-wrap items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]">
-        <div className="min-w-0 flex-1"><p className="font-semibold">{invoice.invoice_number}</p><p className="text-xs text-muted">Week {weekLabel(invoice.week_start)} · gross {money(invoice.gross_amount)} × {pct(invoice.charge_percent)}</p></div>
+        <div className="min-w-0 flex-1"><p className="font-semibold">{invoice.invoice_number}</p><p className="text-xs text-muted">{weekLabel(invoice.week_start)} · gross {money(invoice.gross_amount)} × {pct(invoice.charge_percent)}</p></div>
         <b className="tabular-nums">{money(invoice.amount)}</b><StatusChip status={invoice.status} label={invoiceStatusLabel[invoice.status]} />
-      </Link></li>)}</ul> : <p className="p-6 text-center text-sm text-muted">No weekly invoices yet.</p>}
+      </Link></li>)}</ul> : <p className="p-6 text-center text-sm text-muted">No invoices yet.</p>}
     </Card>
-    {rights.update && <Card className="h-fit"><CardHeader title="Create weekly invoice" /><div className="space-y-4 p-5">
+    {rights.update && <Card className="h-fit"><CardHeader title="Create an invoice" subtitle="Choose the loads to bill" /><div className="space-y-4 p-5">
       {carrier.charge_percent == null ? <p className="rounded-[12px] bg-[#FFF6E8] px-4 py-3 text-sm text-[#7C4400]">Set the carrier&apos;s charge % on the <Link href={`/app/dispatch/carriers/${carrier.id}`} className="font-semibold underline">carrier</Link> first.</p>
-        : weeks.length ? <>
-          <SelectField label="Week" required value={chosen} onChange={(event) => setWeek(event.target.value)} options={weeks.map((value) => ({ value, label: `${weekLabel(value)}${value === thisWeek ? " (this week)" : ""}` }))} />
-          <dl className="grid grid-cols-2 gap-y-2 rounded-[12px] bg-[#FBFAF7] p-4 text-sm"><dt className="text-muted">Gross</dt><dd className="text-right font-semibold tabular-nums">{money(gross)}</dd><dt className="text-muted">Charge</dt><dd className="text-right">{pct(carrier.charge_percent)}</dd><dt className="text-muted">Invoice</dt><dd className="text-right text-base font-bold tabular-nums">{money(fee)}</dd><dt className="text-muted">Due</dt><dd className="text-right">{dateLabel(addDays(chosen, 13))}</dd></dl>
-          <Button variant="primary" className="w-full" icon={<ReceiptText size={15} />} pending={busy("create-invoice")} pendingLabel="Creating…" onClick={() => void run("create-invoice", `/api/v1/dispatch/trucks/${truck.id}/invoices`, "POST", { week_start: chosen }, "Weekly invoice created as a draft.")}>Create invoice</Button>
-        </> : <p className="text-sm text-muted">Every week with loads is already invoiced.</p>}
+        : free.length ? <>
+          <div className="flex items-center justify-between text-xs"><span className="text-muted">{free.length} load{free.length === 1 ? "" : "s"} not invoiced yet</span><button type="button" className="font-semibold text-brand-deep hover:underline" onClick={() => setPicked(picked.length === free.length ? [] : free.map((load) => load.id))}>{picked.length === free.length ? "Clear" : "Select all"}</button></div>
+          <ul className="max-h-72 divide-y divide-line-soft overflow-y-auto rounded-[12px] border border-line-soft">{free.map((load) => <li key={load.id}><label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm hover:bg-[#FAF8F4]">
+            <input type="checkbox" checked={picked.includes(load.id)} onChange={() => toggle(load.id)} className="h-4 w-4 accent-[var(--color-brand)]" />
+            <span className="min-w-0 flex-1"><span className="block truncate font-medium">{load.load_number || [load.pickup_city, load.delivery_city].filter(Boolean).join(" → ") || "Load"}</span><span className="block text-xs text-muted">{dateLabel(load.pickup_date)} · {weekLabel(load.week_start ?? weekStart(load.pickup_date))}</span></span>
+            <b className="tabular-nums">{money(load.rate)}</b>
+          </label></li>)}</ul>
+          <dl className="grid grid-cols-2 gap-y-2 rounded-[12px] bg-[#FBFAF7] p-4 text-sm"><dt className="text-muted">Loads</dt><dd className="text-right">{chosen.length}</dd><dt className="text-muted">Gross</dt><dd className="text-right font-semibold tabular-nums">{money(gross)}</dd><dt className="text-muted">Charge</dt><dd className="text-right">{pct(carrier.charge_percent)}</dd><dt className="text-muted">Invoice</dt><dd className="text-right text-base font-bold tabular-nums">{money(fee)}</dd>{chosen[0] && <><dt className="text-muted">Due</dt><dd className="text-right">{dateLabel(addDays(weekStart(chosen[0].pickup_date), 13))}</dd></>}</dl>
+          <Button variant="primary" className="w-full" icon={<ReceiptText size={15} />} disabled={!chosen.length} pending={busy("create-invoice")} pendingLabel="Creating…" onClick={create}>Create invoice</Button>
+        </> : <p className="text-sm text-muted">Every load is already on an invoice.</p>}
     </div></Card>}
   </div>;
 }

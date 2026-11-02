@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, ChevronRight, LockKeyhole, Plus, Search, Unlock, UserPlus, UsersRound } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, LockKeyhole, Plus, Search, Trash2, Unlock, UserPlus, UsersRound } from "lucide-react";
 import { use, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { useToast } from "@/components/ui/toast";
@@ -60,22 +60,32 @@ export function UsersScreen() {
   </div>;
 }
 
-const blank = { full_name: "", email: "", password: "", role: "AGENT", department_id: "" };
+const blank = { full_name: "", email: "", password: "", role: "AGENT", department_id: "", sales_agent_id: "" };
+
+const isFronterDepartment = (department?: { business_unit?: string; function?: string } | null) => department?.business_unit === "BROKERAGE" && department?.function === "FRONTER";
+/** Active Brokerage Sales agents, for linking a Fronter to the agent their qualified leads go to. */
+function salesAgentOptions(users: AdminUser[]) {
+  return users.filter((user) => user.is_active && user.role === "AGENT" && user.departments?.business_unit === "BROKERAGE" && user.departments?.function === "SALES").map((user) => ({ value: user.id, label: user.full_name }));
+}
 
 function NewUser({ onClose }: { onClose: () => void }) {
   const departments = useDepartments();
+  const users = useUsers();
   const notify = useToast();
   const { run, busy } = useAdminAction();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState(blank);
   const pending = busy("create");
   const active = (departments.data ?? []).filter((department) => department.is_active);
+  const fronter = form.role !== "SUPER_ADMIN" && isFronterDepartment(active.find((department) => department.id === form.department_id));
+  const agents = salesAgentOptions(users.data ?? []);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (step === 0) return setStep(1);
     if (form.role !== "SUPER_ADMIN" && !form.department_id) return notify("Select a department before creating this user.", "error");
-    if (await run("create", "/api/v1/users", "POST", form, "User account created and ready to sign in.", "Unable to create user.")) onClose();
+    if (fronter && !form.sales_agent_id) return notify("Choose the Sales agent this Fronter works for.", "error");
+    if (await run("create", "/api/v1/users", "POST", { ...form, sales_agent_id: fronter ? form.sales_agent_id : null }, "User account created and ready to sign in.", "Unable to create user.")) onClose();
   };
 
   return <Modal open onClose={onClose} dismissible={!pending} title="New user" subtitle={step === 0 ? "Step 1 of 2 · Identity" : "Step 2 of 2 · Access"}
@@ -93,6 +103,7 @@ function NewUser({ onClose }: { onClose: () => void }) {
           <SelectField label="Role" required value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value, department_id: event.target.value === "SUPER_ADMIN" ? "" : form.department_id })} options={roles.map((role) => ({ value: role, label: roleLabel[role] }))} />
           {form.role === "SUPER_ADMIN" ? <p className="rounded-control bg-brand-tint px-4 py-3 text-sm text-[#7C4400]">Organization-wide access, not tied to a department.</p>
             : <SelectField label="Department" required value={form.department_id} placeholder="Select department" onChange={(event) => setForm({ ...form, department_id: event.target.value })} options={active.map((department) => ({ value: department.id, label: department.name }))} />}
+          {fronter && <SelectField label="Sales agent" required hint="The leads this Fronter qualifies go to this agent." value={form.sales_agent_id} placeholder={agents.length ? "Choose a Sales agent" : "No active Brokerage Sales agents"} onChange={(event) => setForm({ ...form, sales_agent_id: event.target.value })} options={agents} />}
         </>}
       </fieldset>
     </form>
@@ -110,21 +121,26 @@ export function UserScreen({ userId }: { userId: string }) {
   const user = users.data?.find((item) => item.id === userId);
   if (users.isLoading || departments.isLoading) return <div className="mx-auto max-w-3xl space-y-4"><Skeleton className="h-16 w-80" /><Skeleton className="h-72 rounded-card" /></div>;
   if (users.isError || !user) return <EmptyState title="User not found" body={users.error?.message} action={<LinkButton href="/app/admin/users" variant="ink">Back to users</LinkButton>} className="mt-10" />;
-  return <UserView key={user.id} user={user} departments={departments.data ?? []} />;
+  return <UserView key={user.id} user={user} departments={departments.data ?? []} agents={salesAgentOptions(users.data ?? []).filter((agent) => agent.value !== user.id)} />;
 }
 
-function UserView({ user, departments }: { user: AdminUser; departments: Department[] }) {
+function UserView({ user, departments, agents }: { user: AdminUser; departments: Department[]; agents: { value: string; label: string }[] }) {
   const notify = useToast();
+  const router = useRouter();
   const { run, busy } = useAdminAction();
-  const initial = { full_name: user.full_name, role: user.role, department_id: user.departments?.id ?? "" };
+  const [deleting, setDeleting] = useState(false);
+  const remove = async () => { if (await run("delete", `/api/v1/users/${user.id}`, "DELETE", undefined, `${user.full_name} deleted.`, "Unable to delete this user.")) { setDeleting(false); router.push("/app/admin/users"); } };
+  const initial = { full_name: user.full_name, role: user.role, department_id: user.departments?.id ?? "", sales_agent_id: user.sales_agent_id ?? "" };
   const [form, setForm] = useState(initial);
   const [confirming, setConfirming] = useState(false);
-  const dirty = form.full_name !== initial.full_name || form.role !== initial.role || form.department_id !== initial.department_id;
+  const fronter = form.role !== "SUPER_ADMIN" && isFronterDepartment(departments.find((department) => department.id === form.department_id));
+  const dirty = form.full_name !== initial.full_name || form.role !== initial.role || form.department_id !== initial.department_id || (fronter && form.sales_agent_id !== initial.sales_agent_id);
 
   const save = (event: FormEvent) => {
     event.preventDefault();
     if (form.role !== "SUPER_ADMIN" && !form.department_id) return notify("Choose a department for this user.", "error");
-    void run("update", `/api/v1/users/${user.id}`, "PATCH", { full_name: form.full_name, role: form.role, department_id: form.role === "SUPER_ADMIN" ? null : form.department_id }, "User access updated.", "Unable to update this user.");
+    if (fronter && !form.sales_agent_id) return notify("Choose the Sales agent this Fronter works for.", "error");
+    void run("update", `/api/v1/users/${user.id}`, "PATCH", { full_name: form.full_name, role: form.role, department_id: form.role === "SUPER_ADMIN" ? null : form.department_id, sales_agent_id: fronter ? form.sales_agent_id : null }, "User access updated.", "Unable to update this user.");
   };
   const setActive = async (is_active: boolean) => {
     if (await run("status", `/api/v1/users/${user.id}`, "PATCH", { is_active }, is_active ? "User reactivated." : "User deactivated. Their login is now blocked.", "Unable to update user status.")) setConfirming(false);
@@ -143,6 +159,7 @@ function UserView({ user, departments }: { user: AdminUser; departments: Departm
           <SelectField label="Role" required value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value, department_id: event.target.value === "SUPER_ADMIN" ? "" : form.department_id })} options={roles.map((role) => ({ value: role, label: roleLabel[role] }))} />
           {form.role === "SUPER_ADMIN" ? <p className="self-end rounded-control bg-brand-tint px-4 py-3 text-sm text-[#7C4400]">Organization-wide access.</p>
             : <SelectField label="Department" required value={form.department_id} placeholder="Select department" onChange={(event) => setForm({ ...form, department_id: event.target.value })} options={departments.filter((department) => department.is_active || department.id === form.department_id).map((department) => ({ value: department.id, label: department.name }))} />}
+          {fronter && <SelectField label="Sales agent" required hint="The leads this Fronter qualifies go to this agent." value={form.sales_agent_id} placeholder="Choose a Sales agent" onChange={(event) => setForm({ ...form, sales_agent_id: event.target.value })} options={agents} wrapperClassName="sm:col-span-2" />}
         </fieldset>
         <div className="mt-6 flex justify-end gap-2">
           {dirty && <Button variant="ghost" onClick={() => setForm(initial)} disabled={busy("update")}>Discard</Button>}
@@ -160,6 +177,19 @@ function UserView({ user, departments }: { user: AdminUser; departments: Departm
           : <Button variant="success" icon={<Unlock size={15} />} pending={busy("status")} pendingLabel="Restoring…" onClick={() => void setActive(true)} disabled={busy() && !busy("status")}>Restore access</Button>}
       </div>
     </Card>
+
+    <Card>
+      <CardHeader title="Delete user" />
+      <div className="flex flex-wrap items-center justify-between gap-4 p-5">
+        <p className="max-w-lg text-sm text-muted">Removes the account for good. Only possible while the user has no work in the CRM (leads, loads, messages, history). Otherwise deactivate them.</p>
+        <Button variant="ghost" icon={<Trash2 size={15} />} onClick={() => setDeleting(true)} disabled={busy()} className="text-[#C4254B]">Delete user</Button>
+      </div>
+    </Card>
+
+    <Modal open={deleting} onClose={() => setDeleting(false)} dismissible={!busy("delete")} title="Delete this user?"
+      footer={<><Button variant="ghost" onClick={() => setDeleting(false)} disabled={busy("delete")}>Cancel</Button><Button variant="danger" icon={<Trash2 size={15} />} pending={busy("delete")} pendingLabel="Deleting…" onClick={() => void remove()}>Delete user</Button></>}>
+      <p className="text-sm text-muted"><b className="text-ink">{user.full_name}</b> and their login are removed permanently. This can&apos;t be undone.</p>
+    </Modal>
 
     <Modal open={confirming} onClose={() => setConfirming(false)} dismissible={!busy("status")} title="Deactivate user?"
       footer={<><Button variant="ghost" onClick={() => setConfirming(false)} disabled={busy("status")}>Cancel</Button><Button variant="danger" icon={<LockKeyhole size={15} />} pending={busy("status")} pendingLabel="Deactivating…" onClick={() => void setActive(false)}>Deactivate</Button></>}>

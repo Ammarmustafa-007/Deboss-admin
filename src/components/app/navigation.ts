@@ -47,8 +47,8 @@ export function fronterNavigation({ manager }: FronterAccess): NavGroup[] {
     { href: "/app/access", label: "Fronter access", icon: ShieldCheck, tone: "info" },
     ...managerPeople,
   ] });
+  // Client feedback: Fronters have no Reports page.
   groups.push({ label: "Insights", items: [
-    { href: "/app/reports", label: "Reports", icon: BarChart3, tone: "info" },
     { href: "/app/notifications", label: "Notifications", icon: Bell, tone: "danger", hidden: true },
   ] });
   return groups;
@@ -59,7 +59,7 @@ type BrokerageAccess = { sales: boolean; manager: boolean; canMarkInvoiceReady: 
 /** Mirrors the permission rules of the original section switcher. */
 export function brokerageNavigation({ sales, manager, canMarkInvoiceReady }: BrokerageAccess): NavGroup[] {
   const work: NavItem[] = [{ href: "/app", label: "Dashboard", icon: LayoutDashboard, tone: "brand" }];
-  if (sales) work.push({ href: "/app/sales", label: "Sales", icon: TrendingUp, tone: "aqua" }, { href: "/app/customers", label: "Customers", icon: Contact, tone: "accent" });
+  if (sales) work.push({ href: "/app/sales", label: "Sales", icon: TrendingUp, tone: "aqua" }, { href: "/app/customers", label: "Customers", icon: Contact, tone: "accent" }, { href: "/app/sales/mining", label: "Fronter mining sheet", icon: Sheet, tone: "brand" });
   else work.push({ href: "/app/operations", label: "Operations", icon: Truck, tone: "aqua" });
   if (!sales && (manager || canMarkInvoiceReady)) work.push({ href: "/app/invoices", label: "Invoices", icon: ReceiptText, tone: "success" });
 
@@ -84,7 +84,7 @@ export function dispatchNavigation({ sales, manager, invoices }: DispatchAccess)
   const work: NavItem[] = [{ href: "/app", label: "Dashboard", icon: LayoutDashboard, tone: "brand" }];
   if (sales) work.push({ href: "/app/dispatch/carriers", label: "Carriers", icon: Container, tone: "aqua" });
   else work.push({ href: "/app/dispatch/trucks", label: "Trucks", icon: Truck, tone: "aqua" }, { href: "/app/dispatch/loads", label: "Loads", icon: MapPinned, tone: "accent" });
-  if (!sales || invoices) work.push({ href: "/app/dispatch/invoices", label: "Weekly invoices", icon: ReceiptText, tone: "success" });
+  if (!sales || invoices) work.push({ href: "/app/dispatch/invoices", label: "Invoices", icon: ReceiptText, tone: "success" });
   work.push({ href: "/app/dispatch/dnc", label: "Do-not-call list", icon: Ban, tone: "danger" });
   const groups: NavGroup[] = [{ label: "Workspace", items: work }];
   if (manager) groups.push({ label: "Management", items: [

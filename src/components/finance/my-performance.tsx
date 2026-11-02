@@ -11,10 +11,10 @@ const paidOnProfit = (progress: Progress) => progress.role_key.endsWith("MANAGER
 
 /** One line on where someone stands against their commission levels. Progress only: no pay figures. */
 export function progressNote(progress: Progress) {
-  if (progress.role_key === "BROKERAGE_FRONTER_AGENT") return "Paid for each lead qualified this month.";
+  if (progress.role_key === "BROKERAGE_FRONTER_AGENT") return "";
   if (paidOnProfit(progress)) return "Your department's income this month.";
   if (progress.role_key === "DISPATCH_SALES_AGENT") return progress.reached ? `Target met: ${progress.rate}% commission level.` : `${progress.sales_to_target} more active sale${progress.sales_to_target === 1 ? "" : "s"} to reach the ${progress.next_rate}% level.`;
-  if (!progress.reached) return `${cash((progress.target ?? 0) - progress.gross)} to the first target of ${cash(progress.target)}.`;
+  if (!progress.reached) return `${cash((progress.target ?? 0) - (progress.gross ?? 0))} to the first target of ${cash(progress.target)}.`;
   return progress.next_level ? `At the ${progress.rate}% level. ${cash(progress.to_next)} to reach ${progress.next_rate}%.` : `At the top level, ${progress.rate}%.`;
 }
 
@@ -39,10 +39,12 @@ export function MyPerformance() {
       : !progress ? <p className="mt-5 text-sm text-muted">Nothing to show for this month.</p>
       : <>
         <div className="mt-5 flex flex-wrap items-end gap-x-8 gap-y-4">
-          <div><p className="text-xs text-muted">{fronter ? "Qualified leads" : grossLabel(progress)}</p><p className="text-3xl font-bold tracking-tight tabular-nums">{fronter ? progress.qualified_leads : cash(progress.gross)}</p></div>
-          {progress.active_sales != null && <div><p className="text-xs text-muted">Active sales</p><p className="font-semibold tabular-nums">{progress.active_sales} of {progress.active_sales_target}</p></div>}
+          {progress.gross == null && progress.active_sales != null
+            ? <div><p className="text-xs text-muted">Active sales</p><p className="text-3xl font-bold tracking-tight tabular-nums">{progress.active_sales} <span className="text-base font-medium text-muted">of {progress.active_sales_target}</span></p></div>
+            : <div><p className="text-xs text-muted">{fronter ? "Qualified leads" : grossLabel(progress)}</p><p className="text-3xl font-bold tracking-tight tabular-nums">{fronter ? progress.qualified_leads : cash(progress.gross)}</p></div>}
+          {progress.active_sales != null && progress.gross != null && <div><p className="text-xs text-muted">Active sales</p><p className="font-semibold tabular-nums">{progress.active_sales} of {progress.active_sales_target}</p></div>}
         </div>
-        <p className="mt-3 text-sm text-muted">{progressNote(progress)}</p>
+        {progressNote(progress) && <p className="mt-3 text-sm text-muted">{progressNote(progress)}</p>}
       </>}
   </Card>;
 }

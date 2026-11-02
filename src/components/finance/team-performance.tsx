@@ -19,7 +19,7 @@ export function TeamPerformanceScreen() {
       : <Card>{people.length ? <ul className="divide-y divide-line-soft">{people.map((person) => <li key={person.user_id} className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-4">
         <div className="flex min-w-56 flex-1 items-center gap-3"><Avatar name={person.full_name} /><div className="min-w-0"><p className="truncate font-semibold">{person.full_name}</p><p className="truncate text-xs text-muted">{roleLabel[person.role_key]} · {person.department_name ?? "—"}</p></div></div>
         <div className="min-w-32"><p className="text-xs text-muted">{person.role_key === "BROKERAGE_FRONTER_AGENT" ? "Qualified leads" : grossLabel(person)}</p><p className="font-semibold tabular-nums">{person.role_key === "BROKERAGE_FRONTER_AGENT" ? person.qualified_leads : cash(person.gross)}{person.active_sales != null ? ` · ${person.active_sales} active` : ""}</p></div>
-        <p className="min-w-64 flex-1 text-sm text-muted">{progressNote(person)}</p>
+        <p className="min-w-64 flex-1 text-sm text-muted">{progressNote(person) || "Qualified leads this month."}</p>
       </li>)}</ul> : <EmptyState icon={Gauge} title="No one to show" body="People appear here once they are in a department." />}</Card>}
   </div>;
 }

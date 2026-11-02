@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, BarChart3, Boxes, CheckCircle2, ChevronDown, Download, Lock, Maximize2, Plus, Search, Sheet as SheetIcon, Target, Trash2, UserRoundCheck } from "lucide-react";
+import { AlertTriangle, BarChart3, Boxes, CheckCircle2, ChevronDown, Download, Lock, Maximize2, PanelRightOpen, Plus, Search, Sheet as SheetIcon, Trash2, UserRoundCheck } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { dateLabel, money } from "@/lib/format";
@@ -26,6 +26,8 @@ export type Prospect = {
   payment_terms: string | null; w9_received: boolean; ein: string | null; source: string | null; website: string | null; notes: string | null;
   status: string; assigned_to: string | null; assigned_name: string | null; created_by: string; created_by_name: string | null; lead_id: string | null; lead_stage: string | null;
   qualified_at: string | null; created_at: string; editable: boolean;
+  /** Brokerage Sales see their Fronters' rows and change the status only; the Fronter fills in the details. */
+  fields_locked?: boolean;
 };
 type Commodity = { id: string; commodity: string; trucks_used: string | null; best_states: string | null; notes: string | null; created_by_name: string | null; editable: boolean };
 
@@ -49,10 +51,6 @@ function useProspects() {
   const { api } = useBrokerage();
   return useQuery({ queryKey: keys.prospects, queryFn: async () => (await responseData<{ prospects: Prospect[] }>(await api("/api/v1/fronter/prospects"))).prospects, staleTime: 10_000 });
 }
-function useSalesAgents() {
-  const { api } = useBrokerage();
-  return useQuery({ queryKey: keys.agents, queryFn: async () => (await responseData<{ agents: { id: string; full_name: string; department: string }[] }>(await api("/api/v1/fronter/sales-agents"))).agents, staleTime: 60_000 });
-}
 
 /** Plain CSV download (UTF-8 with BOM so Excel opens accents and emoji correctly). */
 function downloadCsv(fileName: string, header: string[], rows: unknown[][]) {
@@ -64,7 +62,6 @@ function downloadCsv(fileName: string, header: string[], rows: unknown[][]) {
 
 // ---- Lead mining ------------------------------------------------------------------------------------------------
 type Filter = "all" | "NEW" | "CONTACTED" | "QUALIFIED" | "closed";
-type Agent = { id: string; full_name: string; department: string };
 
 const statusPill: Record<string, string> = {
   NEW: "border-[#D9E0EA] bg-[#EEF2F7] text-[#3B4A63]",
@@ -75,7 +72,7 @@ const statusPill: Record<string, string> = {
 };
 const pillSelect = "h-7 w-full cursor-pointer appearance-none rounded-full border pl-3 pr-7 text-xs font-semibold outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-60";
 
-/** Status as a coloured pill; picking Qualified asks for the Sales agent first. A qualified row shows its pill (and Customer once converted). */
+/** Status as a coloured pill; picking Qualified asks to confirm first. A qualified row shows its pill (and Customer once converted). */
 function StatusPill({ row, disabled, compact, onChange }: { row: Prospect; disabled?: boolean; compact?: boolean; onChange: (status: string) => void }) {
   // Same wrapper in both branches, so the change from a dropdown to the Qualified badge animates (with sparkles).
   if (row.status === "QUALIFIED") return <StatusMotion status={row.status} className="items-center gap-1.5">
@@ -92,22 +89,12 @@ function StatusPill({ row, disabled, compact, onChange }: { row: Prospect; disab
   </StatusMotion>;
 }
 
-function AssignSelect({ row, agents, disabled, compact, onChange }: { row: Prospect; agents: Agent[]; disabled?: boolean; compact?: boolean; onChange: (agentId: string | null) => void }) {
-  if (row.status === "QUALIFIED") return <span className={cn("font-medium", compact ? "text-[12px]" : "text-[13px]")}>{row.assigned_name ?? "—"}</span>;
-  return <span className="relative block">
-    <select aria-label={`Assign ${row.company_name}`} value={row.assigned_to ?? ""} disabled={disabled} onChange={(event) => onChange(event.target.value || null)} className={cn(pillSelect, compact && "h-6 pl-2.5 text-[11px]", "border-line bg-white font-medium", row.assigned_to ? "text-ink" : "text-muted")}>
-      <option value="">{compact ? "Choose agent" : "Choose Sales agent"}</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}
-    </select>
-    <ChevronDown size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted" />
-  </span>;
-}
-
-export function MiningScreen() {
+/** The Fronter's lead mining sheet. With `salesView`, a Sales agent's read-only view of their Fronters' rows, where only the status changes. */
+export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
   const { api, report, manager } = useBrokerage();
   const { profile } = useSession();
   const queryClient = useQueryClient();
   const prospects = useProspects();
-  const agents = useSalesAgents();
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
   const [newName, setNewName] = useState("");
@@ -116,7 +103,6 @@ export function MiningScreen() {
   const [openId, setOpenId] = useState<string | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const list = useMemo(() => prospects.data ?? [], [prospects.data]);
-  const agentList = agents.data ?? [];
   const opened = list.find((row) => row.id === openId) ?? null;
   const refresh = () => queryClient.invalidateQueries({ queryKey: keys.prospects });
   const setBusy = (id: string, value: boolean) => setBusyIds((current) => { const next = new Set(current); if (value) next.add(id); else next.delete(id); return next; });
@@ -124,14 +110,12 @@ export function MiningScreen() {
   const patch = async (row: Prospect, body: Record<string, unknown>, success?: string) => {
     setBusy(row.id, true);
     // Show the edit straight away; the server reply (or a refresh on error) settles it.
-    const assignee = "assigned_to" in body ? { assigned_name: agentList.find((agent) => agent.id === body.assigned_to)?.full_name ?? null } : {};
-    queryClient.setQueryData<Prospect[]>(keys.prospects, (current) => current?.map((item) => item.id === row.id ? { ...item, ...body, ...assignee } as Prospect : item));
+    queryClient.setQueryData<Prospect[]>(keys.prospects, (current) => current?.map((item) => item.id === row.id ? { ...item, ...body } as Prospect : item));
     try { await responseData(await api(`/api/v1/fronter/prospects/${row.id}`, { method: "PATCH", body: JSON.stringify(body) })); if (success) report(success); return true; }
     catch (error) { report(errorMessage(error), "error"); return false; }
     finally { setBusy(row.id, false); void refresh(); }
   };
   const setStatus = (row: Prospect, status: string) => status === "QUALIFIED" ? setQualifying(row) : void patch(row, { status });
-  const assign = (row: Prospect, agentId: string | null) => void patch(row, { assigned_to: agentId }, agentId ? "Sales agent chosen. Mark the row Qualified to send it." : undefined);
   const addRows = async (rows: Record<string, unknown>[], success: (added: number, skipped: number) => string) => {
     try {
       const result = await responseData<{ added: number; skipped: { row: number; error: string }[] }>(await api("/api/v1/fronter/prospects", { method: "POST", body: JSON.stringify({ rows }) }));
@@ -140,7 +124,7 @@ export function MiningScreen() {
       return true;
     } catch (error) { report(errorMessage(error), "error"); return false; }
   };
-  const quickAdd = async (event: FormEvent) => { event.preventDefault(); if (!newName.trim()) return; if (await addRows([{ company_name: newName.trim() }], () => "Row added. Open it to fill in the details.")) setNewName(""); };
+  const quickAdd = async (event: FormEvent) => { event.preventDefault(); if (!newName.trim()) return; if (await addRows([{ company_name: newName.trim() }], () => "Row added. Fill in its details in the list.")) setNewName(""); };
   const remove = async (row: Prospect) => {
     if (!window.confirm(`Delete ${row.company_name}?`)) return false;
     setBusy(row.id, true);
@@ -159,8 +143,8 @@ export function MiningScreen() {
   ];
   const term = search.trim().toLowerCase();
   const visible = list.filter((row) => (filter === "all" || (filter === "closed" ? ["NOT_QUALIFIED", "NOT_INTERESTED"].includes(row.status) : row.status === filter))
-    && (!term || [row.company_name, row.operator_name, row.shipping_contact, row.phone, row.email, row.commodity, row.lanes, row.assigned_name].some((value) => value?.toLowerCase().includes(term))));
-  const exportColumns = [{ header: "Company name", key: "company_name" }, ...fieldColumns.map((column) => ({ header: fullLabels[column.key] ?? column.label, key: column.key })), { header: "Status", key: "status_label", type: "status" as const }, { header: "Assigned to", key: "assigned_name" }, { header: "Mined by", key: "created_by_name" }, { header: "Added", key: "created_at", type: "date" as const }];
+    && (!term || [row.company_name, row.operator_name, row.shipping_contact, row.phone, row.email, row.commodity, row.lanes, row.website].some((value) => value?.toLowerCase().includes(term))));
+  const exportColumns = [{ header: "Company name", key: "company_name" }, ...fieldColumns.map((column) => ({ header: fullLabels[column.key] ?? column.label, key: column.key })), { header: "Status", key: "status_label", type: "status" as const }, { header: "Mined by", key: "created_by_name" }, { header: "Added", key: "created_at", type: "date" as const }];
   const exportRows = () => visible.map((row) => ({ ...row, status_label: prospectStatusLabel[row.status], w9_received: row.w9_received ? "Yes" : "No", load_type: row.load_type === "BOTH" ? "Both" : row.load_type }));
   const exportName = `Lead mining ${new Date().toISOString().slice(0, 10)}`;
   const exportSheet = () => void downloadExcel(exportName, [{ name: "Lead mining", title: "Lead mining", columns: exportColumns, rows: exportRows() }], { exportedBy: profile.full_name });
@@ -171,21 +155,33 @@ export function MiningScreen() {
       <Tabs items={tabs} value={filter} onChange={setFilter} className="min-w-0 flex-1" />
       <div className="relative lg:w-72"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search companies, contacts, lanes" aria-label="Search lead mining" className={cn(controlClass, "h-10 pl-9")} /></div>
     </div>
-    <form onSubmit={quickAdd} className="flex flex-col gap-2 sm:flex-row">
+    {!salesView && <form onSubmit={quickAdd} className="flex flex-col gap-2 sm:flex-row">
       <input value={newName} onChange={(event) => setNewName(event.target.value)} maxLength={180} placeholder="New company: type a name and press Enter" aria-label="New company name" className={cn(controlClass, "h-10 sm:flex-1")} />
       <Button type="submit" variant="ink" icon={<Plus size={15} />} disabled={!newName.trim()}>Add company</Button>
-    </form>
+    </form>}
   </>;
   const sheetColumns: SheetColumn<Prospect>[] = [
     { key: "company_name", label: "Company", width: 165, required: true, sticky: true },
     { key: "status", label: "Status", width: 138, render: (row) => <StatusPill compact row={row} disabled={!row.editable || busyIds.has(row.id)} onChange={(status) => setStatus(row, status)} /> },
-    { key: "assigned_to", label: "Assign to", width: 150, render: (row) => <AssignSelect compact row={row} agents={agentList} disabled={!row.editable || busyIds.has(row.id)} onChange={(agentId) => assign(row, agentId)} /> },
     ...fieldColumns.map((column) => ({ ...column, placeholder: "" })),
-    ...(manager ? [{ key: "created_by_name" as const, label: "Mined by", width: 115, render: (row: Prospect) => <span className="text-ink/70">{row.created_by_name}</span> }] : []),
+    ...(manager || salesView ? [{ key: "created_by_name" as const, label: salesView ? "Fronter" : "Mined by", width: 115, render: (row: Prospect) => <span className="text-ink/70">{row.created_by_name}</span> }] : []),
+  ];
+
+  // The list page: the columns Fronters fill most, edited in place. Every other column is in the full sheet or the details card.
+  const listColumns: SheetColumn<Prospect>[] = [
+    { key: "id", label: "", width: 40, render: (row) => <button type="button" aria-label={`Open ${row.company_name}`} title="All details" onClick={() => setOpenId(row.id)} className="grid h-6 w-6 place-items-center rounded-md text-muted hover:bg-brand-tint hover:text-brand-deep"><PanelRightOpen size={14} /></button> },
+    { key: "company_name", label: "Company", width: 210, required: true },
+    { key: "shipping_contact", label: "Contact", width: 170, placeholder: "" },
+    { key: "email", label: "Email", width: 210, placeholder: "" },
+    { key: "website", label: "Website", width: 190, placeholder: "" },
+    { key: "commodity", label: "Commodity", width: 160, placeholder: "" },
+    { key: "status", label: "Status", width: 200, render: (row) => <StatusPill compact row={row} disabled={!row.editable || busyIds.has(row.id)} onChange={(status) => setStatus(row, status)} /> },
+    ...(manager || salesView ? [{ key: "created_by_name" as const, label: salesView ? "Fronter" : "Mined by", width: 130, render: (row: Prospect) => <span className="text-ink/70">{row.created_by_name}</span> }] : []),
+    { key: "created_at", label: "Added", width: 105, render: (row) => <span className="text-muted">{dateLabel(row.created_at)}</span> },
   ];
 
   return <div className="space-y-5 animate-rise">
-    <PageHeader title="Lead mining" subtitle="Click a company to see and edit everything about it. Open the sheet to work on every column at once."
+    <PageHeader title={salesView ? "Fronter mining sheet" : "Lead mining"} subtitle={salesView ? "The companies your Fronters are mining. Mark one Qualified to take it as your lead." : "Type straight into the list, or paste rows from Excel. Open a row for every detail, or the sheet for all columns."}
       actions={<div className="flex flex-wrap gap-2">
         <Button variant="outline" icon={<Download size={15} />} disabled={!visible.length} onClick={exportCsv}>Export CSV</Button>
         <Button variant="outline" icon={<Download size={15} />} disabled={!visible.length} onClick={exportSheet}>Export Excel</Button>
@@ -201,35 +197,23 @@ export function MiningScreen() {
       <div className="space-y-3 p-4">{tools}</div>
       {prospects.isLoading ? <div className="p-4"><Skeleton className="h-64" /></div>
         : prospects.isError ? <EmptyState icon={AlertTriangle} title="Lead mining unavailable" body={errorMessage(prospects.error)} />
-        : visible.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
-            <thead><tr className="border-y border-line-soft bg-[#FAF8F4] text-left text-xs text-muted">
-              <th className="min-w-[220px] px-5 py-2.5 font-medium">Company</th><th className="px-3 py-2.5 font-medium">Contact</th><th className="px-3 py-2.5 font-medium">Commodity</th>
-              <th className="w-44 px-3 py-2.5 font-medium">Status</th><th className="w-48 px-3 py-2.5 font-medium">Assigned to</th>{manager && <th className="px-3 py-2.5 font-medium">Mined by</th>}<th className="px-5 py-2.5 text-right font-medium">Added</th>
-            </tr></thead>
-            <tbody>{visible.map((row) => <tr key={row.id} className={cn("border-b border-line-soft last:border-0 hover:bg-[#FCFBF8]", busyIds.has(row.id) && "opacity-60")}>
-              <td className="px-5 py-3"><button type="button" onClick={() => setOpenId(row.id)} className="group text-left"><span className="block font-semibold text-ink group-hover:text-brand-deep group-hover:underline">{row.company_name}</span><span className="block text-xs text-muted">{[row.load_type === "BOTH" ? "FTL & LTL" : row.load_type, row.truck_type].filter(Boolean).join(" · ") || "Open to add details"}</span></button></td>
-              <td className="px-3 py-3"><span className="block">{row.shipping_contact || row.operator_name || "—"}</span><span className="block text-xs text-muted">{row.phone || row.email || ""}</span></td>
-              <td className="px-3 py-3 text-ink/80">{row.commodity || "—"}</td>
-              <td className="px-3 py-3"><StatusPill row={row} disabled={!row.editable || busyIds.has(row.id)} onChange={(status) => setStatus(row, status)} /></td>
-              <td className="px-3 py-3"><AssignSelect row={row} agents={agentList} disabled={!row.editable || busyIds.has(row.id)} onChange={(agentId) => assign(row, agentId)} /></td>
-              {manager && <td className="px-3 py-3 text-ink/70">{row.created_by_name}</td>}
-              <td className="px-5 py-3 text-right text-xs text-muted">{dateLabel(row.created_at)}</td>
-            </tr>)}</tbody>
-          </table></div>
-        : <EmptyState icon={SheetIcon} title={list.length ? "Nothing matches this view" : "No companies yet"} body={list.length ? "Try another tab or search." : "Add a company above, or open the sheet and paste rows from Excel."} />}
+        : <div className="px-4 pb-4"><Sheet columns={listColumns} rows={visible} locked={(row) => !row.editable || row.status === "QUALIFIED" || Boolean(row.fields_locked)} rowTone={(row) => statusTone[row.status]} busy={(row) => busyIds.has(row.id)} maxHeight="calc(100dvh - 300px)"
+            onChange={(row, key, value) => void patch(row, { [key]: value })}
+            onPasteRows={salesView ? undefined : (rows) => void addRows(rows.map((row) => ({ company_name: row.company_name || "", ...row })), (added, skipped) => `${added} pasted row${added === 1 ? "" : "s"} added${skipped ? `, ${skipped} skipped (each row needs a company name)` : ""}.`)}
+            empty={list.length ? "Nothing matches this view. Try another tab or search." : salesView ? "No Fronter is linked to you yet, or they haven't added companies." : "Add a company above, or click a cell and paste rows copied from Excel."} /></div>}
     </Card>
 
     {sheetOpen && <FullSheet title="Lead mining sheet" noun={["company", "companies"]} count={visible.length} total={list.length} onClose={() => setSheetOpen(false)} tools={tools}>
-      {prospects.isLoading ? <Skeleton className="h-64" /> : <Sheet columns={sheetColumns} rows={visible} locked={(row) => !row.editable} rowTone={(row) => statusTone[row.status]} busy={(row) => busyIds.has(row.id)} maxHeight="calc(100dvh - 232px)"
+      {prospects.isLoading ? <Skeleton className="h-64" /> : <Sheet columns={sheetColumns} rows={visible} locked={(row) => !row.editable || Boolean(row.fields_locked)} rowTone={(row) => statusTone[row.status]} busy={(row) => busyIds.has(row.id)} maxHeight="calc(100dvh - 232px)"
         onChange={(row, key, value) => void patch(row, { [key]: value })}
-        onPasteRows={(rows) => void addRows(rows.map((row) => ({ company_name: row.company_name || "", ...row })), (added, skipped) => `${added} pasted row${added === 1 ? "" : "s"} added${skipped ? `, ${skipped} skipped (each row needs a company name)` : ""}.`)}
-        onDelete={(row) => void remove(row)}
+        onPasteRows={salesView ? undefined : (rows) => void addRows(rows.map((row) => ({ company_name: row.company_name || "", ...row })), (added, skipped) => `${added} pasted row${added === 1 ? "" : "s"} added${skipped ? `, ${skipped} skipped (each row needs a company name)` : ""}.`)}
+        onDelete={salesView ? undefined : (row) => void remove(row)}
         empty={list.length ? "Nothing matches this view." : "Add a company above, or click a cell and paste rows copied from Excel."} />}
     </FullSheet>}
-    {opened && <ProspectCard key={opened.id} prospect={opened} agents={agentList} busy={busyIds.has(opened.id)} onClose={() => setOpenId(null)}
-      onSave={(body) => patch(opened, body, "Details saved.")} onStatus={(status) => setStatus(opened, status)} onAssign={(agentId) => assign(opened, agentId)}
+    {opened && <ProspectCard key={opened.id} prospect={opened} busy={busyIds.has(opened.id)} onClose={() => setOpenId(null)}
+      onSave={(body) => patch(opened, body, "Details saved.")} onStatus={(status) => setStatus(opened, status)}
       onDelete={async () => { if (await remove(opened)) setOpenId(null); }} />}
-    {qualifying && <QualifyModal prospect={qualifying} agents={agentList} onClose={() => setQualifying(null)} onConfirm={(agentId) => { const row = qualifying; setQualifying(null); void patch(row, { status: "QUALIFIED", assigned_to: agentId }, `${row.company_name} sent to Sales as a qualified lead.`); }} />}
+    {qualifying && <QualifyModal prospect={qualifying} onClose={() => setQualifying(null)} onConfirm={() => { const row = qualifying; setQualifying(null); void patch(row, { status: "QUALIFIED" }, `${row.company_name} sent to Sales as a qualified lead.`); }} />}
   </div>;
 }
 
@@ -245,11 +229,11 @@ const fieldLabel = (key: string) => key === "company_name" ? "Company name" : fu
 const wide = new Set(["lanes", "physical_address", "other_locations", "billing_address", "website"]);
 
 /** Every detail of one company, editable in place (read-only once qualified or if it isn't yours). */
-function ProspectCard({ prospect, agents, busy, onClose, onSave, onStatus, onAssign, onDelete }: {
-  prospect: Prospect; agents: Agent[]; busy: boolean; onClose: () => void;
-  onSave: (body: Record<string, unknown>) => Promise<boolean>; onStatus: (status: string) => void; onAssign: (agentId: string | null) => void; onDelete: () => void;
+function ProspectCard({ prospect, busy, onClose, onSave, onStatus, onDelete }: {
+  prospect: Prospect; busy: boolean; onClose: () => void;
+  onSave: (body: Record<string, unknown>) => Promise<boolean>; onStatus: (status: string) => void; onDelete: () => void;
 }) {
-  const editable = prospect.editable && prospect.status !== "QUALIFIED";
+  const editable = prospect.editable && prospect.status !== "QUALIFIED" && !prospect.fields_locked;
   const initial = useMemo(() => Object.fromEntries([...cardSections.flatMap((section) => section.fields), "notes"].map((key) => [key, key === "w9_received" ? Boolean(prospect.w9_received) : (prospect[key as keyof Prospect] as string | null) ?? ""])) as Record<string, string | boolean>, [prospect]);
   const [form, setForm] = useState(initial);
   const changes = Object.fromEntries(Object.entries(form).filter(([key, value]) => value !== initial[key]).map(([key, value]) => [key, typeof value === "string" ? value.trim() || null : value]));
@@ -267,10 +251,9 @@ function ProspectCard({ prospect, agents, busy, onClose, onSave, onStatus, onAss
       {dirty && <Button variant="ghost" onClick={() => setForm(initial)} disabled={busy}>Discard</Button>}
       <Button type="submit" form="prospect-form" variant="ink" pending={busy} pendingLabel="Saving…" disabled={!dirty}>Save changes</Button>
     </> : <Button variant="ghost" onClick={onClose}>Close</Button>}>
-    <div className="mb-5 grid gap-3 rounded-[14px] border border-line-soft bg-[#FAF8F4] p-4 sm:grid-cols-2">
-      <div><p className="mb-1.5 text-xs font-medium text-muted">Status</p><StatusPill row={prospect} disabled={!prospect.editable || busy} onChange={onStatus} /></div>
-      <div><p className="mb-1.5 text-xs font-medium text-muted">Assigned to</p><AssignSelect row={prospect} agents={agents} disabled={!prospect.editable || busy} onChange={onAssign} /></div>
-      {prospect.status === "QUALIFIED" && <p className="flex items-center gap-1.5 text-xs text-muted sm:col-span-2"><Lock size={12} />Sent to Sales{prospect.qualified_at ? ` on ${dateLabel(prospect.qualified_at)}` : ""}. The details are locked; Sales takes it from here.</p>}
+    <div className="mb-5 grid gap-3 rounded-[14px] border border-line-soft bg-[#FAF8F4] p-4">
+      <div className="max-w-56"><p className="mb-1.5 text-xs font-medium text-muted">Status</p><StatusPill row={prospect} disabled={!prospect.editable || busy} onChange={onStatus} /></div>
+      {prospect.status === "QUALIFIED" && <p className="flex items-center gap-1.5 text-xs text-muted"><Lock size={12} />Sent to Sales{prospect.qualified_at ? ` on ${dateLabel(prospect.qualified_at)}` : ""}. The details are locked; Sales takes it from here.</p>}
     </div>
     <form id="prospect-form" onSubmit={save} className="space-y-6">
       {cardSections.map((section) => <fieldset key={section.title} disabled={busy}>
@@ -282,14 +265,10 @@ function ProspectCard({ prospect, agents, busy, onClose, onSave, onStatus, onAss
   </Drawer>;
 }
 
-function QualifyModal({ prospect, agents, onClose, onConfirm }: { prospect: Prospect; agents: Agent[]; onClose: () => void; onConfirm: (agentId: string) => void }) {
-  const [agent, setAgent] = useState(prospect.assigned_to ?? "");
-  return <Modal open onClose={onClose} title={`Qualify ${prospect.company_name}`} subtitle="It becomes a qualified lead for this Sales agent and locks in your sheet."
-    footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="success" icon={<CheckCircle2 size={15} />} disabled={!agent} onClick={() => onConfirm(agent)}>Qualify & send to Sales</Button></>}>
-    <label className="flex flex-col gap-1.5 text-[13px] font-medium text-ink/80">Assign to
-      <select value={agent} onChange={(event) => setAgent(event.target.value)} className={cn(controlClass, "h-11")}><option value="">Choose a Sales agent</option>{agents.map((item) => <option key={item.id} value={item.id}>{item.full_name} · {item.department}</option>)}</select>
-    </label>
-    {!agents.length && <p className="mt-3 text-sm text-[#A5183F]">There are no active Brokerage Sales agents to assign to.</p>}
+function QualifyModal({ prospect, onClose, onConfirm }: { prospect: Prospect; onClose: () => void; onConfirm: () => void }) {
+  return <Modal open onClose={onClose} title={`Qualify ${prospect.company_name}?`} subtitle="It goes to Sales as a qualified lead and locks in your list."
+    footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button variant="success" icon={<CheckCircle2 size={15} />} onClick={onConfirm}>Qualify & send to Sales</Button></>}>
+    <p className="text-sm text-muted">Check the details first. Once qualified, Sales takes it from here and you can no longer edit it.</p>
   </Modal>;
 }
 
@@ -341,11 +320,10 @@ export function FronterDashboard() {
   const hour = new Date().getHours();
   return <div className="space-y-6 animate-rise">
     <header><p className="text-sm text-muted">{new Date().toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}</p><h1 className="mt-0.5 text-2xl font-bold tracking-tight sm:text-[28px]">{hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening"}, {profile.full_name.split(" ")[0]}</h1></header>
-    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-3">
       <KpiCard label="Prospects this month" value={totals.prospects ?? "…"} icon={SheetIcon} tone="brand" />
       <KpiCard label="Qualified" value={totals.qualified ?? "…"} icon={CheckCircle2} tone="success" />
-      <KpiCard label="Became customers" value={totals.customers ?? "…"} icon={UserRoundCheck} tone="accent" />
-      <KpiCard label="Customer gross" value={money(totals.gross)} icon={Target} tone="aqua" />
+      <KpiCard label="Became customers" value={totals.customers ?? "…"} icon={UserRoundCheck} tone="accent" className="col-span-2 xl:col-span-1" />
     </div>
     <Card><CardHeader title="Contacted, waiting to qualify" actions={<Link href="/app/fronter" className="text-xs font-semibold text-brand-deep hover:underline">Open lead mining</Link>} />
       {waiting.length ? <ul className="divide-y divide-line-soft">{waiting.map((row) => <li key={row.id} className="flex items-center gap-3 px-5 py-3"><span className="min-w-0 flex-1"><span className="block truncate font-semibold">{row.company_name}</span><span className="block truncate text-xs text-muted">{[row.shipping_contact, row.phone, row.commodity].filter(Boolean).join(" · ") || "No details yet"}</span></span><StatusChip status="CONTACTED" label="Contacted" /></li>)}</ul>

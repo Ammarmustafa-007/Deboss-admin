@@ -32,7 +32,7 @@ export type CostsData = { period: string; locked: boolean; usd_to_pkr: number | 
 export type AttendanceStatus = "PRESENT" | "LEAVE" | "ABSENT";
 export type AttendanceData = { period: string; days: string[]; people: { id: string; full_name: string; department_name: string | null; joined_on: string; last_working_day: string | null }[]; records: { user_id: string; work_date: string; status: "LEAVE" | "ABSENT" }[]; locked: boolean; paid_leaves: number };
 export type Progress = {
-  user_id: string; full_name: string; role_key: RoleKey; department_name: string | null; gross: number; active_sales: number | null; qualified_leads: number | null;
+  user_id: string; full_name: string; role_key: RoleKey; department_name: string | null; gross: number | null; active_sales: number | null; qualified_leads: number | null;
   target: number | null; rate: number | null; reached: boolean; next_level: number | null; next_rate: number | null; to_next: number | null; active_sales_target?: number; sales_to_target?: number;
 };
 export type FinanceData = {

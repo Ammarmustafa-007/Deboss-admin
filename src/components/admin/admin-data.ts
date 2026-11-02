@@ -7,7 +7,7 @@ import { errorMessage, useApi } from "@/lib/api";
 import { useToast } from "@/components/ui/toast";
 
 export type Department = { id: string; name: string; business_unit: string; function: string; is_active: boolean };
-export type AdminUser = { id: string; full_name: string; email: string; role: string; is_active: boolean; departments?: { id?: string; name: string; business_unit?: string; function?: string } | null };
+export type AdminUser = { id: string; full_name: string; email: string; role: string; is_active: boolean; sales_agent_id?: string | null; departments?: { id?: string; name: string; business_unit?: string; function?: string } | null };
 
 export const roles = ["SUPER_ADMIN", "MANAGER", "AGENT"];
 export const roleLabel: Record<string, string> = { SUPER_ADMIN: "Super Admin", MANAGER: "Manager", AGENT: "Agent" };

@@ -16,11 +16,13 @@ import { Button, LinkButton } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
 import { carrierStatusLabel, invoiceStatusLabel, pct, truckStatusLabel, truckTypeLabel, useCarriers, useDispatchInvoices, useTrucks } from "@/components/dispatch/model";
 
-type PersonRow = { id: string; name: string; carriers: number; pending: number; discarded: number; trucks: number; active: number; onboarded: number; loads: number; week_gross: number; month_gross: number; period_gross: number; weekly_target: number; monthly_target: number; revenue: number; collected: number; outstanding: number };
+type PersonRow = { id: string; name: string; carriers: number; pending: number; discarded: number; trucks: number; active: number; onboarded: number; loads: number; active_sales: number; active_sales_total: number; week_gross: number; month_gross: number; period_gross: number; weekly_target: number; monthly_target: number; revenue: number; collected: number; outstanding: number };
 type CarrierRow = { id: string; company_name: string; mc_number?: string | null; dot_number?: string | null; owner?: string | null; review_status: string; charge_percent?: number | null; trucks: number; running: number; gross: number; revenue: number; collected: number; outstanding: number };
-type TruckRow = { id: string; unit_number: string; truck_type: string; status: string; carrier: string; dispatcher?: string | null; loads: number; week_gross: number; gross: number; revenue: number; outstanding: number };
+type TruckRow = { id: string; unit_number: string; truck_type: string; status: string; carrier: string; dispatcher?: string | null; sale_active_since?: string | null; loads: number; week_gross: number; gross: number; revenue: number; outstanding: number };
 type Report = {
   side: "SALES" | "OPERATIONS"; team_view: boolean; week_start: string; month_start: string;
+  /** A Dispatch Sales Agent gets no gross, revenue or invoice figures, only their active sales. */
+  money_hidden?: boolean;
   totals: Record<string, number>; people: PersonRow[]; carriers: CarrierRow[]; trucks: TruckRow[];
   carrier_statuses: Record<string, number>; truck_statuses: Record<string, number>; invoice_statuses: Record<string, number>;
   agents: { id: string; full_name: string }[];
@@ -62,6 +64,7 @@ export function DispatchDashboard() {
   const me = report.data?.people.find((person) => person.id === profile.id);
   const totals = report.data?.totals ?? {};
   const carrierList = carriers.data ?? []; const truckList = trucks.data?.trucks ?? []; const invoiceList = invoices.data ?? [];
+  const hidden = Boolean(report.data?.money_hidden);
 
   const attention: Attention[] = sales ? [
     ...(canReviewCarriers ? carrierList.filter((carrier) => carrier.review_status === "PENDING_REVIEW") : []).map((carrier) => ({ href: `/app/dispatch/carriers/${carrier.id}`, icon: Hourglass, tone: "brand" as Tone, title: carrier.company_name, detail: `Waiting for your review · ${carrier.owner_name ?? ""}` })),
@@ -87,7 +90,7 @@ export function DispatchDashboard() {
         <KpiCard label={manager ? "Department carriers" : "My carriers"} value={totals.carriers ?? "…"} icon={Container} tone="brand" />
         <KpiCard label="Pending review" value={totals.pending ?? "…"} icon={Hourglass} tone="accent" />
         <KpiCard label="Trucks running" value={totals.running ?? "…"} icon={PlayCircle} tone="success" />
-        <KpiCard label="Gross this week" value={money(totals.week_gross)} icon={Gauge} tone="aqua" />
+        {hidden ? <KpiCard label="Active sales this month" value={totals.active_sales ?? "…"} hint={`${totals.active_sales_total ?? 0} in total`} icon={Gauge} tone="aqua" /> : <KpiCard label="Gross this week" value={money(totals.week_gross)} icon={Gauge} tone="aqua" />}
       </> : <>
         {canAssign ? <KpiCard label="Needs a dispatcher" value={truckList.filter((truck) => truck.status === "ACTIVE").length} icon={UserX} tone="accent" /> : <KpiCard label="My trucks" value={truckList.length} icon={TruckIcon} tone="brand" />}
         <KpiCard label="Running" value={truckList.filter((truck) => truck.status === "RUNNING").length} icon={PlayCircle} tone="success" />
@@ -101,7 +104,7 @@ export function DispatchDashboard() {
         {attention.length ? <ul className="divide-y divide-line-soft">{attention.slice(0, 8).map((item, index) => <li key={index}><Link href={item.href} className="flex items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]"><IconTile icon={item.icon} tone={item.tone} size={34} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{item.title}</p><p className="truncate text-xs text-muted">{item.detail}</p></div><ArrowRight size={15} className="text-muted" /></Link></li>)}</ul>
           : <EmptyState icon={ShieldCheck} title="You're all caught up" />}
       </Card>
-      <Card>
+      {hidden ? <ActiveSales trucks={report.data?.trucks ?? []} loading={report.isLoading} /> : <Card>
         <CardHeader title={me ? "My targets" : "This month"} subtitle={report.data ? `Gross from loads · ${periodLabel(report.data.month_start, undefined)}` : undefined} />
         <div className="space-y-5 p-5">{report.isLoading ? <Skeleton className="h-24" /> : me ? <>
           <TargetBar label="This week" value={me.week_gross} target={me.weekly_target} />
@@ -111,10 +114,22 @@ export function DispatchDashboard() {
           <TargetBar label="This month" value={totals.month_gross ?? 0} target={0} />
           <p className="text-xs text-muted">Per-person targets are on the Reports page.</p>
         </>}</div>
-      </Card>
+      </Card>}
     </div>
     <MyPerformance />
   </div>;
+}
+
+/** Which of the agent's trucks have become active sales (paid their first invoice), and which haven't yet. */
+function ActiveSales({ trucks, loading }: { trucks: TruckRow[]; loading: boolean }) {
+  const sorted = [...trucks].sort((left, right) => (right.sale_active_since ?? "").localeCompare(left.sale_active_since ?? ""));
+  return <Card>
+    <CardHeader title="My active sales" subtitle="A truck becomes an active sale when it pays its first invoice" />
+    {loading ? <div className="p-5"><Skeleton className="h-24" /></div> : sorted.length ? <ul className="max-h-80 divide-y divide-line-soft overflow-y-auto">{sorted.map((truck) => <li key={truck.id}><Link href={`/app/dispatch/trucks/${truck.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]">
+      <div className="min-w-0 flex-1"><p className="truncate font-semibold">{truck.carrier} · {truck.unit_number}</p><p className="truncate text-xs text-muted">{truckStatusLabel[truck.status]}</p></div>
+      {truck.sale_active_since ? <StatusChip status="APPROVED" label={`Active · ${new Date(truck.sale_active_since).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`} /> : <StatusChip status="PENDING" label="Not active yet" />}
+    </Link></li>)}</ul> : <EmptyState icon={TruckIcon} title="No trucks yet" body="Trucks from your approved carriers appear here." />}
+  </Card>;
 }
 
 // ---- Reports (DS-9, DS-13, DP-5, DP-6, IN-6, RP-6) ---------------------------------------------------------------
@@ -150,6 +165,8 @@ export function DispatchReportsScreen() {
   if (incoming && incoming !== seen && !range.agent_id) { setSeen(incoming); setAgents(incoming); }
   const r = data.data;
   const personLabel = sales ? "Agent" : "Dispatcher";
+  const hidden = Boolean(r?.money_hidden);
+  const moneyKeys = ["week_gross", "month_gross", "period_gross", "weekly_target", "monthly_target", "gross", "revenue", "collected", "outstanding", "signed_off"];
 
   const exportExcel = () => {
     if (!r) return;
@@ -170,11 +187,12 @@ export function DispatchReportsScreen() {
       ], totals: Object.fromEntries(["loads", "week_gross", "gross", "revenue", "outstanding"].map((key) => [key, r.trucks.reduce((total, row) => total + Number((row as never)[key] ?? 0), 0)])) },
       { name: "Summary", title: "Summary", columns: [["Carriers", "carriers", "number"], ["Trucks", "trucks", "number"], ["Running", "running", "number"], ["Loads", "loads", "number"], ["Gross", "gross", "money"], ["Invoiced revenue", "revenue", "money"], ["Collected", "collected", "money"], ["Outstanding", "outstanding", "money"], ["Signed off", "signed_off", "money"]].map(([header, key, type]) => ({ header, key, type: type as "number" | "money" })), rows: [r.totals] },
     ];
-    void downloadExcel(`Dispatch ${sales ? "sales" : "operations"} report ${range.from || "all-time"}${range.to ? ` to ${range.to}` : ""}`, sheets, { period: periodLabel(range.from, range.to), exportedBy: profile.full_name }).then(() => report("Report exported to Excel."), (error) => report(errorMessage(error), "error"));
+    const visibleSheets = hidden ? sheets.map((sheet) => ({ ...sheet, columns: sheet.columns.filter((column) => !moneyKeys.includes(String(column.key))) })) : sheets;
+    void downloadExcel(`Dispatch ${sales ? "sales" : "operations"} report ${range.from || "all-time"}${range.to ? ` to ${range.to}` : ""}`, visibleSheets, { period: periodLabel(range.from, range.to), exportedBy: profile.full_name }).then(() => report("Report exported to Excel."), (error) => report(errorMessage(error), "error"));
   };
 
   return <div className="space-y-6 animate-rise">
-    <PageHeader title={sales ? (r?.team_view ? "Dispatch sales performance" : "My dispatch sales") : (r?.team_view ? "Dispatch performance" : "My dispatch results")} subtitle="Gross from loads, invoiced revenue (gross × charge %), targets and collections" actions={<Button variant="ink" icon={<Download size={15} />} disabled={!r} onClick={exportExcel}>Export Excel</Button>} />
+    <PageHeader title={sales ? (r?.team_view ? "Dispatch sales performance" : "My dispatch sales") : (r?.team_view ? "Dispatch performance" : "My dispatch results")} subtitle={hidden ? "Your carriers, trucks and active sales" : "Gross from loads, invoiced revenue (gross × charge %), targets and collections"} actions={<Button variant="ink" icon={<Download size={15} />} disabled={!r} onClick={exportExcel}>Export Excel</Button>} />
     <Card className="flex flex-wrap items-end gap-3 px-5 py-4">
       <label className="flex flex-col text-xs font-medium text-muted">From<input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
       <label className="flex flex-col text-xs font-medium text-muted">To<input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
@@ -188,20 +206,28 @@ export function DispatchReportsScreen() {
         <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
           {sales ? <KpiCard label="Carriers" value={r.totals.carriers} hint={`${r.totals.pending} pending`} tone="brand" /> : <KpiCard label="Trucks" value={r.totals.trucks} hint={`${r.totals.onboarded} onboarded`} tone="brand" />}
           <KpiCard label="Running trucks" value={r.totals.running} hint={`of ${r.totals.trucks}`} tone="success" />
-          <KpiCard label="Gross (loads)" value={money(r.totals.gross)} hint={`${r.totals.loads} loads`} tone="aqua" />
-          <KpiCard label="Invoiced revenue" value={money(r.totals.revenue)} hint={`${money(r.totals.outstanding)} outstanding`} tone="accent" />
+          {hidden ? <>
+            <KpiCard label="Active sales (period)" value={r.totals.active_sales} tone="aqua" />
+            <KpiCard label="Active sales in total" value={r.totals.active_sales_total} tone="accent" />
+          </> : <>
+            <KpiCard label="Gross (loads)" value={money(r.totals.gross)} hint={`${r.totals.loads} loads`} tone="aqua" />
+            <KpiCard label="Invoiced revenue" value={money(r.totals.revenue)} hint={`${money(r.totals.outstanding)} outstanding`} tone="accent" />
+          </>}
         </div>
         <Table<PersonRow> title={sales ? "By agent" : "By dispatcher"} subtitle="Target progress uses this week and this month" rows={r.people} keyOf={(row) => row.id} columns={[
           { label: personLabel, value: (row) => row.name },
           ...(sales ? [{ label: "Carriers", right: true, value: (row: PersonRow) => row.carriers, total: sumOf<PersonRow>("carriers") }, { label: "Pending", right: true, value: (row: PersonRow) => row.pending, total: sumOf<PersonRow>("pending") }, { label: "Discarded / DNC", right: true, value: (row: PersonRow) => row.discarded, total: sumOf<PersonRow>("discarded") }] : []),
           { label: "Running", right: true, value: (row) => `${row.active} / ${row.trucks}`, total: (rows) => `${sumOf<PersonRow>("active")(rows)} / ${sumOf<PersonRow>("trucks")(rows)}` },
-          { label: "Loads", right: true, value: (row) => row.loads, total: sumOf("loads") },
-          { label: "Gross (period)", right: true, value: (row) => money(row.period_gross), total: moneyOf("period_gross") },
-          { label: "This week vs target", right: true, value: (row) => targetCell(row.week_gross, row.weekly_target), total: moneyOf("week_gross") },
-          { label: "This month vs target", right: true, value: (row) => targetCell(row.month_gross, row.monthly_target), total: moneyOf("month_gross") },
-          { label: "Revenue", right: true, value: (row) => money(row.revenue), total: moneyOf("revenue") },
-          { label: "Collected", right: true, value: (row) => money(row.collected), total: moneyOf("collected") },
-          { label: "Outstanding", right: true, value: (row) => owed(row.outstanding), total: moneyOf("outstanding") },
+          ...(sales ? [{ label: "Active sales", right: true, value: (row: PersonRow) => `${row.active_sales} / ${row.active_sales_total}`, total: (rows: PersonRow[]) => `${sumOf<PersonRow>("active_sales")(rows)} / ${sumOf<PersonRow>("active_sales_total")(rows)}` }] : []),
+          ...(hidden ? [] : [
+            { label: "Loads", right: true, value: (row: PersonRow) => row.loads, total: sumOf<PersonRow>("loads") },
+            { label: "Gross (period)", right: true, value: (row: PersonRow) => money(row.period_gross), total: moneyOf<PersonRow>("period_gross") },
+            { label: "This week vs target", right: true, value: (row: PersonRow) => targetCell(row.week_gross, row.weekly_target), total: moneyOf<PersonRow>("week_gross") },
+            { label: "This month vs target", right: true, value: (row: PersonRow) => targetCell(row.month_gross, row.monthly_target), total: moneyOf<PersonRow>("month_gross") },
+            { label: "Revenue", right: true, value: (row: PersonRow) => money(row.revenue), total: moneyOf<PersonRow>("revenue") },
+            { label: "Collected", right: true, value: (row: PersonRow) => money(row.collected), total: moneyOf<PersonRow>("collected") },
+            { label: "Outstanding", right: true, value: (row: PersonRow) => owed(row.outstanding), total: moneyOf<PersonRow>("outstanding") },
+          ]),
         ]} />
         <Table<CarrierRow> title="By carrier" rows={r.carriers} keyOf={(row) => row.id} columns={[
           { label: "Carrier", value: (row) => <Link href={`/app/dispatch/carriers/${row.id}`} className="hover:text-brand-deep">{row.company_name}</Link> },
@@ -210,10 +236,12 @@ export function DispatchReportsScreen() {
           { label: "Status", value: (row) => <StatusChip status={row.review_status} label={carrierStatusLabel[row.review_status]} /> },
           { label: "Charge %", right: true, value: (row) => pct(row.charge_percent) },
           { label: "Trucks", right: true, value: (row) => `${row.running} / ${row.trucks}`, total: (rows) => `${sumOf<CarrierRow>("running")(rows)} / ${sumOf<CarrierRow>("trucks")(rows)}` },
-          { label: "Gross", right: true, value: (row) => money(row.gross), total: moneyOf("gross") },
-          { label: "Revenue", right: true, value: (row) => money(row.revenue), total: moneyOf("revenue") },
-          { label: "Collected", right: true, value: (row) => money(row.collected), total: moneyOf("collected") },
-          { label: "Outstanding", right: true, value: (row) => owed(row.outstanding), total: moneyOf("outstanding") },
+          ...(hidden ? [] : [
+            { label: "Gross", right: true, value: (row: CarrierRow) => money(row.gross), total: moneyOf<CarrierRow>("gross") },
+            { label: "Revenue", right: true, value: (row: CarrierRow) => money(row.revenue), total: moneyOf<CarrierRow>("revenue") },
+            { label: "Collected", right: true, value: (row: CarrierRow) => money(row.collected), total: moneyOf<CarrierRow>("collected") },
+            { label: "Outstanding", right: true, value: (row: CarrierRow) => owed(row.outstanding), total: moneyOf<CarrierRow>("outstanding") },
+          ]),
         ]} />
         <Table<TruckRow> title="By truck" rows={r.trucks} keyOf={(row) => row.id} columns={[
           { label: "Truck", value: (row) => <Link href={`/app/dispatch/trucks/${row.id}`} className="hover:text-brand-deep">{row.unit_number}</Link> },
@@ -221,16 +249,19 @@ export function DispatchReportsScreen() {
           { label: "Carrier", value: (row) => row.carrier },
           { label: "Dispatcher", value: (row) => row.dispatcher ?? <span className="text-accent">Unassigned</span> },
           { label: "Status", value: (row) => <StatusChip status={row.status} label={truckStatusLabel[row.status]} /> },
-          { label: "Loads", right: true, value: (row) => row.loads, total: sumOf("loads") },
-          { label: "This week", right: true, value: (row) => money(row.week_gross), total: moneyOf("week_gross") },
-          { label: "Gross", right: true, value: (row) => money(row.gross), total: moneyOf("gross") },
-          { label: "Revenue", right: true, value: (row) => money(row.revenue), total: moneyOf("revenue") },
-          { label: "Outstanding", right: true, value: (row) => owed(row.outstanding), total: moneyOf("outstanding") },
+          ...(sales ? [{ label: "Active sale", value: (row: TruckRow) => row.sale_active_since ? new Date(row.sale_active_since).toLocaleDateString() : <span className="text-muted">Not yet</span> }] : []),
+          ...(hidden ? [] : [
+            { label: "Loads", right: true, value: (row: TruckRow) => row.loads, total: sumOf<TruckRow>("loads") },
+            { label: "This week", right: true, value: (row: TruckRow) => money(row.week_gross), total: moneyOf<TruckRow>("week_gross") },
+            { label: "Gross", right: true, value: (row: TruckRow) => money(row.gross), total: moneyOf<TruckRow>("gross") },
+            { label: "Revenue", right: true, value: (row: TruckRow) => money(row.revenue), total: moneyOf<TruckRow>("revenue") },
+            { label: "Outstanding", right: true, value: (row: TruckRow) => owed(row.outstanding), total: moneyOf<TruckRow>("outstanding") },
+          ]),
         ]} />
         <div className="grid gap-6 xl:grid-cols-3">
           <Breakdown title="Carrier status" values={r.carrier_statuses} labels={carrierStatusLabel} />
           <Breakdown title="Truck status" values={r.truck_statuses} labels={truckStatusLabel} />
-          <Breakdown title="Invoice status" values={r.invoice_statuses} labels={invoiceStatusLabel} />
+          {!hidden && <Breakdown title="Invoice status" values={r.invoice_statuses} labels={invoiceStatusLabel} />}
         </div>
       </>}
   </div>;
