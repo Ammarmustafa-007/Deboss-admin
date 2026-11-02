@@ -44,7 +44,7 @@ export function CarriersScreen() {
   const trucks = list.flatMap((carrier) => carrier.trucks ?? []);
 
   return <div className="space-y-6 animate-rise">
-    <PageHeader title="Carriers" subtitle={manager ? "Every carrier in your department" : teamLead ? "Your team's carriers" : "Carriers you are onboarding"} actions={!manager && <LinkButton href="/app/dispatch/carriers/new" variant="primary" icon={<Plus size={16} />}>New carrier</LinkButton>} />
+    <PageHeader title="Carriers" subtitle={manager ? "Every carrier in your department" : teamLead ? "Your team's carriers" : "Carriers you are onboarding"} actions={<LinkButton href="/app/dispatch/carriers/new" variant="primary" icon={<Plus size={16} />}>New carrier</LinkButton>} />
     <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
       <KpiCard label="Carriers" value={list.length} icon={Container} tone="brand" />
       <KpiCard label={reviewer ? "Waiting for your review" : "Pending review"} value={count("PENDING_REVIEW")} icon={Hourglass} tone={count("PENDING_REVIEW") ? "accent" : "info"} />
@@ -62,7 +62,7 @@ export function CarriersScreen() {
       {carriers.isLoading ? <div className="space-y-2 p-5">{[0, 1, 2].map((index) => <Skeleton key={index} className="h-14" />)}</div>
         : carriers.isError ? <EmptyState icon={AlertTriangle} title="Carriers unavailable" body={errorMessage(carriers.error)} />
         : visible.length ? <ul className="divide-y divide-line-soft border-t border-line-soft">{visible.map((carrier) => <CarrierRow key={carrier.id} carrier={carrier} showOwner={showOwner} onOpen={() => router.push(`/app/dispatch/carriers/${carrier.id}`)} />)}</ul>
-        : <EmptyState icon={term ? Search : Container} title={term ? "No carriers match your search" : list.length ? "Nothing in this view" : "No carriers yet"} body={!list.length && !manager ? "Start by adding a carrier's MC/DOT details and trucks." : undefined} action={!list.length && !manager && <LinkButton href="/app/dispatch/carriers/new" variant="primary" icon={<Plus size={15} />}>New carrier</LinkButton>} />}
+        : <EmptyState icon={term ? Search : Container} title={term ? "No carriers match your search" : list.length ? "Nothing in this view" : "No carriers yet"} body={!list.length ? "Start by adding a carrier's MC/DOT details and trucks." : undefined} action={!list.length && <LinkButton href="/app/dispatch/carriers/new" variant="primary" icon={<Plus size={15} />}>New carrier</LinkButton>} />}
     </Card>
   </div>;
 }
@@ -87,7 +87,7 @@ const blankTruck: TruckDraft = { unit_number: "", truck_type: "DRY_VAN", equipme
 /** DS-1: carrier profile with its trucks (answer 4), with a live MC/DOT duplicate warning (DS-4). */
 export function NewCarrierScreen() {
   const router = useRouter();
-  const { manager, api } = useBrokerage();
+  const { api } = useBrokerage();
   const { run, busy } = useBrokerageAction();
   const [form, setForm] = useState({ company_name: "", mc_number: "", dot_number: "", contact_name: "", phone: "", email: "", operating_pattern: "" });
   const [trucks, setTrucks] = useState<TruckDraft[]>([{ ...blankTruck }]);
@@ -96,7 +96,6 @@ export function NewCarrierScreen() {
   const set = (field: keyof typeof form) => (value: string) => setForm((current) => ({ ...current, [field]: value }));
   const setTruck = (index: number, field: keyof TruckDraft, value: string) => setTrucks((current) => current.map((truck, position) => position === index ? { ...truck, [field]: value } : truck));
 
-  if (manager) return <EmptyState icon={Container} title="Carriers are added by Dispatch Sales agents" body="Managers review and approve them once they are submitted." action={<LinkButton href="/app/dispatch/carriers" variant="ink">Back to carriers</LinkButton>} className="mt-10" />;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
