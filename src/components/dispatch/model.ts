@@ -10,7 +10,7 @@ export type Truck = {
   id: string; carrier_id: string; unit_number: string; truck_type: string; equipment_notes?: string | null; status: string;
   dispatch_department_id?: string | null; assigned_to?: string | null; assigned_name?: string | null; team_id?: string | null; team_name?: string | null;
   dnc_reason?: string | null; activated_at?: string | null; created_at?: string; updated_at?: string;
-  carrier?: Carrier; week_gross?: number | null; week_loads?: number | null; last_load_date?: string | null;
+  carrier?: Carrier; week_gross?: number | null; week_loads?: number | null; week_miles?: number | null; paid_invoices?: number | null; paid_total?: number | null; last_load_date?: string | null;
   /** When the truck paid its first invoice, making it an active sale. */
   sale_active_since?: string | null;
 };
@@ -38,7 +38,9 @@ export type DispatchInvoice = {
   status: string; review_note?: string | null; due_date?: string | null; submitted_at?: string | null; forwarded_at?: string | null; paid_at?: string | null; signed_off_at?: string | null;
   outstanding?: number; overdue?: boolean; truck?: { id: string; unit_number: string; truck_type: string; assigned_to?: string | null }; carrier?: { id: string; company_name: string };
 };
+export type CarrierSummary = { trucks: number; running: number; week_gross: number; month_gross: number; week_miles: number; week_loads: number; invoices_received: number; received_total: number };
 export type CarrierDetail = {
+  summary?: CarrierSummary | null;
   carrier: Carrier; trucks: Truck[]; documents: CarrierDocument[]; activities: Activity[]; comments: Comment[]; invoices: DispatchInvoice[];
   missing_documents: string[]; duplicates: Duplicate[];
   rights: { edit: boolean; submit: boolean; review: boolean; assign: boolean; terms: boolean; sales_side: boolean; money_hidden?: boolean };

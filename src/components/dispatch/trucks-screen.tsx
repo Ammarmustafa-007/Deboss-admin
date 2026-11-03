@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, ChevronRight, Gauge, PlayCircle, Search, Truck as TruckIcon, UserX } from "lucide-react";
+import { AlertTriangle, Building2, ChevronRight, Gauge, PlayCircle, Search, Truck as TruckIcon, UserX } from "lucide-react";
 import { useMemo, useState, type SyntheticEvent } from "react";
 import { cn } from "@/lib/cn";
 import { dateLabel, money } from "@/lib/format";
@@ -29,7 +29,9 @@ export function TrucksScreen() {
   const [filter, setFilter] = useState<Filter>(canAssign && list.some((truck) => truck.status === "ACTIVE") ? "unassigned" : "all");
   const [search, setSearch] = useState("");
   const [agent, setAgent] = useState("");
-  const users = directory.data?.users ?? [];
+  // A Dispatch manager can hold trucks like a Dispatcher (client feedback), so managers are listed too.
+  const users = [...(directory.data?.users ?? []), ...(directory.data?.managers ?? []).map((user) => ({ ...user, full_name: `${user.full_name} (Manager)` }))];
+  const [view, setView] = useState<"trucks" | "companies">("trucks");
   const teams = directory.data?.teams ?? [];
   const count = (predicate: (truck: Truck) => boolean) => list.filter(predicate).length;
   const unassigned = (truck: Truck) => truck.status === "ACTIVE" || (!truck.assigned_to && !["DNC", "DISCARDED"].includes(truck.status));
@@ -61,7 +63,8 @@ export function TrucksScreen() {
       <KpiCard label="Inactive" value={count((truck) => truck.status === "INACTIVE")} icon={AlertTriangle} tone={count((truck) => truck.status === "INACTIVE") ? "danger" : "neutral"} />
       <KpiCard label="Gross this week" value={money(weekGross)} icon={Gauge} tone="brand" />
     </div>
-    <Card>
+    <Tabs<"trucks" | "companies"> value={view} onChange={setView} items={[{ value: "trucks", label: "Trucks", count: list.length }, { value: "companies", label: "By company", count: new Set(list.map((truck) => truck.carrier?.id)).size }]} />
+    {view === "companies" ? <CompaniesTable trucks={list} loading={trucks.isLoading} /> : <Card>
       <div className="flex flex-col gap-3 px-5 pt-4 lg:flex-row lg:items-end lg:justify-between">
         <Tabs items={tabs} value={filter} onChange={setFilter} className="min-w-0 flex-1" />
         <div className="flex flex-col gap-2 pb-3 sm:flex-row">
@@ -86,6 +89,31 @@ export function TrucksScreen() {
           </tr>; })}</tbody>
         </table></div>
         : <EmptyState icon={term ? Search : TruckIcon} title={term ? "No trucks match your search" : list.length ? "Nothing in this view" : manager ? "No trucks handed off yet" : "No trucks assigned to you yet"} body={!list.length ? (manager ? "Approved carriers from Dispatch Sales appear here, ready to assign." : "Your manager assigns trucks to you here.") : undefined} />}
-    </Card>
+    </Card>}
   </div>;
+}
+
+/** One row per company: how many trucks it runs with us, this week's paid gross and miles, and the invoices it has paid. */
+function CompaniesTable({ trucks, loading }: { trucks: Truck[]; loading: boolean }) {
+  const companies = [...trucks.reduce((groups, truck) => {
+    const key = truck.carrier?.id ?? "none";
+    const group = groups.get(key) ?? { id: key, name: truck.carrier?.company_name ?? "Unknown company", trucks: 0, running: 0, gross: 0, miles: 0, loads: 0, invoices: 0, received: 0 };
+    group.trucks += 1; if (truck.status === "RUNNING") group.running += 1;
+    group.gross += Number(truck.week_gross ?? 0); group.miles += Number(truck.week_miles ?? 0); group.loads += Number(truck.week_loads ?? 0);
+    group.invoices += Number(truck.paid_invoices ?? 0); group.received += Number(truck.paid_total ?? 0);
+    return groups.set(key, group);
+  }, new Map<string, { id: string; name: string; trucks: number; running: number; gross: number; miles: number; loads: number; invoices: number; received: number }>()).values()].sort((left, right) => right.gross - left.gross || left.name.localeCompare(right.name));
+  return <Card>
+    {loading ? <div className="space-y-2 p-5">{[0, 1, 2].map((index) => <Skeleton key={index} className="h-14" />)}</div>
+      : companies.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-sm">
+        <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Company</th><th className="px-3 py-2.5 text-right font-medium">Trucks running</th><th className="px-3 py-2.5 text-right font-medium">Gross this week (paid)</th><th className="px-3 py-2.5 text-right font-medium">Miles this week</th><th className="px-5 py-2.5 text-right font-medium">Invoices received</th></tr></thead>
+        <tbody>{companies.map((company) => <tr key={company.id} className="border-t border-line-soft hover:bg-[#FAF8F4]">
+          <td className="px-5 py-3">{company.id === "none" ? <span className="font-semibold">{company.name}</span> : <Link href={`/app/dispatch/carriers/${company.id}`} className="font-semibold hover:text-brand-deep">{company.name}</Link>}</td>
+          <td className="px-3 py-3 text-right tabular-nums">{company.running} <span className="text-xs text-muted">/ {company.trucks}</span></td>
+          <td className="px-3 py-3 text-right font-semibold tabular-nums">{money(company.gross)}</td>
+          <td className="px-3 py-3 text-right tabular-nums">{company.miles.toLocaleString()}<p className="text-xs text-muted">{company.loads} load{company.loads === 1 ? "" : "s"}</p></td>
+          <td className="px-5 py-3 text-right tabular-nums">{company.invoices}<p className="text-xs text-muted">{money(company.received)}</p></td>
+        </tr>)}</tbody>
+      </table></div> : <EmptyState icon={Building2} title="No companies yet" body="Companies appear once their trucks are handed to Dispatch Operations." />}
+  </Card>;
 }

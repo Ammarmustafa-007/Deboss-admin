@@ -104,7 +104,7 @@ function AssignCard({ data }: { data: TruckDetail }) {
   const { run, busy } = useBrokerageAction();
   const pending = busy("assign");
   return <Card><div className="grid gap-4 p-5 sm:grid-cols-2">
-    <SelectField label="Dispatcher" value={truck.assigned_to ?? ""} placeholder="Needs a dispatcher" disabled={pending || !directory.data} onChange={(event) => void run("assign", `/api/v1/dispatch/trucks/${truck.id}`, "PATCH", { assigned_to: event.target.value || null }, "Truck assignment updated.")} options={(directory.data?.users ?? []).map((user) => ({ value: user.id, label: user.full_name }))} />
+    <SelectField label="Dispatcher" value={truck.assigned_to ?? ""} placeholder="Needs a dispatcher" disabled={pending || !directory.data} onChange={(event) => void run("assign", `/api/v1/dispatch/trucks/${truck.id}`, "PATCH", { assigned_to: event.target.value || null }, "Truck assignment updated.")} options={[...(directory.data?.users ?? []).map((user) => ({ value: user.id, label: user.full_name })), ...(directory.data?.managers ?? []).map((user) => ({ value: user.id, label: `${user.full_name} (Manager)` }))]} />
     <SelectField label="Team" value={truck.team_id ?? ""} placeholder="No team" disabled={pending || !directory.data} onChange={(event) => void run("assign", `/api/v1/dispatch/trucks/${truck.id}`, "PATCH", { team_id: event.target.value || null }, "Truck team updated.")} options={(directory.data?.teams ?? []).map((team) => ({ value: team.id, label: team.name }))} />
   </div></Card>;
 }

@@ -11,7 +11,7 @@ import { documentAccept, documentProblem } from "@/lib/documents";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { useSession } from "@/components/app/session";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
-import { Card, CardHeader, Chip, EmptyState, PageHeader, Skeleton, StatusChip } from "@/components/ui/surface";
+import { Card, CardHeader, Chip, EmptyState, KpiCard, PageHeader, Skeleton, StatusChip } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { FilePicker, SelectField, TextAreaField, TextField } from "@/components/ui/field";
 import { Stepper, Tabs } from "@/components/ui/navigation";
@@ -55,6 +55,13 @@ function CarrierView({ data }: { data: CarrierDetail }) {
 
     {data.duplicates.length > 0 && rights.sales_side && <DuplicateWarning matches={data.duplicates} />}
     {rights.review && <ReviewCard data={data} />}
+
+    {data.summary && data.summary.trucks > 0 && <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+      <KpiCard label="Trucks running" value={`${data.summary.running} / ${data.summary.trucks}`} tone="success" />
+      <KpiCard label="Gross this week (paid)" value={money(data.summary.week_gross)} hint={`${money(data.summary.month_gross)} this month`} tone="brand" />
+      <KpiCard label="Miles this week" value={data.summary.week_miles.toLocaleString()} hint={`${data.summary.week_loads} load${data.summary.week_loads === 1 ? "" : "s"}`} tone="aqua" />
+      <KpiCard label="Invoices received" value={data.summary.invoices_received} hint={money(data.summary.received_total)} tone="accent" />
+    </div>}
 
     <Tabs<TabKey> value={tab} onChange={setTab} items={[
       { value: "overview", label: "Profile & terms" },
