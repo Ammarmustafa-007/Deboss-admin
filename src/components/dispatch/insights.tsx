@@ -16,7 +16,7 @@ import { Button, LinkButton } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
 import { carrierStatusLabel, invoiceStatusLabel, pct, truckStatusLabel, truckTypeLabel, useCarriers, useDispatchInvoices, useTrucks } from "@/components/dispatch/model";
 
-type PersonRow = { id: string; name: string; carriers: number; pending: number; discarded: number; trucks: number; active: number; onboarded: number; loads: number; active_sales: number; active_sales_total: number; week_gross: number; month_gross: number; period_gross: number; weekly_target: number; monthly_target: number; revenue: number; collected: number; outstanding: number };
+type PersonRow = { id: string; name: string; carriers: number; pending: number; discarded: number; trucks: number; active: number; onboarded: number; loads: number; active_sales: number; active_sales_total: number; active_week: number; active_month: number; week_gross: number; month_gross: number; period_gross: number; weekly_target: number; monthly_target: number; revenue: number; collected: number; outstanding: number };
 type CarrierRow = { id: string; company_name: string; mc_number?: string | null; dot_number?: string | null; owner?: string | null; review_status: string; charge_percent?: number | null; trucks: number; running: number; gross: number; revenue: number; collected: number; outstanding: number };
 type TruckRow = { id: string; unit_number: string; truck_type: string; status: string; carrier: string; dispatcher?: string | null; sale_active_since?: string | null; loads: number; week_gross: number; gross: number; revenue: number; outstanding: number };
 type Report = {
@@ -40,9 +40,11 @@ function useDispatchReport(range: { from: string; to: string; agent_id: string }
 }
 const progress = (value: number, target: number) => target > 0 ? Math.min(100, Math.round((value / target) * 100)) : null;
 
-function TargetBar({ label, value, target }: { label: string; value: number; target: number }) {
+/** Progress against a target: gross (Dispatch Operations) or a number of sales (Dispatch Sales). */
+function TargetBar({ label, value, target, count = false }: { label: string; value: number; target: number; count?: boolean }) {
   const percent = progress(value, target);
-  return <div><div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm"><span className="text-ink/75">{label}</span><b className="tabular-nums">{money(value)}{target ? <span className="font-normal text-muted"> / {money(target)}</span> : null}</b></div>
+  const show = (amount: number) => count ? `${amount} sale${amount === 1 ? "" : "s"}` : money(amount);
+  return <div><div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm"><span className="text-ink/75">{label}</span><b className="tabular-nums">{show(value)}{target ? <span className="font-normal text-muted"> / {show(target)}</span> : null}</b></div>
     <div className="h-2 overflow-hidden rounded-full bg-line-soft"><div className={cn("h-full rounded-full", percent !== null && percent >= 100 ? "bg-success" : "bg-brand")} style={{ width: `${percent ?? 0}%` }} /></div>
     <p className="mt-1 text-xs text-muted">{percent === null ? "No target set" : `${percent}% of target`}</p></div>;
 }
@@ -104,11 +106,14 @@ export function DispatchDashboard() {
         {attention.length ? <ul className="divide-y divide-line-soft">{attention.slice(0, 8).map((item, index) => <li key={index}><Link href={item.href} className="flex items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]"><IconTile icon={item.icon} tone={item.tone} size={34} /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{item.title}</p><p className="truncate text-xs text-muted">{item.detail}</p></div><ArrowRight size={15} className="text-muted" /></Link></li>)}</ul>
           : <EmptyState icon={ShieldCheck} title="You're all caught up" />}
       </Card>
-      {hidden ? <ActiveSales trucks={report.data?.trucks ?? []} loading={report.isLoading} /> : <Card>
-        <CardHeader title={me ? "My targets" : "This month"} subtitle={report.data ? `Gross from paid invoices · ${periodLabel(report.data.month_start, undefined)}` : undefined} />
+      {hidden ? <div className="space-y-6">{me && <SalesTargets me={me} />}<ActiveSales trucks={report.data?.trucks ?? []} loading={report.isLoading} /></div> : sales && me ? <SalesTargets me={me} /> : <Card>
+        <CardHeader title={me ? "My targets" : "This month"} subtitle={report.data ? `${sales ? "Active sales" : "Gross from paid invoices"} · ${periodLabel(report.data.month_start, undefined)}` : undefined} />
         <div className="space-y-5 p-5">{report.isLoading ? <Skeleton className="h-24" /> : me ? <>
           <TargetBar label="This week" value={me.week_gross} target={me.weekly_target} />
           <TargetBar label="This month" value={me.month_gross} target={me.monthly_target} />
+        </> : sales ? <>
+          <TargetBar count label="This week" value={totals.active_week ?? 0} target={0} />
+          <TargetBar count label="This month" value={totals.active_month ?? 0} target={0} />
         </> : <>
           <TargetBar label="This week" value={totals.week_gross ?? 0} target={0} />
           <TargetBar label="This month" value={totals.month_gross ?? 0} target={0} />
@@ -118,6 +123,14 @@ export function DispatchDashboard() {
     </div>
     <MyPerformance />
   </div>;
+}
+
+/** A Dispatch Sales agent's targets: how many trucks became active sales this week and month. */
+function SalesTargets({ me }: { me: PersonRow }) {
+  return <Card><CardHeader title="My sales targets" subtitle="Trucks that paid their first invoice" /><div className="space-y-5 p-5">
+    <TargetBar count label="This week" value={me.active_week} target={me.weekly_target} />
+    <TargetBar count label="This month" value={me.active_month} target={me.monthly_target} />
+  </div></Card>;
 }
 
 /** Which of the agent's trucks have become active sales (paid their first invoice), and which haven't yet. */
@@ -145,6 +158,7 @@ function Table<T>({ title, subtitle, rows, columns, keyOf }: { title: string; su
 const sumOf = <T,>(key: keyof T) => (rows: T[]) => rows.reduce((total, row) => total + Number(row[key] ?? 0), 0);
 const moneyOf = <T,>(key: keyof T) => (rows: T[]) => money(sumOf<T>(key)(rows));
 const owed = (value: number) => <span className={cn(value > 0 && "font-semibold text-[#A5183F]")}>{money(value)}</span>;
+const countCell = (value: number, target: number) => target ? <span>{value} <span className={cn("text-xs", value >= target ? "text-success" : "text-muted")}>/ {target} ({progress(value, target)}%)</span></span> : String(value);
 const targetCell = (value: number, target: number) => target ? <span>{money(value)} <span className={cn("text-xs", value >= target ? "text-success" : "text-muted")}>({progress(value, target)}%)</span></span> : money(value);
 
 function Breakdown({ title, values, labels }: { title: string; values: Record<string, number>; labels: Record<string, string> }) {
@@ -218,12 +232,18 @@ export function DispatchReportsScreen() {
           { label: personLabel, value: (row) => row.name },
           ...(sales ? [{ label: "Carriers", right: true, value: (row: PersonRow) => row.carriers, total: sumOf<PersonRow>("carriers") }, { label: "Pending", right: true, value: (row: PersonRow) => row.pending, total: sumOf<PersonRow>("pending") }, { label: "Discarded / DNC", right: true, value: (row: PersonRow) => row.discarded, total: sumOf<PersonRow>("discarded") }] : []),
           { label: "Running", right: true, value: (row) => `${row.active} / ${row.trucks}`, total: (rows) => `${sumOf<PersonRow>("active")(rows)} / ${sumOf<PersonRow>("trucks")(rows)}` },
-          ...(sales ? [{ label: "Active sales", right: true, value: (row: PersonRow) => `${row.active_sales} / ${row.active_sales_total}`, total: (rows: PersonRow[]) => `${sumOf<PersonRow>("active_sales")(rows)} / ${sumOf<PersonRow>("active_sales_total")(rows)}` }] : []),
+          ...(sales ? [
+            { label: "Active sales", right: true, value: (row: PersonRow) => `${row.active_sales} / ${row.active_sales_total}`, total: (rows: PersonRow[]) => `${sumOf<PersonRow>("active_sales")(rows)} / ${sumOf<PersonRow>("active_sales_total")(rows)}` },
+            { label: "This week vs target", right: true, value: (row: PersonRow) => countCell(row.active_week, row.weekly_target), total: sumOf<PersonRow>("active_week") },
+            { label: "This month vs target", right: true, value: (row: PersonRow) => countCell(row.active_month, row.monthly_target), total: sumOf<PersonRow>("active_month") },
+          ] : []),
           ...(hidden ? [] : [
             { label: "Loads", right: true, value: (row: PersonRow) => row.loads, total: sumOf<PersonRow>("loads") },
             { label: "Gross (period)", right: true, value: (row: PersonRow) => money(row.period_gross), total: moneyOf<PersonRow>("period_gross") },
-            { label: "This week vs target", right: true, value: (row: PersonRow) => targetCell(row.week_gross, row.weekly_target), total: moneyOf<PersonRow>("week_gross") },
-            { label: "This month vs target", right: true, value: (row: PersonRow) => targetCell(row.month_gross, row.monthly_target), total: moneyOf<PersonRow>("month_gross") },
+            ...(sales ? [] : [
+              { label: "This week vs target", right: true, value: (row: PersonRow) => targetCell(row.week_gross, row.weekly_target), total: moneyOf<PersonRow>("week_gross") },
+              { label: "This month vs target", right: true, value: (row: PersonRow) => targetCell(row.month_gross, row.monthly_target), total: moneyOf<PersonRow>("month_gross") },
+            ]),
             { label: "Revenue", right: true, value: (row: PersonRow) => money(row.revenue), total: moneyOf<PersonRow>("revenue") },
             { label: "Collected", right: true, value: (row: PersonRow) => money(row.collected), total: moneyOf<PersonRow>("collected") },
             { label: "Outstanding", right: true, value: (row: PersonRow) => owed(row.outstanding), total: moneyOf<PersonRow>("outstanding") },

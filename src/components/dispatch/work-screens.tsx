@@ -277,27 +277,27 @@ type TargetPerson = { id: string; full_name: string; weekly: number | null; mont
 
 export function TargetsScreen() {
   const { api, sales } = useBrokerage();
-  const targets = useQuery({ queryKey: ["brokerage", "dispatch", "targets"], queryFn: async () => responseData<{ can_edit: boolean; people: TargetPerson[] }>(await api("/api/v1/dispatch/targets")), staleTime: 30_000 });
+  const targets = useQuery({ queryKey: ["brokerage", "dispatch", "targets"], queryFn: async () => responseData<{ can_edit: boolean; unit?: "SALES" | "GROSS"; people: TargetPerson[] }>(await api("/api/v1/dispatch/targets")), staleTime: 30_000 });
   return <div className="space-y-6 animate-rise">
-    <PageHeader title="Targets" subtitle={`Weekly and monthly gross targets for each ${sales ? "agent" : "Dispatcher"}, measured on paid invoices. Progress shows on dashboards and reports.`} />
+    <PageHeader title="Targets" subtitle={sales ? "Weekly and monthly sales targets for each agent: the number of trucks that pay their first invoice. Progress shows on dashboards and reports." : "Weekly and monthly gross targets for each Dispatcher, measured on paid invoices. Progress shows on dashboards and reports."} />
     <Card>{targets.isLoading ? <div className="space-y-2 p-5">{[0, 1].map((index) => <Skeleton key={index} className="h-12" />)}</div>
-      : targets.data?.people.length ? <ul className="divide-y divide-line-soft">{targets.data.people.map((person) => <TargetRow key={person.id} person={person} editable={targets.data!.can_edit} />)}</ul>
+      : targets.data?.people.length ? <ul className="divide-y divide-line-soft">{targets.data.people.map((person) => <TargetRow key={person.id} person={person} editable={targets.data!.can_edit} sales={sales} />)}</ul>
       : <EmptyState icon={Goal} title={`No ${sales ? "agents" : "Dispatchers"} yet`} />}
     </Card>
   </div>;
 }
 
-function TargetRow({ person, editable }: { person: TargetPerson; editable: boolean }) {
+function TargetRow({ person, editable, sales }: { person: TargetPerson; editable: boolean; sales: boolean }) {
   const { run, busy } = useBrokerageAction();
   const [weekly, setWeekly] = useState(person.weekly == null ? "" : String(person.weekly));
   const [monthly, setMonthly] = useState(person.monthly == null ? "" : String(person.monthly));
   const save = (period_type: "WEEKLY" | "MONTHLY", value: string, original: number | null) => {
-    if (value === "" || Number(value) === Number(original) || !Number.isFinite(Number(value)) || Number(value) < 0) return;
+    if (value === "" || Number(value) === Number(original) || !Number.isFinite(Number(value)) || Number(value) < 0 || (sales && !Number.isInteger(Number(value)))) return;
     void run(`target:${person.id}:${period_type}`, `/api/v1/dispatch/targets/${person.id}`, "PUT", { period_type, amount: Number(value) }, `${person.full_name}'s ${period_type.toLowerCase()} target saved.`);
   };
   return <li className="grid items-end gap-3 px-5 py-4 sm:grid-cols-[1fr_180px_180px]">
     <p className="self-center font-semibold">{person.full_name}</p>
-    <TextField label="Weekly target" type="number" min="0" step="1" disabled={!editable || busy(`target:${person.id}:WEEKLY`)} value={weekly} onChange={(event) => setWeekly(event.target.value)} onBlur={() => save("WEEKLY", weekly, person.weekly)} />
-    <TextField label="Monthly target" type="number" min="0" step="1" disabled={!editable || busy(`target:${person.id}:MONTHLY`)} value={monthly} onChange={(event) => setMonthly(event.target.value)} onBlur={() => save("MONTHLY", monthly, person.monthly)} />
+    <TextField label={sales ? "Weekly sales" : "Weekly gross ($)"} type="number" min="0" step="1" disabled={!editable || busy(`target:${person.id}:WEEKLY`)} value={weekly} onChange={(event) => setWeekly(event.target.value)} onBlur={() => save("WEEKLY", weekly, person.weekly)} />
+    <TextField label={sales ? "Monthly sales" : "Monthly gross ($)"} type="number" min="0" step="1" disabled={!editable || busy(`target:${person.id}:MONTHLY`)} value={monthly} onChange={(event) => setMonthly(event.target.value)} onBlur={() => save("MONTHLY", monthly, person.monthly)} />
   </li>;
 }
