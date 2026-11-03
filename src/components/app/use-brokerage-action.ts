@@ -17,11 +17,13 @@ export function useBrokerageAction() {
 
   const refresh = useCallback(() => queryClient.invalidateQueries({ queryKey: ["brokerage"] }), [queryClient]);
 
-  const run = useCallback(async <T = unknown>(key: string, path: string, method: string, body: unknown, success: string): Promise<T | undefined> => {
+  /** `beforeRefresh` runs once the request succeeded and before data is refreshed, e.g. to close a drawer whose record was just deleted. */
+  const run = useCallback(async <T = unknown>(key: string, path: string, method: string, body: unknown, success: string, beforeRefresh?: (result: T) => void): Promise<T | undefined> => {
     let result: T | undefined;
     await actions.run(key, async () => {
       try {
         result = await responseData<T>(await api(path, { method, body: body === undefined ? undefined : JSON.stringify(body) }));
+        beforeRefresh?.(result);
         // Keep the action busy until fresh data is on screen, so nothing shows the old value in between.
         await refresh().catch(() => undefined);
         if (success) report(success);

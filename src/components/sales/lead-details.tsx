@@ -1,10 +1,9 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Pickaxe, Plus, Save } from "lucide-react";
+import { ChevronDown, Plus, Save } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
-import { dateTimeLabel } from "@/lib/format";
 import { errorMessage, responseData } from "@/lib/api";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
@@ -46,7 +45,7 @@ const wide = new Set<DetailKey>(["lanes", "physical_address", "other_locations",
 const detailKeys = cardSections.flatMap((section) => section.fields.map(([key]) => key));
 
 /** Company, location and billing details on the lead page, editable by whoever may edit the lead. */
-export function LeadDetailsCard({ lead, editable, prospect }: { lead: Lead; editable: boolean; prospect?: FronterProspect | null }) {
+export function LeadDetailsCard({ lead, editable }: { lead: Lead; editable: boolean; prospect?: FronterProspect | null }) {
   const { run, busy } = useBrokerageAction();
   const initial = useMemo(() => Object.fromEntries(detailKeys.map((key) => [key, key === "w9_received" ? Boolean(lead[key]) : (lead[key] as string | null) ?? ""])) as Record<DetailKey, string | boolean>, [lead]);
   const [form, setForm] = useState(initial);
@@ -60,7 +59,7 @@ export function LeadDetailsCard({ lead, editable, prospect }: { lead: Lead; edit
     return <TextField key={key} label={label} type={key === "billing_email" ? "email" : "text"} value={String(form[key])} readOnly={!editable} disabled={pending} onChange={(event) => setForm({ ...form, [key]: event.target.value })} wrapperClassName={cn(wide.has(key) && "sm:col-span-2")} />;
   };
   return <Card>
-    <CardHeader title="Company details" subtitle={prospect ? <span className="inline-flex items-center gap-1.5"><Pickaxe size={13} className="text-brand-deep" />From Fronters · mined and qualified by {prospect.fronter_name ?? "a Fronter"}{prospect.qualified_at ? ` · ${dateTimeLabel(prospect.qualified_at)}` : ""}</span> : "Operator, shipping, locations and billing"} />
+    <CardHeader title="Company details" subtitle="Operator, shipping, locations and billing" />
     <form onSubmit={save} className="space-y-6 p-5">
       {cardSections.map((section) => <fieldset key={section.title}>
         <legend className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted">{section.title}</legend>

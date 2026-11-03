@@ -8,6 +8,8 @@ import { useSession } from "@/components/app/session";
 import { MyPerformance } from "@/components/finance/my-performance";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { Card, CardHeader, Chip, EmptyState, IconTile, KpiCard, StatusChip, type Tone } from "@/components/ui/surface";
+import { useQuery } from "@tanstack/react-query";
+import { responseData } from "@/lib/api";
 import { LinkButton } from "@/components/ui/button";
 import { closedStages, nextAction, stageLabel, type Lead, type Quote } from "@/components/sales/model";
 import { exceptionOpen, statusLabel, type Shipment } from "@/components/operations/model";
@@ -21,7 +23,7 @@ function greeting() {
 
 export function BrokerageDashboard() {
   const { profile } = useSession();
-  const { workspace, sales, unread } = useBrokerage();
+  const { workspace, sales, unread, manager } = useBrokerage();
   const firstName = profile.full_name.split(" ")[0];
   const permissions = (workspace.permissions ?? []) as string[];
 
@@ -36,13 +38,28 @@ export function BrokerageDashboard() {
 
     {sales ? <SalesDashboard unread={unread} /> : <OperationsDashboard unread={unread} />}
 
-    <MyPerformance />
+    {sales && !manager ? <OnboardedCard /> : <MyPerformance />}
 
     {permissions.length > 0 && <Card className="flex flex-wrap items-center gap-3 px-5 py-4">
       <span className="flex items-center gap-2 text-sm font-semibold"><ShieldCheck size={16} className="text-brand" />Delegated rights</span>
       {permissions.map((permission) => <Chip key={permission}>{permission.split(".").slice(1).join(" ").replaceAll("_", " ")}</Chip>)}
     </Card>}
   </div>;
+}
+
+/** Client feedback: a Sales agent sees how many customers they onboarded this month, not gross. */
+function OnboardedCard() {
+  const { api } = useBrokerage();
+  const now = new Date();
+  const day = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const range = { from: day(new Date(now.getFullYear(), now.getMonth(), 1)), to: day(now), agent_id: "" };
+  const report = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<{ sales: { totals: Record<string, number> } }>(await api(`/api/v1/brokerage/reports?from=${range.from}&to=${range.to}`)), staleTime: 30_000 });
+  const totals = report.data?.sales.totals;
+  return <Card className="flex flex-wrap items-center gap-x-8 gap-y-3 p-5">
+    <div className="flex items-center gap-3"><IconTile icon={UserRoundCheck} tone="success" /><div><h2 className="text-[15px] font-semibold">Customers onboarded</h2><p className="text-xs text-muted">{now.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</p></div></div>
+    <p className="text-3xl font-bold tracking-tight tabular-nums">{report.isLoading ? "…" : totals?.onboarded_customers ?? 0}</p>
+    <p className="text-sm text-muted">{totals ? `${totals.shipping_customers ?? 0} currently shipping` : ""}</p>
+  </Card>;
 }
 
 function SalesDashboard({ unread }: { unread: number }) {

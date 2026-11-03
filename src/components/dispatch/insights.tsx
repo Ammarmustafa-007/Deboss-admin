@@ -168,7 +168,7 @@ function Breakdown({ title, values, labels }: { title: string; values: Record<st
 
 export function DispatchReportsScreen() {
   const { profile } = useSession();
-  const { sales, report } = useBrokerage();
+  const { sales, report, manager } = useBrokerage();
   const [range, setRange] = useState(thisMonth);
   // Visited pages stay mounted; leaving Reports resets the filters, like the Brokerage reports.
   useEffect(() => () => setRange(thisMonth()), []);
@@ -207,13 +207,13 @@ export function DispatchReportsScreen() {
 
   return <div className="space-y-6 animate-rise">
     <PageHeader title={sales ? (r?.team_view ? "Dispatch sales performance" : "My dispatch sales") : (r?.team_view ? "Dispatch performance" : "My dispatch results")} subtitle={hidden ? "Your carriers, trucks and active sales" : "Gross from paid invoices, invoiced revenue, targets and collections"} actions={<Button variant="ink" icon={<Download size={15} />} disabled={!r} onClick={exportExcel}>Export Excel</Button>} />
-    <Card className="flex flex-wrap items-end gap-3 px-5 py-4">
-      <label className="flex flex-col text-xs font-medium text-muted">From<input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
-      <label className="flex flex-col text-xs font-medium text-muted">To<input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
+    {(manager || (r?.team_view && agents.length > 1)) && <Card className="flex flex-wrap items-end gap-3 px-5 py-4">
+      {manager && <><label className="flex flex-col text-xs font-medium text-muted">From<input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
+      <label className="flex flex-col text-xs font-medium text-muted">To<input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label></>}
       {r?.team_view && agents.length > 1 && <label className="flex flex-col text-xs font-medium text-muted">{personLabel}<select value={range.agent_id} onChange={(event) => setRange({ ...range, agent_id: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-52")}><option value="">All {sales ? "agents" : "Dispatchers"}</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select></label>}
-      {(range.from !== thisMonth().from || range.to !== thisMonth().to || range.agent_id) && <Button variant="ghost" onClick={() => setRange(thisMonth())}>This month</Button>}
-      {(range.from || range.to) && <Button variant="ghost" onClick={() => setRange({ ...range, from: "", to: "" })}>All time</Button>}
-    </Card>
+      {manager && (range.from !== thisMonth().from || range.to !== thisMonth().to || range.agent_id) && <Button variant="ghost" onClick={() => setRange(thisMonth())}>This month</Button>}
+      {manager && (range.from || range.to) && <Button variant="ghost" onClick={() => setRange({ ...range, from: "", to: "" })}>All time</Button>}
+    </Card>}
     {data.isLoading ? <><div className="grid grid-cols-2 gap-4 xl:grid-cols-4">{[0, 1, 2, 3].map((index) => <Skeleton key={index} className="h-28 rounded-card" />)}</div><Skeleton className="h-80 rounded-card" /></>
       : data.isError || !r ? <Card><EmptyState icon={BarChart3} title="Reports unavailable" body={errorMessage(data.error)} /></Card>
       : <>

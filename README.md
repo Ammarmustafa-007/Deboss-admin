@@ -1,5 +1,8 @@
 # DEBOSS GLOBAL Admin
 
+> **Full documentation:** [docs/README.md](docs/README.md): architecture, roles and menus, every route and screen, conventions. Business rules are in the backend repository's `docs/`.
+
+
 The Next.js operational console for DEBOSS GLOBAL.
 
 ## Setup

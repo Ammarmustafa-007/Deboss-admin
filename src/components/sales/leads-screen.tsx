@@ -77,7 +77,7 @@ export function LeadsScreen() {
 
   return <div className="space-y-6 animate-rise">
     <PageHeader title="Sales pipeline" subtitle={manager ? "Every lead in your department" : teamLead ? "Your team's leads and customers" : "Your leads and customers"} actions={<>
-      <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportLeadsExcel(visible.map(({ lead }) => lead), ownerName)} disabled={!visible.length}>Export</Button>
+      {manager && <Button variant="outline" icon={<Download size={15} />} onClick={() => void exportLeadsExcel(visible.map(({ lead }) => lead), ownerName)} disabled={!visible.length}>Export</Button>}
       <Button variant="outline" icon={<Upload size={15} />} onClick={() => setImporting(true)}>Import</Button>
       <Button variant="outline" icon={<Maximize2 size={15} />} onClick={() => setSheetOpen(true)}>Open sheet</Button>
       {!manager && <LinkButton href="/app/sales/new" variant="primary" icon={<Plus size={16} />}>New lead</LinkButton>}

@@ -141,7 +141,7 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const paidError = paid !== "" && (!Number.isFinite(paidAmount) || (paidAmount ?? 0) < 0) ? "Enter an amount of 0 or more." : undefined;
 
   const [deleting, setDeleting] = useState(false);
-  const remove = () => void run("invoice-delete", `/api/v1/dispatch/invoices/${id}`, "DELETE", undefined, "Invoice deleted. Its loads can be invoiced again.").then((result) => { if (result !== undefined) { setDeleting(false); onClose(); } });
+  const remove = () => void run("invoice-delete", `/api/v1/dispatch/invoices/${id}`, "DELETE", undefined, "Invoice deleted. Its loads can be invoiced again.", () => { setDeleting(false); onClose(); });
   const removeLoad = (loadId: string) => void run(`invoice-load:${loadId}`, `/api/v1/dispatch/invoices/${id}`, "PATCH", { remove_load_ids: [loadId] }, "Load removed from the invoice.");
 
   return <Drawer open onClose={onClose} dismissible={!pending} title={invoice?.invoice_number ?? "Invoice"} subtitle={invoice ? `${invoice.carrier?.company_name} · ${invoice.truck?.unit_number} · ${weekLabel(invoice.week_start)}` : undefined} className="max-w-2xl">

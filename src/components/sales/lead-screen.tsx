@@ -2,10 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { Archive, ArchiveRestore, Crown, CalendarClock, FileSearch, Mail, Phone, Plus, UserRound, UserRoundPlus } from "lucide-react";
-import { use, useState, type FormEvent, type ReactNode } from "react";
+import { use, useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
-import { responseData } from "@/lib/api";
-import { dateTimeLabel, localInput, money } from "@/lib/format";
+import { errorMessage, responseData } from "@/lib/api";
+import { dateTimeLabel, localInput } from "@/lib/format";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { Card, CardHeader, Chip, EmptyState, PageHeader, Skeleton, StatusChip } from "@/components/ui/surface";
 import { Stepper, Tabs } from "@/components/ui/navigation";
@@ -140,8 +140,6 @@ function leadFormState(lead: Lead) {
     contact_name: lead.contact_name ?? "",
     contact_email: lead.contact_email ?? "",
     contact_phone: lead.contact_phone ?? "",
-    source: lead.source ?? "",
-    estimated_monthly_value: lead.estimated_monthly_value == null ? "" : String(lead.estimated_monthly_value),
     next_follow_up_at: localInput(lead.next_follow_up_at),
   };
 }
@@ -161,8 +159,6 @@ function LeadForm({ lead }: { lead: Lead }) {
       contact_name: form.contact_name,
       contact_email: form.contact_email,
       contact_phone: form.contact_phone,
-      source: form.source,
-      estimated_monthly_value: form.estimated_monthly_value === "" ? null : Number(form.estimated_monthly_value),
       next_follow_up_at: form.next_follow_up_at ? new Date(form.next_follow_up_at).toISOString() : null,
     }, "Lead information updated.");
   };
@@ -176,8 +172,6 @@ function LeadForm({ lead }: { lead: Lead }) {
           <TextField label="Contact" value={form.contact_name} onChange={(event) => set("contact_name")(event.target.value)} />
           <TextField label="Email" type="email" value={form.contact_email} onChange={(event) => set("contact_email")(event.target.value)} />
           <TextField label="Phone" value={form.contact_phone} onChange={(event) => set("contact_phone")(event.target.value)} />
-          <TextField label="Source" value={form.source} onChange={(event) => set("source")(event.target.value)} />
-          <TextField label="Forecast (monthly)" type="number" min="0" value={form.estimated_monthly_value} onChange={(event) => set("estimated_monthly_value")(event.target.value)} />
           <TextField label="Next follow-up" type="datetime-local" value={form.next_follow_up_at} onChange={(event) => set("next_follow_up_at")(event.target.value)} wrapperClassName="sm:col-span-2" />
         </fieldset>
         <div className="mt-6 flex items-center justify-end gap-2">
@@ -190,14 +184,34 @@ function LeadForm({ lead }: { lead: Lead }) {
   </div>;
 }
 
+/** Next follow-up and the lead's sticky note: free text the agent keeps about this company, saved as they type. */
 function LeadSummary({ lead }: { lead: Lead }) {
-  return <Card className="h-fit p-5">
-    <dl className="space-y-4 text-sm">
-      <Fact label="Forecast" value={money(lead.estimated_monthly_value)} />
-      <Fact label="Next follow-up" value={lead.next_follow_up_at ? dateTimeLabel(lead.next_follow_up_at) : "Not scheduled"} icon={<CalendarClock size={14} />} />
-      <Fact label="Source" value={lead.source || "—"} />
-    </dl>
-    {lead.notes && <div className="mt-5 border-t border-line-soft pt-4"><p className="text-xs font-medium text-muted">Notes</p><p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">{lead.notes}</p></div>}
+  return <div className="h-fit space-y-4">
+    <Card className="p-5"><dl className="text-sm"><Fact label="Next follow-up" value={lead.next_follow_up_at ? dateTimeLabel(lead.next_follow_up_at) : "Not scheduled"} icon={<CalendarClock size={14} />} /></dl></Card>
+    <StickyNote key={lead.id} lead={lead} />
+  </div>;
+}
+
+function StickyNote({ lead }: { lead: Lead }) {
+  const { api, report } = useBrokerage();
+  const [text, setText] = useState(lead.notes ?? "");
+  const [saved, setSaved] = useState(lead.notes ?? "");
+  const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
+  const save = useCallback(async (value: string) => {
+    if (value === saved) return;
+    setState("saving");
+    try { await responseData(await api(`/api/v1/brokerage/leads/${lead.id}`, { method: "PATCH", body: JSON.stringify({ notes: value.trim() ? value : null }) })); setSaved(value); setState("saved"); }
+    catch (error) { setState("idle"); report(errorMessage(error), "error"); }
+  }, [api, lead.id, report, saved]);
+  // Save a moment after typing stops, and when leaving the note.
+  useEffect(() => {
+    if (text === saved) return;
+    const timer = setTimeout(() => void save(text), 1200);
+    return () => clearTimeout(timer);
+  }, [save, saved, text]);
+  return <Card className="overflow-hidden border-[#F2D58A] bg-[#FFF9E3]">
+    <div className="flex items-center justify-between px-4 pt-3"><p className="text-xs font-semibold uppercase tracking-wide text-[#8A6A12]">Notes</p><span className="text-[11px] text-[#8A6A12]/80">{state === "saving" ? "Saving…" : state === "saved" && text === saved ? "Saved" : ""}</span></div>
+    <textarea aria-label="Notes" value={text} maxLength={10000} onChange={(event) => setText(event.target.value)} onBlur={() => void save(text)} placeholder="Write anything about this company: calls, preferences, what to remember…" className="block min-h-56 w-full resize-y bg-transparent px-4 pb-4 pt-2 text-sm leading-6 outline-none placeholder:text-[#8A6A12]/50" />
   </Card>;
 }
 
@@ -206,7 +220,7 @@ function Fact({ label, value, icon }: { label: string; value: string; icon?: Rea
 }
 
 function LeadFacts({ lead }: { lead: Lead }) {
-  const facts: [string, string][] = [["Company", lead.company_name], ["Contact", lead.contact_name || "—"], ["Email", lead.contact_email || "—"], ["Phone", lead.contact_phone || "—"], ["Source", lead.source || "—"], ["Forecast", money(lead.estimated_monthly_value)], ["Next follow-up", lead.next_follow_up_at ? dateTimeLabel(lead.next_follow_up_at) : "Not scheduled"], ["Pipeline stage", stageLabel[lead.stage] ?? lead.stage]];
+  const facts: [string, string][] = [["Company", lead.company_name], ["Contact", lead.contact_name || "—"], ["Email", lead.contact_email || "—"], ["Phone", lead.contact_phone || "—"], ["Next follow-up", lead.next_follow_up_at ? dateTimeLabel(lead.next_follow_up_at) : "Not scheduled"], ["Pipeline stage", stageLabel[lead.stage] ?? lead.stage]];
   return <Card>
     <CardHeader title="Lead record" />
     <dl className="grid gap-x-6 gap-y-5 p-5 sm:grid-cols-2 xl:grid-cols-4">{facts.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-xs font-medium text-muted">{label}</dt><dd className="mt-0.5 truncate text-sm font-semibold">{value}</dd></div>)}</dl>

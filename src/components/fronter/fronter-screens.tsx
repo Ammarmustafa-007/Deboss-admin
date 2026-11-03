@@ -52,13 +52,6 @@ function useProspects() {
   return useQuery({ queryKey: keys.prospects, queryFn: async () => (await responseData<{ prospects: Prospect[] }>(await api("/api/v1/fronter/prospects"))).prospects, staleTime: 10_000 });
 }
 
-/** Plain CSV download (UTF-8 with BOM so Excel opens accents and emoji correctly). */
-function downloadCsv(fileName: string, header: string[], rows: unknown[][]) {
-  const cell = (value: unknown) => { const text = value === null || value === undefined ? "" : String(value); return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
-  const blob = new Blob(["\uFEFF" + [header, ...rows].map((line) => line.map(cell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" });
-  const link = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: `${fileName}.csv` });
-  link.click(); setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-}
 
 // ---- Lead mining ------------------------------------------------------------------------------------------------
 type Filter = "all" | "NEW" | "CONTACTED" | "QUALIFIED" | "closed";
@@ -92,7 +85,6 @@ function StatusPill({ row, disabled, compact, onChange }: { row: Prospect; disab
 /** The Fronter's lead mining sheet. With `salesView`, a Sales agent's read-only view of their Fronters' rows, where only the status changes. */
 export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
   const { api, report, manager } = useBrokerage();
-  const { profile } = useSession();
   const queryClient = useQueryClient();
   const prospects = useProspects();
   const [filter, setFilter] = useState<Filter>("all");
@@ -144,11 +136,6 @@ export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
   const term = search.trim().toLowerCase();
   const visible = list.filter((row) => (filter === "all" || (filter === "closed" ? ["NOT_QUALIFIED", "NOT_INTERESTED"].includes(row.status) : row.status === filter))
     && (!term || [row.company_name, row.operator_name, row.shipping_contact, row.phone, row.email, row.commodity, row.lanes, row.website].some((value) => value?.toLowerCase().includes(term))));
-  const exportColumns = [{ header: "Company name", key: "company_name" }, ...fieldColumns.map((column) => ({ header: fullLabels[column.key] ?? column.label, key: column.key })), { header: "Status", key: "status_label", type: "status" as const }, { header: "Mined by", key: "created_by_name" }, { header: "Added", key: "created_at", type: "date" as const }];
-  const exportRows = () => visible.map((row) => ({ ...row, status_label: prospectStatusLabel[row.status], w9_received: row.w9_received ? "Yes" : "No", load_type: row.load_type === "BOTH" ? "Both" : row.load_type }));
-  const exportName = `Lead mining ${new Date().toISOString().slice(0, 10)}`;
-  const exportSheet = () => void downloadExcel(exportName, [{ name: "Lead mining", title: "Lead mining", columns: exportColumns, rows: exportRows() }], { exportedBy: profile.full_name });
-  const exportCsv = () => downloadCsv(exportName, exportColumns.map((column) => column.header), exportRows().map((row) => exportColumns.map((column) => column.key === "created_at" ? dateLabel(row.created_at) : (row as Record<string, unknown>)[column.key])));
 
   const tools = <>
     <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -181,10 +168,8 @@ export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
   ];
 
   return <div className="space-y-5 animate-rise">
-    <PageHeader title={salesView ? "Fronter mining sheet" : "Lead mining"} subtitle={salesView ? "The companies your Fronters are mining. Mark one Qualified to take it as your lead." : "Type straight into the list, or paste rows from Excel. Open a row for every detail, or the sheet for all columns."}
+    <PageHeader title={salesView ? "Fronter mining sheet" : "Lead mining"} subtitle={salesView ? "The companies your Fronters are mining. Edit any row, or mark one Qualified to take it as your lead." : "Type straight into the list, or paste rows from Excel. Open a row for every detail, or the sheet for all columns."}
       actions={<div className="flex flex-wrap gap-2">
-        <Button variant="outline" icon={<Download size={15} />} disabled={!visible.length} onClick={exportCsv}>Export CSV</Button>
-        <Button variant="outline" icon={<Download size={15} />} disabled={!visible.length} onClick={exportSheet}>Export Excel</Button>
         <Button variant="primary" icon={<Maximize2 size={15} />} onClick={() => setSheetOpen(true)}>Open sheet</Button>
       </div>} />
     <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">

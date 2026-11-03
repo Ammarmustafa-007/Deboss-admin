@@ -42,13 +42,16 @@ export function ReportsScreen() {
   // Managers, Directors and Team Leads (team reports are in both Partial and Full access) see per-agent performance.
   const canViewTeamPerformance = manager || teamLead || profile.role === "SUPER_ADMIN";
   const teamView = canViewTeamPerformance;
+  // Client feedback: agents see the current month only; managers keep the date range and the export.
+  const fullControls = manager || profile.role === "SUPER_ADMIN";
   const [range, setRange] = useState(thisMonth);
   // The report response is intentionally narrowed once an agent filter is active.
   // Keep the full roster separately so selecting one agent never removes the way back to all agents.
   const [agentOptions, setAgentOptions] = useState<{ id: string; full_name: string }[]>([]);
   // Next keeps visited pages alive but hidden; hiding runs effect cleanups, so leaving Reports resets the filters.
   useEffect(() => () => setRange(thisMonth()), []);
-  const reports = useQuery({ queryKey: ["brokerage", "reports", range], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(range).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
+  const shown = fullControls ? range : { ...thisMonth(), agent_id: range.agent_id };
+  const reports = useQuery({ queryKey: ["brokerage", "reports", shown], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(shown).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
 
   useEffect(() => {
     const incoming = reports.data?.sales.agents ?? [];
@@ -78,21 +81,23 @@ export function ReportsScreen() {
   const title = sales ? canViewTeamPerformance ? "Sales performance" : "My sales results" : "Operations & revenue";
 
   return <div className="space-y-6 animate-rise">
-    <PageHeader title={title} subtitle="Filter by date range and export the report to Excel" actions={<Button variant="ink" icon={<Download size={15} />} disabled={!data} pending={exporting} pendingLabel="Preparing…" onClick={() => void exportExcel()}>Export Excel</Button>} />
+    <PageHeader title={title} subtitle={fullControls ? "Filter by date range and export the report to Excel" : `This month · ${periodLabel(thisMonth().from, thisMonth().to)}`} actions={fullControls && <Button variant="ink" icon={<Download size={15} />} disabled={!data} pending={exporting} pendingLabel="Preparing…" onClick={() => void exportExcel()}>Export Excel</Button>} />
 
-    <Card className="flex flex-wrap items-end gap-3 px-5 py-4">
-      <label className="flex flex-col text-xs font-medium text-muted">From<input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
-      <label className="flex flex-col text-xs font-medium text-muted">To<input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
+    {(fullControls || (sales && canViewTeamPerformance && agentOptions.length > 0)) && <Card className="flex flex-wrap items-end gap-3 px-5 py-4">
+      {fullControls && <>
+        <label className="flex flex-col text-xs font-medium text-muted">From<input type="date" value={range.from} onChange={(event) => setRange({ ...range, from: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
+        <label className="flex flex-col text-xs font-medium text-muted">To<input type="date" value={range.to} onChange={(event) => setRange({ ...range, to: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-44")} /></label>
+      </>}
       {sales && canViewTeamPerformance && agentOptions.length > 0 && <label className="flex flex-col text-xs font-medium text-muted">Agent<select value={range.agent_id} onChange={(event) => setRange({ ...range, agent_id: event.target.value })} className={cn(controlClass, "mt-1 h-10 w-52")}><option value="">All permitted agents</option>{agentOptions.map((agent) => <option key={agent.id} value={agent.id}>{agent.full_name}</option>)}</select></label>}
       {range.agent_id && <Button variant="ghost" onClick={() => setRange({ ...range, agent_id: "" })}>Clear agent</Button>}
-      {(range.from !== thisMonth().from || range.to !== thisMonth().to || range.agent_id) && <Button variant="ghost" onClick={() => setRange(thisMonth())}>This month</Button>}
-      {(range.from || range.to) && <Button variant="ghost" onClick={() => setRange({ ...range, from: "", to: "" })}>All time</Button>}
-    </Card>
+      {fullControls && (range.from !== thisMonth().from || range.to !== thisMonth().to || range.agent_id) && <Button variant="ghost" onClick={() => setRange(thisMonth())}>This month</Button>}
+      {fullControls && (range.from || range.to) && <Button variant="ghost" onClick={() => setRange({ ...range, from: "", to: "" })}>All time</Button>}
+    </Card>}
 
     {reports.isLoading ? <><div className="grid grid-cols-2 gap-4 xl:grid-cols-5">{Array.from({ length: 5 }).map((_, index) => <Skeleton key={index} className="h-28 rounded-card" />)}</div><Skeleton className="h-80 rounded-card" /></>
       : reports.isError || !data ? <Card><EmptyState icon={BarChart3} title="Reports unavailable" body={errorMessage(reports.error)} /></Card>
       : <>
-        <div className={cn("grid grid-cols-2 gap-3 sm:gap-4", sales ? "xl:grid-cols-5" : "xl:grid-cols-4")}>
+        <div className={cn("grid grid-cols-2 gap-3 sm:gap-4", sales ? canViewTeamPerformance ? "xl:grid-cols-5" : "xl:grid-cols-3" : "xl:grid-cols-4")}>
           {sales ? canViewTeamPerformance ? <>
             <KpiCard label="Leads" value={data.sales.totals.leads} tone="brand" />
             <KpiCard label="Customers" value={data.sales.totals.customers} tone="success" />
@@ -100,11 +105,9 @@ export function ReportsScreen() {
             <KpiCard label="Gross generated" value={money(data.sales.totals.gross_generated)} tone="accent" />
             <KpiCard label="Quoted value" value={money(data.sales.totals.quoted_value)} tone="info" />
           </> : <>
-            <KpiCard label="Customers onboarded" value={data.sales.totals.customers} tone="success" />
-            <KpiCard label="Shipments created" value={data.sales.totals.shipments} tone="aqua" />
-            <KpiCard label="Gross generated" value={money(data.sales.totals.gross_generated)} tone="accent" />
-            <KpiCard label="Quoted value" value={money(data.sales.totals.quoted_value)} tone="info" />
-            <KpiCard label="Agreed value" value={money(data.sales.totals.agreed_value)} tone="brand" />
+            <KpiCard label="Leads this month" value={data.sales.totals.leads} tone="brand" />
+            <KpiCard label="Customers onboarded" value={data.sales.totals.onboarded_customers ?? 0} tone="success" />
+            <KpiCard label="Currently shipping" value={data.sales.totals.shipping_customers ?? 0} tone="aqua" className="col-span-2 xl:col-span-1" />
           </> : <>
             <KpiCard label="Shipments" value={data.operations.totals.shipments} tone="brand" />
             <KpiCard label="In progress" value={data.operations.totals.in_progress ?? 0} tone="aqua" />
@@ -119,7 +122,6 @@ export function ReportsScreen() {
 
         {sales && !canViewTeamPerformance ? <div className="space-y-6">
           <ShipmentTable rows={data.sales.shipment_rows} />
-          <Breakdown title="Shipment status" values={data.sales.shipment_statuses} />
         </div> : <>{!sales && canViewTeamPerformance && (data.operations.agent_breakdown?.length ?? 0) > 0 && <OpsAgentTable rows={data.operations.agent_breakdown!} />}{!sales && canViewTeamPerformance && (data.operations.team_breakdown?.length ?? 0) > 0 && <RollupTable title="By team" label="Team" rows={data.operations.team_breakdown!} />}{!sales && (data.operations.customer_breakdown?.length ?? 0) > 0 && <RollupTable title="By customer" label="Customer" rows={data.operations.customer_breakdown!} />}{!sales && <OpsShipmentTable rows={data.operations.rows} manager={teamView} />}{sales && (data.sales.agent_breakdown?.length ?? 0) > 0 && <AgentTable rows={data.sales.agent_breakdown!} onPick={(id) => setRange({ ...range, agent_id: id })} />}{sales && (data.sales.agent_outcomes?.length ?? 0) > 0 && <OutcomeTable rows={data.sales.agent_outcomes!} />}<div className="grid gap-6 xl:grid-cols-2">
           {sales ? <>
             <Breakdown title="Pipeline by stage" values={data.sales.lead_stages} />
@@ -364,20 +366,18 @@ function Breakdown({ title, values }: { title: string; values: Counts }) {
 
 function ShipmentTable({ rows }: { rows: Row[] }) {
   return <Card>
-    <CardHeader title="My shipments" subtitle="The same rows included in the Excel export" />
+    <CardHeader title="My shipments" subtitle="Loads you added this month" />
     <div className="overflow-x-auto">
       <table className="w-full min-w-[900px] text-sm">
-        <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Reference</th><th className="px-3 py-2.5 font-medium">Customer</th><th className="px-3 py-2.5 font-medium">Lane</th><th className="px-3 py-2.5 font-medium">Equipment</th><th className="px-3 py-2.5 text-right font-medium">Quoted</th><th className="px-3 py-2.5 text-right font-medium">Agreed</th><th className="px-3 py-2.5 font-medium">Status</th><th className="px-5 py-2.5 font-medium">Dates</th></tr></thead>
+        <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Reference</th><th className="px-3 py-2.5 font-medium">Customer</th><th className="px-3 py-2.5 font-medium">Lane</th><th className="px-3 py-2.5 font-medium">Equipment</th><th className="px-3 py-2.5 font-medium">Status</th><th className="px-5 py-2.5 font-medium">Dates</th></tr></thead>
         <tbody>{rows.map((row) => <tr key={row.id} className="border-t border-line-soft">
           <td className="px-5 py-3 font-semibold">{row.reference_number}</td>
           <td className="px-3 py-3">{row.customer_name}</td>
           <td className="px-3 py-3 text-[13px]">{row.pickup_location} <span className="text-brand">→</span> {row.delivery_location}</td>
           <td className="px-3 py-3 text-[13px] text-ink/75">{row.equipment_type || "—"}</td>
-          <td className="px-3 py-3 text-right tabular-nums">{money(row.amount_quoted)}</td>
-          <td className="px-3 py-3 text-right tabular-nums">{money(row.amount_agreed)}</td>
           <td className="px-3 py-3"><StatusChip status={String(row.sales_status ?? "")} /></td>
           <td className="px-5 py-3 text-[13px] text-ink/75">{dateLabel(row.pickup_date as string)} – {dateLabel(row.delivery_date as string)}</td>
-        </tr>)}{!rows.length && <tr><td colSpan={8} className="px-5 py-10 text-center text-sm text-muted">No shipments match this reporting period.</td></tr>}</tbody>
+        </tr>)}{!rows.length && <tr><td colSpan={6} className="px-5 py-10 text-center text-sm text-muted">No loads this month yet.</td></tr>}</tbody>
       </table>
     </div>
   </Card>;
