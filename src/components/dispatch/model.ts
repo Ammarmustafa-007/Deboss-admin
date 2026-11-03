@@ -47,7 +47,7 @@ export type TruckDetail = {
   truck: Truck; carrier: Carrier; loads: Load[]; invoices: DispatchInvoice[]; comments: Comment[]; targets: { period_type: string; amount: number }[];
   rights: { update: boolean; assign: boolean; terms: boolean; sales_side: boolean; money_hidden?: boolean };
 };
-export type DispatchDirectory = { users: { id: string; full_name: string }[]; teams: { id: string; name: string; team_lead_id?: string | null }[]; operations_departments: { id: string; name: string }[] };
+export type DispatchDirectory = { users: { id: string; full_name: string }[]; managers?: { id: string; full_name: string }[]; teams: { id: string; name: string; team_lead_id?: string | null }[]; operations_departments: { id: string; name: string }[] };
 
 export const truckTypes = ["DRY_VAN", "REEFER", "FLATBED", "STEP_DECK", "POWER_ONLY", "BOX_TRUCK", "HOTSHOT", "OTHER"];
 export const truckTypeLabel: Record<string, string> = { DRY_VAN: "Dry van", REEFER: "Reefer", FLATBED: "Flatbed", STEP_DECK: "Step deck", POWER_ONLY: "Power only", BOX_TRUCK: "Box truck", HOTSHOT: "Hotshot", OTHER: "Other" };

@@ -171,8 +171,11 @@ function OwnerCard({ data }: { data: CarrierDetail }) {
   const directory = useDispatchDirectory();
   const { run, busy } = useBrokerageAction();
   const pending = busy("assign-carrier");
-  return <Card><CardHeader title="Assignment" subtitle="Which agent owns this carrier" /><div className="grid gap-4 p-5">
-    <SelectField label="Agent" required value={carrier.owner_id} disabled={pending || !directory.data} onChange={(event) => event.target.value && void run("assign-carrier", `/api/v1/dispatch/carriers/${carrier.id}`, "PATCH", { owner_id: event.target.value }, "Carrier owner updated.")} options={(directory.data?.users ?? []).map((user) => ({ value: user.id, label: user.full_name }))} />
+  // Agents and managers of the department can own a carrier; the current owner is always listed.
+  const owners = [...(directory.data?.users ?? []).map((user) => ({ value: user.id, label: user.full_name })), ...(directory.data?.managers ?? []).map((user) => ({ value: user.id, label: `${user.full_name} (Manager)` }))];
+  if (carrier.owner_id && !owners.some((owner) => owner.value === carrier.owner_id)) owners.unshift({ value: carrier.owner_id, label: carrier.owner_name ?? "Current owner" });
+  return <Card><CardHeader title="Assignment" subtitle="Who owns this carrier" /><div className="grid gap-4 p-5">
+    <SelectField label="Owner" required value={carrier.owner_id} disabled={pending || !directory.data} onChange={(event) => event.target.value && void run("assign-carrier", `/api/v1/dispatch/carriers/${carrier.id}`, "PATCH", { owner_id: event.target.value }, "Carrier owner updated.")} options={owners} />
     <SelectField label="Team" value={carrier.team_id ?? ""} placeholder="No team" disabled={pending || !directory.data} onChange={(event) => void run("assign-carrier", `/api/v1/dispatch/carriers/${carrier.id}`, "PATCH", { team_id: event.target.value || null }, "Carrier team updated.")} options={(directory.data?.teams ?? []).map((team) => ({ value: team.id, label: team.name }))} />
   </div></Card>;
 }
