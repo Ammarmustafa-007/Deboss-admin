@@ -82,7 +82,7 @@ function StatusPill({ row, disabled, compact, onChange }: { row: Prospect; disab
   </StatusMotion>;
 }
 
-/** The Fronter's lead mining sheet. With `salesView`, a Sales agent's read-only view of their Fronters' rows, where only the status changes. */
+/** The Fronter's lead mining sheet. With `salesView`, a Sales agent's view of their Fronters' rows: every row editable (Qualified ones update the lead too), no adding, pasting or deleting. */
 export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
   const { api, report, manager } = useBrokerage();
   const queryClient = useQueryClient();
@@ -182,7 +182,7 @@ export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
       <div className="space-y-3 p-4">{tools}</div>
       {prospects.isLoading ? <div className="p-4"><Skeleton className="h-64" /></div>
         : prospects.isError ? <EmptyState icon={AlertTriangle} title="Lead mining unavailable" body={errorMessage(prospects.error)} />
-        : <div className="px-4 pb-4"><Sheet columns={listColumns} rows={visible} locked={(row) => !row.editable || row.status === "QUALIFIED" || Boolean(row.fields_locked)} rowTone={(row) => statusTone[row.status]} busy={(row) => busyIds.has(row.id)} maxHeight="calc(100dvh - 300px)"
+        : <div className="px-4 pb-4"><Sheet columns={listColumns} rows={visible} locked={(row) => !row.editable || Boolean(row.fields_locked)} rowTone={(row) => statusTone[row.status]} busy={(row) => busyIds.has(row.id)} maxHeight="calc(100dvh - 300px)"
             onChange={(row, key, value) => void patch(row, { [key]: value })}
             onPasteRows={salesView ? undefined : (rows) => void addRows(rows.map((row) => ({ company_name: row.company_name || "", ...row })), (added, skipped) => `${added} pasted row${added === 1 ? "" : "s"} added${skipped ? `, ${skipped} skipped (each row needs a company name)` : ""}.`)}
             empty={list.length ? "Nothing matches this view. Try another tab or search." : salesView ? "No Fronter is linked to you yet, or they haven't added companies." : "Add a company above, or click a cell and paste rows copied from Excel."} /></div>}
@@ -197,7 +197,7 @@ export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
     </FullSheet>}
     {opened && <ProspectCard key={opened.id} prospect={opened} busy={busyIds.has(opened.id)} onClose={() => setOpenId(null)}
       onSave={(body) => patch(opened, body, "Details saved.")} onStatus={(status) => setStatus(opened, status)}
-      onDelete={async () => { if (await remove(opened)) setOpenId(null); }} />}
+      onDelete={salesView ? undefined : async () => { if (await remove(opened)) setOpenId(null); }} />}
     {qualifying && <QualifyModal prospect={qualifying} onClose={() => setQualifying(null)} onConfirm={() => { const row = qualifying; setQualifying(null); void patch(row, { status: "QUALIFIED" }, `${row.company_name} sent to Sales as a qualified lead.`); }} />}
   </div>;
 }
@@ -216,9 +216,10 @@ const wide = new Set(["lanes", "physical_address", "other_locations", "billing_a
 /** Every detail of one company, editable in place (read-only once qualified or if it isn't yours). */
 function ProspectCard({ prospect, busy, onClose, onSave, onStatus, onDelete }: {
   prospect: Prospect; busy: boolean; onClose: () => void;
-  onSave: (body: Record<string, unknown>) => Promise<boolean>; onStatus: (status: string) => void; onDelete: () => void;
+  onSave: (body: Record<string, unknown>) => Promise<boolean>; onStatus: (status: string) => void; onDelete?: () => void;
 }) {
-  const editable = prospect.editable && prospect.status !== "QUALIFIED" && !prospect.fields_locked;
+  // The API decides: Fronters can't edit a Qualified row any more, Sales can (the lead follows).
+  const editable = Boolean(prospect.editable) && !prospect.fields_locked;
   const initial = useMemo(() => Object.fromEntries([...cardSections.flatMap((section) => section.fields), "notes"].map((key) => [key, key === "w9_received" ? Boolean(prospect.w9_received) : (prospect[key as keyof Prospect] as string | null) ?? ""])) as Record<string, string | boolean>, [prospect]);
   const [form, setForm] = useState(initial);
   const changes = Object.fromEntries(Object.entries(form).filter(([key, value]) => value !== initial[key]).map(([key, value]) => [key, typeof value === "string" ? value.trim() || null : value]));
@@ -232,13 +233,13 @@ function ProspectCard({ prospect, busy, onClose, onSave, onStatus, onDelete }: {
   };
   return <Drawer open onClose={onClose} title={prospect.company_name} subtitle={`Added ${dateLabel(prospect.created_at)}${prospect.created_by_name ? ` by ${prospect.created_by_name}` : ""}`}
     footer={editable ? <>
-      <Button variant="ghost" className="mr-auto text-[#A5183F]" icon={<Trash2 size={14} />} onClick={onDelete} disabled={busy}>Delete</Button>
+      {onDelete && prospect.status !== "QUALIFIED" && <Button variant="ghost" className="mr-auto text-[#A5183F]" icon={<Trash2 size={14} />} onClick={onDelete} disabled={busy}>Delete</Button>}
       {dirty && <Button variant="ghost" onClick={() => setForm(initial)} disabled={busy}>Discard</Button>}
       <Button type="submit" form="prospect-form" variant="ink" pending={busy} pendingLabel="Saving…" disabled={!dirty}>Save changes</Button>
     </> : <Button variant="ghost" onClick={onClose}>Close</Button>}>
     <div className="mb-5 grid gap-3 rounded-[14px] border border-line-soft bg-[#FAF8F4] p-4">
       <div className="max-w-56"><p className="mb-1.5 text-xs font-medium text-muted">Status</p><StatusPill row={prospect} disabled={!prospect.editable || busy} onChange={onStatus} /></div>
-      {prospect.status === "QUALIFIED" && <p className="flex items-center gap-1.5 text-xs text-muted"><Lock size={12} />Sent to Sales{prospect.qualified_at ? ` on ${dateLabel(prospect.qualified_at)}` : ""}. The details are locked; Sales takes it from here.</p>}
+      {prospect.status === "QUALIFIED" && <p className="flex items-center gap-1.5 text-xs text-muted">{editable ? <CheckCircle2 size={12} /> : <Lock size={12} />}Sent to Sales{prospect.qualified_at ? ` on ${dateLabel(prospect.qualified_at)}` : ""}{editable ? ". Changes here also update the lead." : ". The details are locked; Sales takes it from here."}</p>}
     </div>
     <form id="prospect-form" onSubmit={save} className="space-y-6">
       {cardSections.map((section) => <fieldset key={section.title} disabled={busy}>
