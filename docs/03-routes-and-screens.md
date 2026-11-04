@@ -11,7 +11,7 @@ Every `page.tsx` under `src/app` only renders a screen component from `src/compo
 | `/app/notifications` | `NotificationsScreen` (`dashboard/notifications-screen`) | Staff | All notifications |
 | `/app/reports` | `ReportsScreen`, `DispatchReportsScreen` or `FronterReportsScreen` | Brokerage, Dispatch | Reports for the person's area and scope |
 | `/app/chat` | `ChatScreen` (`chat/chat-screen`) | Everyone | Direct messages, team groups, channels |
-| `/app/settings` | `SettingsScreen` (`admin/settings-screen`) | Super Admin | Account settings |
+| `/app/settings` | `SettingsScreen` (`admin/settings-screen`, `admin/brokerage-settings`) | Super Admin | Password, and the **Brokerage Sales Manager** switch |
 | **Administration** | | | |
 | `/app/admin/departments` | `DepartmentsScreen` | Super Admin | List and create departments (directly in Supabase) |
 | `/app/admin/users`, `/app/admin/users/[id]` | `UsersScreen`, `UserRoute` (`admin/users-screen`) | Super Admin | Users: create (with a Fronter's Sales agent), edit access, deactivate, delete |
@@ -82,6 +82,7 @@ Data hooks live next to the screens (`*-data.ts`, `model.ts`, `directory.ts`).
 - **Dispatch board → By company:** groups the trucks list by carrier: trucks running, paid gross and miles this week, invoices received.
 - **Payslips** (`finance/payslip.ts`): printed from a hidden iframe so pop-up blockers don't stop them; "Save as PDF" in the print dialog makes the file.
 - **Brokerage Sales Agent:** the dashboard shows "Customers onboarded" this month (and how many are currently shipping) instead of My performance. The lead page has no Source or Forecast; its side panel holds Next follow-up and a **Notes** sticky note that saves as the agent types. Exports are hidden from agents (leads list, Reports).
+- **Brokerage Sales Manager switch** (`workspace.capabilities.salesManagerApproval`): when off, the agent's load drawer shows **Hand off to Operations** (or "Hand off again" after an Operations rejection) instead of "Submit for approval", with a department picker only when the customer has none and there are several Operations departments; the quote steps drop "Sales Manager" (`quoteStepsFor()`), and the Operations reject dialog says it goes back to the agent.
 - **Reports for agents:** current month only, no date range; managers keep the range and the export.
 - **Attendance:** only working days are clickable, and days outside a person's employment are greyed out.
 - **Excel exports** (`lib/excel.ts`) keep the on-screen columns, with totals rows. Dispatch Sales Agents' exports drop money columns.

@@ -73,6 +73,9 @@ export type Customer = {
   contact_name?: string | null;
   contact_email?: string | null;
   contact_phone?: string | null;
+  /** Set once Operations has taken the customer on: its first load was approved there. */
+  operations_department_id?: string | null;
+  operations_agent_id?: string | null;
   updated_at?: string;
 };
 
@@ -150,10 +153,21 @@ export function journeyPosition(stage: string, quotes: Quote[]): { current: numb
   return { current: rank[stage] ?? 0, blocked: false };
 }
 
-/** A load's approval: the Sales Manager, then (a new customer's first load only) the Operations Manager. */
+/**
+ * A load's approval: the Sales Manager, then (a new customer's first load only) the Operations Manager.
+ * When the Super Admin turns the Sales Manager step off (`salesManagerApproval: false`), the agent hands it straight to Operations.
+ */
 export const quoteSteps = ["Draft", "Sales Manager", "Ops Manager", "With Operations"];
+const handOffSteps = ["Draft", "Ops Manager", "With Operations"];
+export function quoteStepsFor(salesReview: boolean) { return salesReview ? quoteSteps : handOffSteps; }
 
-export function quotePosition(stage?: string | null): { current: number; blocked: boolean } {
+export function quotePosition(stage?: string | null, salesReview = true): { current: number; blocked: boolean } {
+  if (!salesReview) switch (stage) {
+    case "SUBMITTED": case "APPROVED": case "OPS_REVIEW": return { current: 1, blocked: false };
+    case "OPS_REJECTED": case "REJECTED": return { current: 1, blocked: true };
+    case "HANDED_OFF": return { current: 3, blocked: false };
+    default: return { current: 0, blocked: false };
+  }
   switch (stage) {
     case "SUBMITTED": return { current: 1, blocked: false };
     case "APPROVED": case "OPS_REVIEW": return { current: 2, blocked: false };

@@ -18,7 +18,7 @@ import { QuoteFile } from "@/components/sales/quote-panel";
 import { ReasonModal } from "@/components/operations/shipment-screen";
 import { LoadsSheet } from "@/components/sales/loads-sheet";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
-import { commercialStatuses, lane, operationsPosition, operationsSteps, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type LoadDocument, type Quote, type SalesShipment } from "@/components/sales/model";
+import { commercialStatuses, lane, operationsPosition, operationsSteps, quotePosition, quoteStageLabel, quoteStepsFor, type Customer, type CustomerProfile, type LoadDocument, type Quote, type SalesShipment } from "@/components/sales/model";
 
 export function useCustomerProfile(customerId: string) {
   const { api } = useBrokerage();
@@ -79,7 +79,7 @@ export function CustomerPanel({ customerId, readOnly = false, onSyncFromLead }: 
     </div>
 
     {sheetOpen && <LoadsSheet customerId={customerId} shipments={data.shipments} quotes={data.quotes} canEdit={canEdit} onClose={() => setSheetOpen(false)} />}
-    {drawer && <ShipmentDrawer key={openShipment?.id ?? "new"} customerId={customerId} shipment={openShipment} quote={openShipment?.quote_id ? quotesById.get(openShipment.quote_id) : undefined} documents={(data.documents ?? []).filter((document) => document.shipment_id === openShipment?.id)} canEdit={canEdit} onClose={() => setDrawer(null)} onCreated={() => setDrawer(null)} />}
+    {drawer && <ShipmentDrawer key={openShipment?.id ?? "new"} customerId={customerId} customer={data.customer} shipment={openShipment} quote={openShipment?.quote_id ? quotesById.get(openShipment.quote_id) : undefined} documents={(data.documents ?? []).filter((document) => document.shipment_id === openShipment?.id)} canEdit={canEdit} onClose={() => setDrawer(null)} onCreated={() => setDrawer(null)} />}
   </div>;
 }
 
@@ -128,10 +128,15 @@ function shipmentForm(shipment?: SalesShipment) {
   };
 }
 
-function ShipmentDrawer({ customerId, shipment, quote, documents = [], canEdit, onClose, onCreated }: { customerId: string; shipment?: SalesShipment; quote?: Quote; documents?: LoadDocument[]; canEdit: boolean; onClose: () => void; onCreated: () => void }) {
-  const { api, report } = useBrokerage();
+function ShipmentDrawer({ customerId, customer, shipment, quote, documents = [], canEdit, onClose, onCreated }: { customerId: string; customer?: Customer; shipment?: SalesShipment; quote?: Quote; documents?: LoadDocument[]; canEdit: boolean; onClose: () => void; onCreated: () => void }) {
+  const { api, report, workspace } = useBrokerage();
   const { run, busy, refresh, wrap } = useBrokerageAction();
   const initial = shipmentForm(shipment);
+  // Super Admin switch: with no Sales Manager step, the agent hands the load to Operations themselves.
+  const salesReview = workspace.capabilities?.salesManagerApproval !== false;
+  const opsDepartments = (workspace.operationsDepartments ?? []) as { id: string; name: string }[];
+  const needsDepartment = !salesReview && !customer?.operations_agent_id && !customer?.operations_department_id && opsDepartments.length > 1;
+  const [handOffDepartment, setHandOffDepartment] = useState("");
   const [form, setForm] = useState(initial);
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string>();
@@ -174,7 +179,10 @@ function ShipmentDrawer({ customerId, shipment, quote, documents = [], canEdit, 
   const canCancelLoad = canEdit && !cancelled && Boolean(shipment) && !shipment?.operations_department_id;
   const [cancelling, setCancelling] = useState(false);
   const cancelPending = busy(`cancel-load:${shipment?.id}`);
-  const { current, blocked } = quotePosition(quote?.stage);
+  const { current, blocked } = quotePosition(quote?.stage, salesReview);
+  const noAgreedRate = !salesReview && (shipment?.amount_agreed == null || shipment.amount_agreed === "");
+  const submitLabel = salesReview ? (quote?.stage === "REJECTED" ? "Resubmit for approval" : "Submit for approval") : (quote?.stage === "REJECTED" ? "Hand off again" : "Hand off to Operations");
+  const submitTitle = dirty ? "Save your changes first" : noAgreedRate ? "Enter and save the agreed rate first" : needsDepartment && !handOffDepartment ? "Choose the Operations department" : undefined;
 
   const lanes = <div className="grid gap-4 sm:grid-cols-2">
     <TextField label="Reference number" required minLength={3} maxLength={64} value={form.reference_number} onChange={(event) => set("reference_number")(event.target.value)} wrapperClassName="sm:col-span-2" />
@@ -210,11 +218,12 @@ function ShipmentDrawer({ customerId, shipment, quote, documents = [], canEdit, 
       {canCancelLoad && <Button variant="ghost" className="mr-auto text-[#A5183F]" icon={<Ban size={14} />} disabled={saving || submitting} onClick={() => setCancelling(true)}>Cancel load</Button>}
       {dirty && <Button variant="ghost" onClick={() => { setForm(initial); setFile(null); }} disabled={saving}>Discard</Button>}
       <Button variant={canSubmit && !dirty ? "outline" : "ink"} type="submit" form="shipment-form" pending={saving} pendingLabel="Saving…" disabled={!dirty}>Save changes</Button>
-      {canSubmit && <Button variant="primary" icon={<Send size={15} />} pending={submitting} pendingLabel="Submitting…" disabled={dirty || saving} title={dirty ? "Save your changes first" : undefined} onClick={() => void run(`submit-quote:${quote!.id}`, `/api/v1/brokerage/quotes/${quote!.id}/submit`, "POST", undefined, "Shipment submitted to the Sales Manager for review.")}>{quote!.stage === "REJECTED" ? "Resubmit for approval" : "Submit for approval"}</Button>}
+      {canSubmit && <Button variant="primary" icon={<Send size={15} />} pending={submitting} pendingLabel={salesReview ? "Submitting…" : "Handing off…"} disabled={Boolean(submitTitle) || saving} title={submitTitle} onClick={() => void run(`submit-quote:${quote!.id}`, `/api/v1/brokerage/quotes/${quote!.id}/submit`, "POST", needsDepartment ? { operations_department_id: handOffDepartment } : undefined, salesReview ? "Shipment submitted to the Sales Manager for review." : "Handed to Operations.")}>{submitLabel}</Button>}
     </> : undefined}>
     {quote && <div className="mb-6 rounded-[12px] border border-line-soft bg-[#FBFAF7] p-4">
-      <Stepper steps={quoteSteps.map((label) => ({ label }))} current={current} tone={blocked ? "danger" : "brand"} />
-      {quote.stage === "REJECTED" && <p className="mt-4 rounded-lg bg-danger/[.07] px-3.5 py-2.5 text-sm text-[#A5183F]"><b>Returned for rework.</b>{quote.rejection_note ? ` ${quote.rejection_note}` : ""}</p>}
+      <Stepper steps={quoteStepsFor(salesReview).map((label) => ({ label }))} current={current} tone={blocked ? "danger" : "brand"} />
+      {quote.stage === "REJECTED" && <p className="mt-4 rounded-lg bg-danger/[.07] px-3.5 py-2.5 text-sm text-[#A5183F]"><b>{salesReview ? "Returned for rework." : "Rejected by Operations."}</b>{quote.rejection_note ? ` ${quote.rejection_note}` : ""}{salesReview ? "" : " Fix it and hand it off again, or cancel the load."}</p>}
+      {canSubmit && needsDepartment && <div className="mt-4"><SelectField label="Operations department for this customer" required hint="This customer's first load goes to this department's Operations Manager. It's remembered for later loads." value={handOffDepartment} placeholder="Choose Brokerage Operations" onChange={(event) => setHandOffDepartment(event.target.value)} options={opsDepartments.map((department) => ({ value: department.id, label: department.name }))} /></div>}
     </div>}
 
     {cancelled && <p className="mb-6 flex items-start gap-2.5 rounded-[12px] bg-black/[.04] px-4 py-3 text-sm animate-fade"><Ban size={17} className="mt-0.5 shrink-0 text-ink/60" /><span><b>Load cancelled{shipment!.cancelled_at ? ` · ${dateTimeLabel(shipment!.cancelled_at)}` : ""}.</b> {shipment!.cancel_reason}</span></p>}

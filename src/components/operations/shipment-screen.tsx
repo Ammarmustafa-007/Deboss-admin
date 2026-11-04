@@ -96,6 +96,8 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
 /** The Operations Manager's one-time review of a new customer: approve and assign its agent, or reject with a reason. */
 function OpsReview({ shipment, directory }: { shipment: Shipment; directory?: Directory }) {
   const { run, busy } = useBrokerageAction();
+  const { workspace } = useBrokerage();
+  const salesReview = workspace.capabilities?.salesManagerApproval !== false;
   const [agent, setAgent] = useState("");
   const [rejecting, setRejecting] = useState(false);
   const [reason, setReason] = useState("");
@@ -103,7 +105,7 @@ function OpsReview({ shipment, directory }: { shipment: Shipment; directory?: Di
   const decide = (body: Record<string, unknown>, success: string) => run(`ops-review:${shipment.id}`, `/api/v1/brokerage/shipments/${shipment.id}/ops-review`, "POST", body, success);
   return <div className="mt-4 rounded-[14px] border border-accent/30 bg-accent/[.05] p-4 animate-fade">
     <p className="text-sm font-semibold">New customer: review this load</p>
-    <p className="mt-0.5 text-xs text-muted">Approved by Sales{shipment.sales_agent_name ? ` (agent ${shipment.sales_agent_name})` : ""}. The agent you assign becomes this customer&apos;s Operations agent; its later loads go straight to them.</p>
+    <p className="mt-0.5 text-xs text-muted">{salesReview ? "Approved by Sales" : "Handed off by Sales"}{shipment.sales_agent_name ? ` (agent ${shipment.sales_agent_name})` : ""}. The agent you assign becomes this customer&apos;s Operations agent; its later loads go straight to them.</p>
     <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
       <label className="min-w-0 flex-1 text-xs text-muted">Operations agent for this customer
         <select value={agent} disabled={pending || !directory} onChange={(event) => setAgent(event.target.value)} className={cn(controlClass, "mt-1 h-10 text-[13px] font-medium")}>
@@ -113,7 +115,7 @@ function OpsReview({ shipment, directory }: { shipment: Shipment; directory?: Di
       <Button variant="success" icon={<CheckCircle2 size={15} />} pending={pending && !rejecting} pendingLabel="Approving…" disabled={!agent || pending} onClick={() => void decide({ action: "APPROVE", agent_id: agent }, "Approved. The agent now owns this customer.")}>Approve & assign</Button>
       <Button variant="ghost" className="text-[#A5183F]" icon={<Ban size={15} />} disabled={pending} onClick={() => setRejecting(true)}>Reject</Button>
     </div>
-    {rejecting && <Modal open onClose={() => setRejecting(false)} dismissible={!pending} title={`Reject ${shipment.reference_number}?`} subtitle="It goes back to the Sales Manager with your reason; they decide to send it back to the agent or close it out."
+    {rejecting && <Modal open onClose={() => setRejecting(false)} dismissible={!pending} title={`Reject ${shipment.reference_number}?`} subtitle={salesReview ? "It goes back to the Sales Manager with your reason; they decide to send it back to the agent or close it out." : "It goes back to the Sales agent with your reason, to fix and hand off again or cancel."}
       footer={<><Button variant="ghost" onClick={() => setRejecting(false)} disabled={pending}>Back</Button><Button variant="danger" icon={<Ban size={15} />} pending={pending} pendingLabel="Rejecting…" disabled={!reason.trim()} onClick={async () => { if (await decide({ action: "REJECT", note: reason.trim() }, "Rejected. Sent back to the Sales Manager.") !== undefined) setRejecting(false); }}>Reject load</Button></>}>
       <TextAreaField label="Reason" required autoFocus maxLength={1000} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="e.g. No flatbed capacity on Houston to Dallas at $850. Customer must agree to $950 or move the pickup date." />
     </Modal>}

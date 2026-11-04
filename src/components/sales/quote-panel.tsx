@@ -14,7 +14,7 @@ import { Drawer } from "@/components/ui/overlay";
 import { SelectField, TextAreaField, TextField } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
-import { lane, quotePosition, quoteStageLabel, quoteSteps, type CustomerProfile, type Lead, type Quote, type QuoteDetail } from "@/components/sales/model";
+import { lane, quotePosition, quoteStageLabel, quoteStepsFor, type CustomerProfile, type Lead, type Quote, type QuoteDetail } from "@/components/sales/model";
 
 function useQuoteDetail(quoteId: string) {
   const { api } = useBrokerage();
@@ -76,7 +76,8 @@ function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; 
   const referenceNumber = typedReference ?? reference ?? "";
   const detail = useQuoteDetail(quote.id);
   const stage = detail.data?.quote.stage ?? quote.stage;
-  const { current, blocked } = quotePosition(stage);
+  const salesReview = caps.salesManagerApproval !== false;
+  const { current, blocked } = quotePosition(stage, salesReview);
   const anyBusy = busy();
   const path = `/api/v1/brokerage/quotes/${quote.id}`;
 
@@ -104,7 +105,7 @@ function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; 
   };
 
   return <Drawer open onClose={onClose} dismissible={!anyBusy} className="max-w-2xl" title={lane(quote)} subtitle={`${quote.equipment_type || "Equipment not specified"} · ${quote.quoted_rate ? money(quote.quoted_rate) : "Rate pending"}`}>
-    <div className="rounded-[12px] border border-line-soft bg-[#FBFAF7] p-4"><Stepper steps={quoteSteps.map((label) => ({ label }))} current={current} tone={blocked ? "danger" : "brand"} /></div>
+    <div className="rounded-[12px] border border-line-soft bg-[#FBFAF7] p-4"><Stepper steps={quoteStepsFor(salesReview).map((label) => ({ label }))} current={current} tone={blocked ? "danger" : "brand"} /></div>
 
     {caps.canReviewQuotes && stage === "SUBMITTED" && <DecisionCard step={1} title="Review & decide" icon={<Hourglass size={16} />}>
       <TextAreaField label="Reason for returning" maxLength={1000} hint="Required only when returning the quote for rework." value={reviewNote} disabled={anyBusy} onChange={(event) => setReviewNote(event.target.value)} className="min-h-20" />
@@ -126,7 +127,7 @@ function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; 
       </form>
     </DecisionCard>}
 
-    {stage === "OPS_REVIEW" && <Notice tone="neutral">Approved by Sales. Waiting for the {ops?.department_name ?? "Operations"} Ops Manager to approve it and assign the customer&apos;s agent.</Notice>}
+    {stage === "OPS_REVIEW" && <Notice tone="neutral">{salesReview ? "Approved by Sales." : "Handed off by the agent."} Waiting for the {ops?.department_name ?? "Operations"} Ops Manager to approve it and assign the customer&apos;s agent.</Notice>}
     {stage === "OPS_REJECTED" && (caps.canReviewQuotes
       ? <DecisionCard step={2} title="Rejected by Operations: your decision" icon={<RotateCcw size={16} />}>
           <p className="mb-4 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm text-[#A5183F]"><b>Operations Manager:</b> {detail.data?.quote.ops_rejection_note ?? quote.ops_rejection_note}</p>
@@ -139,7 +140,7 @@ function QuoteReviewDrawer({ quote, lead, reference, onClose }: { quote: Quote; 
       : <Notice tone="danger">Rejected by Operations{(detail.data?.quote.ops_rejection_note ?? quote.ops_rejection_note) ? `: ${detail.data?.quote.ops_rejection_note ?? quote.ops_rejection_note}` : "."} Your Sales Manager decides what happens next.</Notice>)}
     {stage === "REJECTED" && <Notice tone="danger">Returned to the agent for rework{quote.rejection_note ? `: ${quote.rejection_note}` : "."}</Notice>}
     {stage === "HANDED_OFF" && <Notice tone="success">Handed off. Operations now owns this shipment.</Notice>}
-    {stage === "DRAFT" && <Notice tone="neutral">The agent hasn&apos;t submitted this quote yet.</Notice>}
+    {stage === "DRAFT" && <Notice tone="neutral">{salesReview ? "The agent hasn't submitted this quote yet." : "The agent hasn't handed this load to Operations yet."}</Notice>}
 
     <div className="mt-8 border-t border-line-soft pt-6">
       <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold"><FileText size={15} />Quote file</h3>

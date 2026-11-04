@@ -8,6 +8,7 @@ import { useSession } from "@/components/app/session";
 import { Avatar, Card, CardHeader, PageHeader } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { PasswordInput } from "@/components/ui/field";
+import { BrokerageSettingsCard } from "@/components/admin/brokerage-settings";
 
 export function SettingsScreen() {
   const supabase = useMemo(() => createClient(), []);
@@ -46,5 +47,6 @@ export function SettingsScreen() {
         <div className="mt-6 flex justify-end"><Button type="submit" variant="primary" icon={<KeyRound size={16} />} pending={busy} pendingLabel="Saving password…" disabled={!form.password || !form.confirm}>Save new password</Button></div>
       </form>
     </Card>
+    <BrokerageSettingsCard />
   </div>;
 }
