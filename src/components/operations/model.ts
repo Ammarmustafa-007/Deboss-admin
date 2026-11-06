@@ -37,8 +37,8 @@ export type Shipment = {
 export type LoadDetails = {
   carrier_mc?: string | null; dispatcher_name?: string | null; dispatcher_phone?: string | null; dispatcher_email?: string | null; driver_name?: string | null; driver_phone?: string | null;
   truck_type_size?: string | null; truck_number?: string | null; trailer_number?: string | null; carrier_rate?: number | string | null;
-  pickup_facility?: string | null; pickup_address?: string | null; pickup_contact?: string | null; pickup_notes?: string | null; pickup_po?: string | null;
-  delivery_facility?: string | null; delivery_address?: string | null; delivery_contact?: string | null; delivery_notes?: string | null;
+  pickup_facility?: string | null; pickup_address?: string | null; pickup_contact?: string | null; pickup_contact_phone?: string | null; pickup_notes?: string | null; pickup_po?: string | null;
+  delivery_facility?: string | null; delivery_address?: string | null; delivery_contact?: string | null; delivery_contact_phone?: string | null; delivery_notes?: string | null;
   commodity_product?: string | null; commodity_weight?: string | null; commodity_pieces?: string | null;
   missed_pickup_reason?: string | null; cancel_reason?: string | null; cancelled_at?: string | null;
   miles?: number | string | null; load_notes?: string | null;
@@ -60,17 +60,20 @@ export type ShipmentComment = { id: string; body: string; author_id?: string | n
 export type ShipmentDetail = { shipment: Shipment; documents: ShipmentDocument[]; events: ShipmentEvent[]; comments: ShipmentComment[]; invoice?: { invoice_number?: string; status?: string } | null };
 export type Directory = { users: { id: string; full_name: string; email?: string; role?: string }[]; teams: { id: string; name: string }[] };
 
-/** Load lifecycle (client flow v2). Completed is set automatically when the invoice is paid; exceptions are a flag, not a step. */
-export const shipmentStatuses = ["BOOKED", "PICKED_UP", "DELIVERED", "COMPLETED"];
+/**
+ * Load lifecycle: In progress (handed to Operations, no carrier yet) -> Booked (set automatically once the carrier and
+ * carrier rate are saved) -> Picked up -> Delivered -> Completed (when the invoice is paid). Exceptions are a flag, not a step.
+ */
+export const shipmentStatuses = ["IN_PROGRESS", "BOOKED", "PICKED_UP", "DELIVERED", "COMPLETED"];
 export const progressStatuses = shipmentStatuses;
 export const paymentStatuses = ["DRAFT", "SENT", "PENDING", "PAID", "OVERDUE", "CANCELLED"];
 export const documentTypes = ["BOL", "POD", "RATE_CONFIRMATION", "INVOICE", "OTHER"];
 
-export const statusLabel: Record<string, string> = { QUOTED: "Quoted", BOOKED: "Booked", CARRIER_ASSIGNED: "Carrier assigned", MISSED_PICKUP: "Missed pickup", PICKED_UP: "Picked up", IN_TRANSIT: "In transit", DELIVERED: "Delivered", COMPLETED: "Completed", EXCEPTION: "Exception", CANCELLED: "Cancelled" };
+export const statusLabel: Record<string, string> = { QUOTED: "Quoted", IN_PROGRESS: "In progress", BOOKED: "Booked", CARRIER_ASSIGNED: "Carrier assigned", MISSED_PICKUP: "Missed pickup", PICKED_UP: "Picked up", IN_TRANSIT: "In transit", DELIVERED: "Delivered", COMPLETED: "Completed", EXCEPTION: "Exception", CANCELLED: "Cancelled" };
 
 /** Before pickup a load can still miss its pickup or be cancelled (each with a reason). */
 export const canMissPickup = (status: string) => status === "BOOKED";
-export const canCancel = (status: string) => ["BOOKED", "MISSED_PICKUP"].includes(status);
+export const canCancel = (status: string) => ["IN_PROGRESS", "BOOKED", "MISSED_PICKUP"].includes(status);
 
 /** The single forward step an agent takes next, as a clear action. */
 export const nextStatus: Record<string, { status: string; action: string }> = {
@@ -84,7 +87,7 @@ export const nextStatus: Record<string, { status: string; action: string }> = {
  * Exception is reported and resolved from the Exception tab, never picked here.
  */
 export function allowedStatuses(status: string) {
-  const manual = ["BOOKED", "PICKED_UP", "DELIVERED"]; // Completed comes from the paid invoice.
+  const manual = ["IN_PROGRESS", "BOOKED", "PICKED_UP", "DELIVERED"]; // Completed comes from the paid invoice.
   const index = manual.indexOf(status);
   if (index < 0) return [status];
   const back = index > 0 && index < manual.indexOf("DELIVERED") ? [manual[index - 1]] : [];

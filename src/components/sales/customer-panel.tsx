@@ -271,8 +271,8 @@ function LoadDocuments({ documents }: { documents: LoadDocument[] }) {
 /** What Operations recorded, as Sales may see it: the agent, carrier rate and profit, and the pickup, delivery and commodity details (never the carrier's identity). */
 function OperationsDetails({ shipment }: { shipment: SalesShipment }) {
   const groups: [string, [string, string | null | undefined][]][] = [
-    ["Pickup", [["Facility", shipment.pickup_facility], ["Address", shipment.pickup_address], ["Contact", shipment.pickup_contact], ["PO #", shipment.pickup_po], ["Notes", shipment.pickup_notes]]],
-    ["Delivery", [["Facility", shipment.delivery_facility], ["Address", shipment.delivery_address], ["Contact", shipment.delivery_contact], ["Notes", shipment.delivery_notes]]],
+    ["Pickup", [["Facility", shipment.pickup_facility], ["Address", shipment.pickup_address], ["Contact", shipment.pickup_contact], ["Contact phone", shipment.pickup_contact_phone], ["PO #", shipment.pickup_po], ["Notes", shipment.pickup_notes]]],
+    ["Delivery", [["Facility", shipment.delivery_facility], ["Address", shipment.delivery_address], ["Contact", shipment.delivery_contact], ["Contact phone", shipment.delivery_contact_phone], ["Notes", shipment.delivery_notes]]],
     ["Commodity", [["Product", shipment.commodity_product], ["Weight", shipment.commodity_weight], ["Pallets / skids / pieces", shipment.commodity_pieces]]],
   ];
   const filled = groups.map(([title, rows]) => [title, rows.filter(([, value]) => value)] as const).filter(([, rows]) => rows.length);

@@ -59,7 +59,7 @@ const toneBorder: Record<Tone, string> = {
 const statusTone: Record<string, Tone> = {
   NEW: "info", CONTACTED: "accent", QUALIFIED: "brand", CUSTOMER: "success", LOST: "danger",
   DRAFT: "neutral", SUBMITTED: "brand", APPROVED: "success", REJECTED: "danger", HANDED_OFF: "info",
-  QUOTED: "accent", BOOKED: "brand", DELIVERED: "info", PAID: "success",
+  QUOTED: "accent", IN_PROGRESS: "accent", BOOKED: "brand", DELIVERED: "info", PAID: "success",
   CARRIER_ASSIGNED: "accent", MISSED_PICKUP: "danger", PICKED_UP: "aqua", IN_TRANSIT: "brand", COMPLETED: "success", EXCEPTION: "danger",
   SENT: "info", PENDING: "brand", OVERDUE: "danger", CANCELLED: "neutral",
   ACTIVE: "success", INACTIVE: "danger", ARCHIVED: "neutral",

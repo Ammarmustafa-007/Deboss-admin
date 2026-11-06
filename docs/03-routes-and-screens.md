@@ -29,14 +29,14 @@ Every `page.tsx` under `src/app` only renders a screen component from `src/compo
 | `/app/sales` | `LeadsScreen` (`sales/leads-screen`) | Sales | Leads (list and sheet views), bulk changes, import |
 | `/app/sales/new` | `NewLeadScreen` | Sales | New lead |
 | `/app/sales/leads/[id]` | `LeadRoute` (`sales/lead-screen`) | Sales | A lead: details, status, activities, comments, customer, loads and quotes |
-| `/app/customers`, `/app/customers/[id]` | `CustomersScreen`, `CustomerRoute` (`sales/customers-screen`) | Sales | Customers and one customer's profile, loads and Operations progress |
+| `/app/customers`, `/app/customers/[id]` | `CustomersScreen`, `CustomerRoute` (`sales/customers-screen`) | Sales, Operations Managers | Customers and one customer's profile, loads and Operations progress (Operations Managers read only, with the company details Sales entered) |
 | `/app/sales/mining` | `MiningScreen` with `salesView` (`fronter/fronter-screens`) | Sales | **Fronter mining sheet**: the linked Fronters' rows, editable (no adding or deleting) |
 | **Brokerage Operations** | | | |
 | `/app/operations`, `/app/operations/[id]` | `ShipmentsScreen`, `ShipmentRoute` (`operations/…`) | Operations | Loads board and one load: status, carrier, documents, exception, invoice, Operations review |
 | `/app/invoices` | `InvoicesScreen` (`operations/invoices-screen`) | Operations managers, billing leads | Invoices and their status |
 | **Fronters** | | | |
 | `/app/fronter` | `MiningScreen` | Fronters | Lead mining list (editable in place) and full-screen sheet |
-| `/app/fronter/commodities` | `CommoditiesScreen` | Fronters | Commodities sheet |
+| `/app/fronter/commodities`, `/app/sales/commodities` | `CommoditiesScreen` | Fronters, Sales | Commodities sheet, shared by both |
 | **Dispatch** | | | |
 | `/app/dispatch/carriers`, `/new`, `/[id]` | `CarriersScreen`, `NewCarrierScreen`, `CarrierScreen` | Dispatch Sales (and Operations through trucks) | Carriers, new carrier, one carrier: summary, profile and terms, trucks (active-sale state), documents, activities, comments, invoices, assignment, review |
 | `/app/dispatch/trucks`, `/[id]` | `TrucksScreen`, `TruckScreen` | Dispatch Operations | Dispatch board (Trucks / **By company** views) and one truck: loads, invoices (choose loads), comments, assignment |
@@ -83,6 +83,7 @@ Data hooks live next to the screens (`*-data.ts`, `model.ts`, `directory.ts`).
 - **Payslips** (`finance/payslip.ts`): printed from a hidden iframe so pop-up blockers don't stop them; "Save as PDF" in the print dialog makes the file.
 - **Brokerage Sales Agent:** the dashboard shows "Customers onboarded" this month (and how many are currently shipping) instead of My performance. The lead page has no Source or Forecast; its side panel holds Next follow-up and a **Notes** sticky note that saves as the agent types. Exports are hidden from agents (leads list, Reports).
 - **Brokerage Sales Manager switch** (`workspace.capabilities.salesManagerApproval`): when off, the agent's load drawer shows **Hand off to Operations** (or "Hand off again" after an Operations rejection) instead of "Submit for approval", with a department picker only when the customer has none and there are several Operations departments; the quote steps drop "Sales Manager" (`quoteStepsFor()`), and the Operations reject dialog says it goes back to the agent.
+- **Load status "In progress":** a handed-off load shows In progress until its carrier and carrier rate are saved, then Booked by itself; the load page says so. The load form is keyed by the load's last save, so a manager never sees (or saves over) an older cached copy of what the agent entered. Pickup and delivery each have a contact phone.
 - **Reports for agents:** current month only, no date range; managers keep the range and the export.
 - **Attendance:** only working days are clickable, and days outside a person's employment are greyed out.
 - **Excel exports** (`lib/excel.ts`) keep the on-screen columns, with totals rows. Dispatch Sales Agents' exports drop money columns.

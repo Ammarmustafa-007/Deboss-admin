@@ -56,8 +56,8 @@ export type SalesShipment = {
   status?: string | null;
   /** From Operations (migration 019). Carrier identity is never sent to Sales; the rate and profit are. */
   carrier_rate?: number | string | null; profit?: number | null; profit_pct?: number | null; operations_agent_name?: string | null;
-  pickup_facility?: string | null; pickup_address?: string | null; pickup_contact?: string | null; pickup_notes?: string | null; pickup_po?: string | null;
-  delivery_facility?: string | null; delivery_address?: string | null; delivery_contact?: string | null; delivery_notes?: string | null;
+  pickup_facility?: string | null; pickup_address?: string | null; pickup_contact?: string | null; pickup_contact_phone?: string | null; pickup_notes?: string | null; pickup_po?: string | null;
+  delivery_facility?: string | null; delivery_address?: string | null; delivery_contact?: string | null; delivery_contact_phone?: string | null; delivery_notes?: string | null;
   commodity_product?: string | null; commodity_weight?: string | null; commodity_pieces?: string | null;
   missed_pickup_reason?: string | null; cancel_reason?: string | null; cancelled_at?: string | null;
   miles?: number | string | null; load_notes?: string | null;
@@ -98,7 +98,9 @@ export type FronterProspect = Record<string, string | boolean | null> & { fronte
 export type LeadDetailData = { lead: Lead; activities: FeedItem[]; comments: FeedItem[]; customer: Customer | null; quotes: Quote[]; prospect?: FronterProspect | null };
 /** A document Operations uploaded on one of the customer's loads (rate confirmations are never sent to Sales). */
 export type LoadDocument = { id: string; shipment_id: string; document_type: string; is_verified?: boolean; created_at?: string };
-export type CustomerProfile = { customer: Customer; can_edit?: boolean; activities: FeedItem[]; comments: FeedItem[]; quotes: Quote[]; shipments: SalesShipment[]; documents?: LoadDocument[] };
+/** The company details the Sales agent entered on the lead, shown read-only on the customer page. */
+export type CustomerDetails = Record<string, string | boolean | null>;
+export type CustomerProfile = { customer: Customer & { owner_name?: string | null }; details?: CustomerDetails | null; can_edit?: boolean; activities: FeedItem[]; comments: FeedItem[]; quotes: Quote[]; shipments: SalesShipment[]; documents?: LoadDocument[] };
 /** Who handles the quote's customer in Operations (set once, on the customer's first approved load). */
 export type CustomerOperations = { department_id: string | null; department_name: string | null; agent_id: string | null; agent_name: string | null };
 export type QuoteDetail = { quote: Quote; customer_operations?: CustomerOperations | null; attachments: Attachment[]; events: FeedItem[]; comments: FeedItem[] };
@@ -182,17 +184,17 @@ export function lane(item: { pickup_location?: string | null; delivery_location?
   return `${item.pickup_location || "—"} → ${item.delivery_location || "—"}`;
 }
 
-export const operationsSteps = ["Booked", "Picked up", "Delivered", "Invoiced", "Closed"];
+export const operationsSteps = ["In progress", "Booked", "Picked up", "Delivered", "Invoiced", "Closed"];
 
 /** Where a handed-off shipment is in Operations, read from the same shipment record and its invoice. */
 export function operationsPosition(shipment: SalesShipment): { current: number; exception: boolean; invoice?: { invoice_number?: string; status?: string } } {
   const invoice = Array.isArray(shipment.brokerage_invoices) ? shipment.brokerage_invoices[0] : shipment.brokerage_invoices ?? undefined;
-  const reached: Record<string, number> = { BOOKED: 0, CARRIER_ASSIGNED: 0, MISSED_PICKUP: 0, CANCELLED: 0, PICKED_UP: 1, IN_TRANSIT: 1, DELIVERED: 2, COMPLETED: 2, EXCEPTION: 0 };
+  const reached: Record<string, number> = { IN_PROGRESS: 0, BOOKED: 1, CARRIER_ASSIGNED: 1, MISSED_PICKUP: 1, CANCELLED: 0, PICKED_UP: 2, IN_TRANSIT: 2, DELIVERED: 3, COMPLETED: 3, EXCEPTION: 1 };
   // An exception pauses the shipment where it was; the line holds that place in red instead of falling back.
   const status = shipment.status === "EXCEPTION" ? shipment.status_before_exception ?? "BOOKED" : shipment.status ?? "BOOKED";
   let step = reached[status] ?? 0;
-  if (invoice) step = Math.max(step, 3);
-  if (invoice?.status === "PAID") step = 4;
+  if (invoice) step = Math.max(step, 4);
+  if (invoice?.status === "PAID") step = 5;
   // A missed pickup or a cancellation also shows the line in red at Booked.
   return { current: step + 1, exception: ["EXCEPTION", "MISSED_PICKUP", "CANCELLED"].includes(shipment.status ?? ""), invoice };
 }

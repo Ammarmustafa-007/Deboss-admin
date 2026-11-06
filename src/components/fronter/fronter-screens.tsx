@@ -26,6 +26,8 @@ export type Prospect = {
   payment_terms: string | null; w9_received: boolean; ein: string | null; source: string | null; website: string | null; notes: string | null;
   status: string; assigned_to: string | null; assigned_name: string | null; created_by: string; created_by_name: string | null; lead_id: string | null; lead_stage: string | null;
   qualified_at: string | null; created_at: string; editable: boolean;
+  /** Fronters delete their own rows; Sales delete only the companies they added themselves. */
+  deletable?: boolean;
   /** Brokerage Sales see their Fronters' rows and change the status only; the Fronter fills in the details. */
   fields_locked?: boolean;
 };
@@ -82,7 +84,7 @@ function StatusPill({ row, disabled, compact, onChange }: { row: Prospect; disab
   </StatusMotion>;
 }
 
-/** The Fronter's lead mining sheet. With `salesView`, a Sales agent's view of their Fronters' rows: every row editable (Qualified ones update the lead too), no adding, pasting or deleting. */
+/** The Fronter's lead mining sheet. With `salesView`, a Sales agent's sheet: their own companies and their Fronters' rows, every row editable (Qualified ones update the lead too); they add, paste and delete their own rows. */
 export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
   const { api, report, manager } = useBrokerage();
   const queryClient = useQueryClient();
@@ -142,16 +144,16 @@ export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
       <Tabs items={tabs} value={filter} onChange={setFilter} className="min-w-0 flex-1" />
       <div className="relative lg:w-72"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search companies, contacts, lanes" aria-label="Search lead mining" className={cn(controlClass, "h-10 pl-9")} /></div>
     </div>
-    {!salesView && <form onSubmit={quickAdd} className="flex flex-col gap-2 sm:flex-row">
+    <form onSubmit={quickAdd} className="flex flex-col gap-2 sm:flex-row">
       <input value={newName} onChange={(event) => setNewName(event.target.value)} maxLength={180} placeholder="New company: type a name and press Enter" aria-label="New company name" className={cn(controlClass, "h-10 sm:flex-1")} />
       <Button type="submit" variant="ink" icon={<Plus size={15} />} disabled={!newName.trim()}>Add company</Button>
-    </form>}
+    </form>
   </>;
   const sheetColumns: SheetColumn<Prospect>[] = [
     { key: "company_name", label: "Company", width: 165, required: true, sticky: true },
     { key: "status", label: "Status", width: 138, render: (row) => <StatusPill compact row={row} disabled={!row.editable || busyIds.has(row.id)} onChange={(status) => setStatus(row, status)} /> },
     ...fieldColumns.map((column) => ({ ...column, placeholder: "" })),
-    ...(manager || salesView ? [{ key: "created_by_name" as const, label: salesView ? "Fronter" : "Mined by", width: 115, render: (row: Prospect) => <span className="text-ink/70">{row.created_by_name}</span> }] : []),
+    ...(manager || salesView ? [{ key: "created_by_name" as const, label: salesView ? "Added by" : "Mined by", width: 115, render: (row: Prospect) => <span className="text-ink/70">{row.created_by_name}</span> }] : []),
   ];
 
   // The list page: the columns Fronters fill most, edited in place. Every other column is in the full sheet or the details card.
@@ -163,12 +165,12 @@ export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
     { key: "website", label: "Website", width: 190, placeholder: "" },
     { key: "commodity", label: "Commodity", width: 160, placeholder: "" },
     { key: "status", label: "Status", width: 200, render: (row) => <StatusPill compact row={row} disabled={!row.editable || busyIds.has(row.id)} onChange={(status) => setStatus(row, status)} /> },
-    ...(manager || salesView ? [{ key: "created_by_name" as const, label: salesView ? "Fronter" : "Mined by", width: 130, render: (row: Prospect) => <span className="text-ink/70">{row.created_by_name}</span> }] : []),
+    ...(manager || salesView ? [{ key: "created_by_name" as const, label: salesView ? "Added by" : "Mined by", width: 130, render: (row: Prospect) => <span className="text-ink/70">{row.created_by_name}</span> }] : []),
     { key: "created_at", label: "Added", width: 105, render: (row) => <span className="text-muted">{dateLabel(row.created_at)}</span> },
   ];
 
   return <div className="space-y-5 animate-rise">
-    <PageHeader title={salesView ? "Fronter mining sheet" : "Lead mining"} subtitle={salesView ? "The companies your Fronters are mining. Edit any row, or mark one Qualified to take it as your lead." : "Type straight into the list, or paste rows from Excel. Open a row for every detail, or the sheet for all columns."}
+    <PageHeader title={salesView ? "Fronter mining sheet" : "Lead mining"} subtitle={salesView ? "Your companies and your Fronters'. Add or paste companies, edit any row, or mark one Qualified to take it as your lead." : "Type straight into the list, or paste rows from Excel. Open a row for every detail, or the sheet for all columns."}
       actions={<div className="flex flex-wrap gap-2">
         <Button variant="primary" icon={<Maximize2 size={15} />} onClick={() => setSheetOpen(true)}>Open sheet</Button>
       </div>} />
@@ -184,20 +186,21 @@ export function MiningScreen({ salesView = false }: { salesView?: boolean }) {
         : prospects.isError ? <EmptyState icon={AlertTriangle} title="Lead mining unavailable" body={errorMessage(prospects.error)} />
         : <div className="px-4 pb-4"><Sheet columns={listColumns} rows={visible} locked={(row) => !row.editable || Boolean(row.fields_locked)} rowTone={(row) => statusTone[row.status]} busy={(row) => busyIds.has(row.id)} maxHeight="calc(100dvh - 300px)"
             onChange={(row, key, value) => void patch(row, { [key]: value })}
-            onPasteRows={salesView ? undefined : (rows) => void addRows(rows.map((row) => ({ company_name: row.company_name || "", ...row })), (added, skipped) => `${added} pasted row${added === 1 ? "" : "s"} added${skipped ? `, ${skipped} skipped (each row needs a company name)` : ""}.`)}
-            empty={list.length ? "Nothing matches this view. Try another tab or search." : salesView ? "No Fronter is linked to you yet, or they haven't added companies." : "Add a company above, or click a cell and paste rows copied from Excel."} /></div>}
+            onDelete={(row) => void remove(row)} canDelete={(row) => Boolean(row.deletable)}
+            onPasteRows={(rows) => void addRows(rows.map((row) => ({ company_name: row.company_name || "", ...row })), (added, skipped) => `${added} pasted row${added === 1 ? "" : "s"} added${skipped ? `, ${skipped} skipped (each row needs a company name)` : ""}.`)}
+            empty={list.length ? "Nothing matches this view. Try another tab or search." : "Add a company above, or click a cell and paste rows copied from Excel."} /></div>}
     </Card>
 
     {sheetOpen && <FullSheet title="Lead mining sheet" noun={["company", "companies"]} count={visible.length} total={list.length} onClose={() => setSheetOpen(false)} tools={tools}>
       {prospects.isLoading ? <Skeleton className="h-64" /> : <Sheet columns={sheetColumns} rows={visible} locked={(row) => !row.editable || Boolean(row.fields_locked)} rowTone={(row) => statusTone[row.status]} busy={(row) => busyIds.has(row.id)} maxHeight="calc(100dvh - 232px)"
         onChange={(row, key, value) => void patch(row, { [key]: value })}
-        onPasteRows={salesView ? undefined : (rows) => void addRows(rows.map((row) => ({ company_name: row.company_name || "", ...row })), (added, skipped) => `${added} pasted row${added === 1 ? "" : "s"} added${skipped ? `, ${skipped} skipped (each row needs a company name)` : ""}.`)}
-        onDelete={salesView ? undefined : (row) => void remove(row)}
+        onPasteRows={(rows) => void addRows(rows.map((row) => ({ company_name: row.company_name || "", ...row })), (added, skipped) => `${added} pasted row${added === 1 ? "" : "s"} added${skipped ? `, ${skipped} skipped (each row needs a company name)` : ""}.`)}
+        onDelete={(row) => void remove(row)} canDelete={(row) => Boolean(row.deletable)}
         empty={list.length ? "Nothing matches this view." : "Add a company above, or click a cell and paste rows copied from Excel."} />}
     </FullSheet>}
     {opened && <ProspectCard key={opened.id} prospect={opened} busy={busyIds.has(opened.id)} onClose={() => setOpenId(null)}
       onSave={(body) => patch(opened, body, "Details saved.")} onStatus={(status) => setStatus(opened, status)}
-      onDelete={salesView ? undefined : async () => { if (await remove(opened)) setOpenId(null); }} />}
+      onDelete={opened.deletable ? async () => { if (await remove(opened)) setOpenId(null); } : undefined} />}
     {qualifying && <QualifyModal prospect={qualifying} onClose={() => setQualifying(null)} onConfirm={() => { const row = qualifying; setQualifying(null); void patch(row, { status: "QUALIFIED" }, `${row.company_name} sent to Sales as a qualified lead.`); }} />}
   </div>;
 }

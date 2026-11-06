@@ -53,7 +53,7 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
     <PageHeader
       crumbs={[{ label: "Operations", href: "/app/operations" }, { label: shipment.reference_number }]}
       title={<span className="flex flex-wrap items-center gap-3">{shipment.reference_number}<StatusChip status={shipment.status} label={statusLabel[shipment.status]} className="text-[13px]" />{shipment.invoice_ready && <Chip tone="success">Invoice-ready</Chip>}</span>}
-      subtitle={<>{shipment.customer_name || "—"} · {shipment.pickup_location || "—"} <span className="text-brand">→</span> {shipment.delivery_location || "—"}{shipment.sales_agent_name && <> · Sales agent <b className="font-semibold text-ink">{shipment.sales_agent_name}</b></>}</>}
+      subtitle={<>{shipment.customer_id && manager ? <Link href={`/app/customers/${shipment.customer_id}`} className="font-medium text-brand-deep hover:underline">{shipment.customer_name || "Customer"}</Link> : shipment.customer_name || "—"} · {shipment.pickup_location || "—"} <span className="text-brand">→</span> {shipment.delivery_location || "—"}{shipment.sales_agent_name && <> · Sales agent <b className="font-semibold text-ink">{shipment.sales_agent_name}</b></>}</>}
       actions={<>
         {invoice?.invoice_number
           ? (manager || caps.canMarkInvoiceReady ? <Link href="/app/invoices"><Chip tone="info" className="h-8 px-3 text-[13px] hover:brightness-95"><ReceiptText size={13} />{invoice.invoice_number}{invoice.status ? ` · ${humanize(invoice.status)}` : ""}</Chip></Link> : <Chip tone="info" className="h-8 px-3 text-[13px]"><ReceiptText size={13} />{invoice.invoice_number}{invoice.status ? ` · ${humanize(invoice.status)}` : ""}</Chip>)
@@ -67,6 +67,7 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
       <div className="overflow-x-auto"><Stepper steps={progressStatuses.map((status) => ({ label: statusLabel[status] }))} current={lineStatus === "COMPLETED" ? progressStatuses.length : Math.max(0, progressStatuses.indexOf(lineStatus))} tone={paused || exceptionOpen(shipment) ? "danger" : "brand"} className="min-w-[480px]" /></div>
       {exceptionOpen(shipment) && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm"><AlertTriangle size={18} className="shrink-0 text-danger" /><p><b>Open exception.</b> {shipment.exception_note ? shipment.exception_note : "Details are in the Exception tab."}</p></div>}
       {shipment.status === "DELIVERED" && <p className="mt-4 text-xs text-muted">Delivered. The load completes automatically when its invoice is paid.</p>}
+      {shipment.status === "IN_PROGRESS" && !shipment.ops_review && <p className="mt-4 text-xs text-muted">In progress. Add the carrier and the carrier rate under Load details; the load is booked automatically.</p>}
       {shipment.status === "MISSED_PICKUP" && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm animate-fade"><CircleSlash size={18} className="shrink-0 text-danger" /><p><b>Pickup missed.</b> {shipment.missed_pickup_reason} Re-book the load or cancel it.</p></div>}
       {shipment.ops_review === "PENDING" && (manager ? <OpsReview shipment={shipment} directory={directory.data} /> : <div className="mt-4 rounded-[12px] bg-accent/[.07] px-4 py-3 text-sm animate-fade"><b>New customer.</b> Waiting for the Operations Manager to approve this load and assign the customer&apos;s agent.</div>)}
       {cancelled && <div className="mt-4 flex items-center gap-3 rounded-[12px] bg-black/[.04] px-4 py-3 text-sm animate-fade"><Ban size={18} className="shrink-0 text-ink/60" /><p><b>Load cancelled{shipment.cancelled_at ? ` · ${dateTimeLabel(shipment.cancelled_at)}` : ""}.</b> {shipment.cancel_reason}</p></div>}
@@ -85,9 +86,10 @@ function ShipmentView({ data }: { data: ShipmentDetail }) {
     ]} />
 
     <div key={tab} className="animate-fade">
-      {tab === "details" && <LoadForm shipment={shipment} canMarkInvoiceReady={Boolean(caps.canMarkInvoiceReady)} />}
+      {/* Keyed by the last save, so the form always starts from what is saved now (never an older cached copy). */}
+      {tab === "details" && <LoadForm key={shipment.updated_at ?? shipment.id} shipment={shipment} canMarkInvoiceReady={Boolean(caps.canMarkInvoiceReady)} />}
       {tab === "documents" && <Documents data={data} canReview={Boolean(caps.canReviewDocuments)} />}
-      {tab === "exception" && <ExceptionPanel data={data} canResolve={Boolean(caps.canResolveExceptions)} directory={directory.data} />}
+      {tab === "exception" && <ExceptionPanel key={shipment.updated_at ?? shipment.id} data={data} canResolve={Boolean(caps.canResolveExceptions)} directory={directory.data} />}
       {tab === "activity" && <ActivityPanel shipmentId={shipment.id} events={events} comments={comments} directory={directory.data} />}
     </div>
   </div>;
@@ -191,8 +193,8 @@ function Assignment({ shipment, directory }: { shipment: Shipment; directory?: D
 
 const loadSections: { title: string; hint?: string; fields: [keyof Shipment & string, string, ("date" | "email" | "area")?][] }[] = [
   { title: "Carrier", hint: "Only Operations sees who the carrier is. Sales sees the carrier rate and profit.", fields: [["carrier_name", "Carrier company"], ["carrier_mc", "MC #"], ["dispatcher_name", "Dispatcher name"], ["dispatcher_phone", "Dispatcher phone"], ["dispatcher_email", "Dispatcher email", "email"], ["driver_name", "Driver name"], ["driver_phone", "Driver phone"], ["truck_type_size", "Truck type & size"], ["truck_number", "Truck no."], ["trailer_number", "Trailer no."]] },
-  { title: "Pickup", fields: [["pickup_facility", "Facility name"], ["pickup_address", "Address"], ["pickup_contact", "Point of contact"], ["pickup_po", "PO #"], ["pickup_date", "Pickup date", "date"], ["pickup_notes", "Notes", "area"]] },
-  { title: "Delivery", fields: [["delivery_facility", "Facility name"], ["delivery_address", "Delivery address"], ["delivery_contact", "Point of contact"], ["delivery_date", "Delivery date", "date"], ["delivery_notes", "Notes", "area"]] },
+  { title: "Pickup", fields: [["pickup_facility", "Facility name"], ["pickup_address", "Address"], ["pickup_contact", "Point of contact"], ["pickup_contact_phone", "Contact phone"], ["pickup_po", "PO #"], ["pickup_date", "Pickup date", "date"], ["pickup_notes", "Notes", "area"]] },
+  { title: "Delivery", fields: [["delivery_facility", "Facility name"], ["delivery_address", "Delivery address"], ["delivery_contact", "Point of contact"], ["delivery_contact_phone", "Contact phone"], ["delivery_date", "Delivery date", "date"], ["delivery_notes", "Notes", "area"]] },
   { title: "Commodity", fields: [["commodity_product", "Product"], ["commodity_weight", "Weight"], ["commodity_pieces", "Pallets / skids / pieces"]] },
 ];
 const loadKeys = loadSections.flatMap((section) => section.fields.map(([key]) => key));

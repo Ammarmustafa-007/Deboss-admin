@@ -9,20 +9,21 @@ import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
 import { dateLabel } from "@/lib/format";
 import { useBrokerage } from "@/components/app/brokerage-context";
-import { Avatar, Card, EmptyState, PageHeader, Skeleton } from "@/components/ui/surface";
+import { Avatar, Card, CardHeader, EmptyState, PageHeader, Skeleton } from "@/components/ui/surface";
 import { LinkButton } from "@/components/ui/button";
 import { controlClass } from "@/components/ui/field";
 import { CustomerPanel, useCustomerProfile } from "@/components/sales/customer-panel";
 import { useTeamDirectory } from "@/components/sales/directory";
-import type { Customer } from "@/components/sales/model";
+import { cardSections } from "@/components/sales/lead-details";
+import type { Customer, CustomerDetails } from "@/components/sales/model";
 
 export function CustomersScreen() {
   const router = useRouter();
   const { api } = useBrokerage();
   const customers = useQuery({ queryKey: ["brokerage", "customers"], queryFn: async () => responseData<{ customers: Customer[] }>(await api("/api/v1/brokerage/customers")), staleTime: 20_000 });
   const [search, setSearch] = useState("");
-  const { manager, teamLead } = useBrokerage();
-  const showOwner = manager || teamLead;
+  const { manager, teamLead, sales } = useBrokerage();
+  const showOwner = sales && (manager || teamLead);
   const directory = useTeamDirectory(showOwner);
   const [owner, setOwner] = useState("");
   const ownerName = (id?: string | null) => directory.data?.users.find((user) => user.id === id)?.full_name;
@@ -56,7 +57,7 @@ export function CustomersScreen() {
             </tr>)}</tbody>
           </table>
           <ul className="divide-y divide-line-soft md:hidden">{visible.map((customer) => <li key={customer.id}><Link href={`/app/customers/${customer.id}`} className="flex items-center gap-3 px-4 py-3.5"><Avatar name={customer.company_name} /><div className="min-w-0 flex-1"><p className="truncate font-semibold">{customer.company_name}</p><p className="truncate text-xs text-muted">{customer.contact_name || "No contact"}{customer.contact_email ? ` · ${customer.contact_email}` : ""}</p></div><ChevronRight size={16} className="text-muted" /></Link></li>)}</ul>
-        </> : <EmptyState icon={term ? Search : UsersRound} title={term ? "No customers match your search" : "No customers yet"} body={term ? undefined : "Leads appear here once they're converted to customers."} />}
+        </> : <EmptyState icon={term ? Search : UsersRound} title={term ? "No customers match your search" : "No customers yet"} body={term ? undefined : sales ? "Leads appear here once they're converted to customers." : "A customer appears here once its first load is handed to your department."} />}
     </Card>
   </div>;
 }
@@ -69,6 +70,7 @@ export function CustomerRoute({ params }: { params: Promise<{ id: string }> }) {
 export function CustomerScreen({ customerId }: { customerId: string }) {
   const profile = useCustomerProfile(customerId);
   const customer = profile.data?.customer;
+  const { sales } = useBrokerage();
   return <div className="space-y-6 animate-rise">
     <PageHeader
       crumbs={[{ label: "Customers", href: "/app/customers" }, { label: customer?.company_name ?? "Customer" }]}
@@ -78,8 +80,25 @@ export function CustomerScreen({ customerId }: { customerId: string }) {
         {customer.contact_email && <a href={`mailto:${customer.contact_email}`} className="inline-flex items-center gap-1.5 hover:text-ink"><Mail size={14} />{customer.contact_email}</a>}
         {customer.contact_phone && <a href={`tel:${customer.contact_phone}`} className="inline-flex items-center gap-1.5 hover:text-ink"><Phone size={14} />{customer.contact_phone}</a>}
       </span>}
-      actions={customer?.lead_id && <LinkButton href={`/app/sales/leads/${customer.lead_id}`} variant="ink" icon={<ExternalLink size={15} />}>Manage in Sales</LinkButton>}
+      actions={sales && customer?.lead_id && <LinkButton href={`/app/sales/leads/${customer.lead_id}`} variant="ink" icon={<ExternalLink size={15} />}>Manage in Sales</LinkButton>}
     />
+    {profile.data?.details && <CompanyDetails details={profile.data.details} owner={customer?.owner_name} />}
     <CustomerPanel customerId={customerId} readOnly />
   </div>;
+}
+
+/** What the Sales agent recorded about the company, read-only (Operations Managers see it here too). */
+function CompanyDetails({ details, owner }: { details: CustomerDetails; owner?: string | null }) {
+  const show = (value: string | boolean | null | undefined) => typeof value === "boolean" ? (value ? "Yes" : "No") : value || "—";
+  return <Card>
+    <CardHeader title="Company details" subtitle={owner ? `Entered by Sales · agent ${owner}` : "Entered by Sales"} />
+    <div className="grid gap-6 p-5 lg:grid-cols-2">
+      <section><h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted">Contact</h3>
+        <dl className="grid gap-3 sm:grid-cols-2">{[["Contact name", details.contact_name], ["Email", details.contact_email], ["Phone", details.contact_phone]].map(([label, value]) => <div key={String(label)}><dt className="text-xs text-muted">{label}</dt><dd className="mt-0.5 break-words text-sm">{show(value as string | null)}</dd></div>)}</dl>
+      </section>
+      {cardSections.map((section) => <section key={section.title}><h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-muted">{section.title}</h3>
+        <dl className="grid gap-3 sm:grid-cols-2">{section.fields.map(([key, label]) => <div key={key}><dt className="text-xs text-muted">{label}</dt><dd className="mt-0.5 whitespace-pre-wrap break-words text-sm">{show(details[key])}</dd></div>)}</dl>
+      </section>)}
+    </div>
+  </Card>;
 }

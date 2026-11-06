@@ -33,6 +33,8 @@ type Props<T extends { id: string }> = {
   onChange: (row: T, key: keyof T & string, value: string | boolean | null) => void;
   onPasteRows?: (rows: Record<string, string>[]) => void;
   onDelete?: (row: T) => void;
+  /** Which unlocked rows show the delete button (all of them when not given). */
+  canDelete?: (row: T) => boolean;
   busy?: (row: T) => boolean;
   empty?: ReactNode;
   /** CSS max-height of the scrolling grid (defaults to fitting under a page header). */
@@ -42,7 +44,7 @@ type Props<T extends { id: string }> = {
 const DEFAULT_WIDTH = 120;
 const INDEX_WIDTH = 40;
 
-export function Sheet<T extends { id: string }>({ columns, rows, locked, rowTone, onChange, onPasteRows, onDelete, busy, empty, maxHeight = "calc(100dvh - 330px)" }: Props<T>) {
+export function Sheet<T extends { id: string }>({ columns, rows, locked, rowTone, onChange, onPasteRows, onDelete, canDelete, busy, empty, maxHeight = "calc(100dvh - 330px)" }: Props<T>) {
   const grid = useRef<HTMLTableElement>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const [edges, setEdges] = useState({ left: false, right: false });
@@ -110,7 +112,7 @@ export function Sheet<T extends { id: string }>({ columns, rows, locked, rowTone
                   : <Cell column={column} value={row[column.key] as unknown} disabled={isLocked || Boolean(pending)} dataCell={`${rowIndex}:${columnIndex}`}
                       onCommit={(value) => onChange(row, column.key, value)} onKey={(event) => onKey(event, rowIndex, columnIndex)} onPaste={(event) => onPaste(event, columnIndex)} />}
               </td>)}
-              {onDelete && <td className="border-b border-line-soft bg-white px-1 text-center">{!isLocked && <button type="button" aria-label="Delete row" onClick={() => onDelete(row)} className="grid h-6 w-6 place-items-center rounded-md text-muted hover:bg-danger/10 hover:text-[#C4254B]"><Trash2 size={12} /></button>}</td>}
+              {onDelete && <td className="border-b border-line-soft bg-white px-1 text-center">{!isLocked && (canDelete?.(row) ?? true) && <button type="button" aria-label="Delete row" onClick={() => onDelete(row)} className="grid h-6 w-6 place-items-center rounded-md text-muted hover:bg-danger/10 hover:text-[#C4254B]"><Trash2 size={12} /></button>}</td>}
             </tr>;
           })}
           {!rows.length && <tr><td colSpan={columns.length + 2} className="px-6 py-12 text-center text-sm text-muted">{empty ?? "No rows yet."}</td></tr>}

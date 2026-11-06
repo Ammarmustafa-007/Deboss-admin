@@ -35,8 +35,8 @@ const detailColumns: { key: DetailKey | "contact_name" | "contact_phone" | "cont
   { key: "website", label: "Website", width: 145 }, { key: "source", label: "Source", width: 105 }, { key: "notes", label: "Notes", width: 200 },
 ];
 
-/** Card groups on the lead page (full labels). */
-const cardSections: { title: string; fields: [DetailKey, string][] }[] = [
+/** Card groups on the lead page (full labels). Also used read-only on the customer page. */
+export const cardSections: { title: string; fields: [DetailKey, string][] }[] = [
   { title: "Operator & shipping", fields: [["operator_name", "Operator name"], ["operator_number", "Operator number"], ["truck_type", "Truck type"], ["load_type", "FTL / LTL"], ["shipping_volume", "Shipping volume"], ["commodity", "Commodity"], ["lanes", "Lanes they usually run"], ["website", "Website"]] },
   { title: "Locations", fields: [["physical_address", "Physical address"], ["other_locations", "Other locations"]] },
   { title: "Billing", fields: [["billing_address", "Billing address"], ["billing_contact", "Accounts / billing contact"], ["billing_phone", "Billing phone"], ["billing_email", "Billing email"], ["payment_terms", "Payment terms"], ["ein", "EIN #"], ["w9_received", "W-9 received"]] },

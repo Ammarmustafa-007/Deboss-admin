@@ -59,8 +59,10 @@ type BrokerageAccess = { sales: boolean; manager: boolean; canMarkInvoiceReady: 
 /** Mirrors the permission rules of the original section switcher. */
 export function brokerageNavigation({ sales, manager, canMarkInvoiceReady }: BrokerageAccess): NavGroup[] {
   const work: NavItem[] = [{ href: "/app", label: "Dashboard", icon: LayoutDashboard, tone: "brand" }];
-  if (sales) work.push({ href: "/app/sales", label: "Sales", icon: TrendingUp, tone: "aqua" }, { href: "/app/customers", label: "Customers", icon: Contact, tone: "accent" }, { href: "/app/sales/mining", label: "Fronter mining sheet", icon: Sheet, tone: "brand" });
+  if (sales) work.push({ href: "/app/sales", label: "Sales", icon: TrendingUp, tone: "aqua" }, { href: "/app/customers", label: "Customers", icon: Contact, tone: "accent" }, { href: "/app/sales/mining", label: "Fronter mining sheet", icon: Sheet, tone: "brand" }, { href: "/app/sales/commodities", label: "Commodities", icon: Boxes, tone: "accent" });
   else work.push({ href: "/app/operations", label: "Operations", icon: Truck, tone: "aqua" });
+  // Operations Managers read the profiles of the customers their department handles.
+  if (!sales && manager) work.push({ href: "/app/customers", label: "Customers", icon: Contact, tone: "accent" });
   if (!sales && (manager || canMarkInvoiceReady)) work.push({ href: "/app/invoices", label: "Invoices", icon: ReceiptText, tone: "success" });
 
   const groups: NavGroup[] = [{ label: "Workspace", items: work }];

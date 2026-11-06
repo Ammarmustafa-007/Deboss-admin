@@ -50,7 +50,7 @@ Built in `components/app/navigation.ts`. Every workspace also gets **Chat** at t
 
 | Group | Agent / Team Lead | Manager adds |
 |---|---|---|
-| Workspace | Dashboard, Sales, Customers, Fronter mining sheet, Chat | |
+| Workspace | Dashboard, Sales, Customers, Fronter mining sheet, Commodities, Chat | |
 | Management | | Teams, Agent access, Attendance, Team performance |
 | Insights | Reports | |
 
@@ -58,7 +58,7 @@ Built in `components/app/navigation.ts`. Every workspace also gets **Chat** at t
 
 | Group | Agent / Team Lead | Manager adds |
 |---|---|---|
-| Workspace | Dashboard, Operations, Chat. **Invoices** for managers and for leads with billing access (`canMarkInvoiceReady`) | |
+| Workspace | Dashboard, Operations, Chat. **Invoices** for managers and for leads with billing access (`canMarkInvoiceReady`) | Customers (read-only profiles of their department's customers) |
 | Management | | Teams, Agent access, Attendance, Team performance |
 | Insights | Reports | |
 
