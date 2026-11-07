@@ -6,7 +6,7 @@ import { AlertTriangle, Banknote, ChevronRight, ReceiptText, Search, Wallet } fr
 import { useMemo, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { errorMessage, responseData } from "@/lib/api";
-import { dateLabel, isPast, money } from "@/lib/format";
+import { dateLabel, isPastDay, money } from "@/lib/format";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
 import { Card, EmptyState, KpiCard, PageHeader, Skeleton, StatusChip, humanize } from "@/components/ui/surface";
@@ -42,7 +42,7 @@ export function InvoicesScreen() {
   const list = useMemo(() => invoices.data?.invoices ?? [], [invoices.data]);
   const editing = list.find((invoice) => invoice.id === editingId);
   const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
-  const overdue = list.filter((invoice) => invoice.status === "OVERDUE" || (open(invoice) && isPast(invoice.due_date)));
+  const overdue = list.filter((invoice) => invoice.status === "OVERDUE" || (open(invoice) && isPastDay(invoice.due_date)));
 
   const tabs: TabItem<string>[] = [{ value: "all", label: "All", count: list.length }, ...paymentStatuses.map((status) => ({ value: status, label: humanize(status), count: list.filter((invoice) => invoice.status === status).length, hidden: !list.some((invoice) => invoice.status === status) }))];
   const term = search.trim().toLowerCase();
@@ -73,7 +73,7 @@ export function InvoicesScreen() {
             <table className="hidden w-full text-sm md:table">
               <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Invoice</th><th className="px-3 py-2.5 font-medium">Status</th><th className="px-3 py-2.5 font-medium">Due</th><th className="px-3 py-2.5 text-right font-medium">Amount</th><th className="px-3 py-2.5 text-right font-medium">Paid</th><th className="w-10" /></tr></thead>
               <tbody>{visible.map((invoice) => {
-                const late = open(invoice) && isPast(invoice.due_date);
+                const late = open(invoice) && isPastDay(invoice.due_date);
                 return <tr key={invoice.id} onClick={() => setEditingId(invoice.id)} className="group cursor-pointer border-t border-line-soft transition-colors hover:bg-[#FAF8F4]">
                   <td className="px-5 py-3.5"><p className="font-semibold">{invoice.invoice_number}</p><p className="mt-0.5 text-xs text-muted">{invoice.brokerage_shipments?.reference_number ?? "—"} · {invoice.brokerage_shipments?.customer_name ?? "—"}</p></td>
                   <td className="px-3 py-3.5"><StatusChip status={late ? "OVERDUE" : invoice.status} label={late ? "Past due" : undefined} /></td>

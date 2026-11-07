@@ -12,7 +12,7 @@ import { Avatar, Card, EmptyState, Skeleton } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { TextField, controlClass } from "@/components/ui/field";
 import { Modal } from "@/components/ui/overlay";
-import { inboxKey, markRead, sendMessage, useChatApi, useChatStream, useInbox, useTyping, type ChatMessage, type Conversation } from "@/components/chat/chat-data";
+import { inboxKey, markRead, sendMessage, useChatApi, useChatStream, useInbox, useTyping, type ChatMessage, type Contact, type Conversation } from "@/components/chat/chat-data";
 
 const emojis = ["😀", "😂", "😊", "😍", "👍", "👏", "🙏", "🎉", "🔥", "✅", "❌", "⚠️", "🚚", "📦", "📞", "💰", "⏰", "📍", "🤝", "👀", "😅", "😢", "😡", "❤️"];
 
@@ -48,6 +48,9 @@ export function ChatScreen() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [picking, setPicking] = useState(false);
+  const [grouping, setGrouping] = useState(false);
+  const { profile } = useSession();
+  const canCreateGroups = profile.role === "MANAGER";
   const conversations = useMemo(() => inbox.data?.conversations ?? [], [inbox.data]);
   const active = conversations.find((conversation) => conversation.id === activeId) ?? null;
   const open = useCallback((id: string | null) => router.replace(id ? `/app/chat?c=${id}` : "/app/chat", { scroll: false }), [router]);
@@ -64,7 +67,10 @@ export function ChatScreen() {
       <aside className={cn("flex min-h-0 flex-col border-line-soft lg:border-r", active && "hidden lg:flex")}>
         <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
           <h1 className="text-lg font-bold">Chat</h1>
-          <Button size="sm" variant="ink" icon={<MessageSquarePlus size={14} />} onClick={() => setPicking(true)} disabled={!inbox.data?.contacts.length}>New message</Button>
+          <span className="flex items-center gap-1.5">
+            {canCreateGroups && <Button size="sm" variant="outline" icon={<UsersRound size={14} />} onClick={() => setGrouping(true)} disabled={!inbox.data?.contacts.length}>New group</Button>}
+            <Button size="sm" variant="ink" icon={<MessageSquarePlus size={14} />} onClick={() => setPicking(true)} disabled={!inbox.data?.contacts.length}>New message</Button>
+          </span>
         </div>
         <div className="relative px-4 pb-3"><Search size={15} className="absolute left-7 top-1/2 -translate-y-1/2 -mt-1.5 text-muted" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search chats" aria-label="Search chats" className={cn(controlClass, "h-10 pl-9")} /></div>
         <div className="min-h-0 flex-1 overflow-y-auto border-t border-line-soft">
@@ -86,7 +92,8 @@ export function ChatScreen() {
           : <div className="grid h-full place-items-center"><EmptyState icon={MessagesSquare} title="Select a chat" body="Pick a conversation on the left, or start a new message." /></div>}
       </section>
     </Card>
-    {picking && inbox.data && <NewMessage contacts={inbox.data.contacts} onClose={() => setPicking(false)} onOpen={(id) => { setPicking(false); open(id); }} />}
+    {picking && inbox.data && <NewMessage contacts={inbox.data.contacts} manager={canCreateGroups} onClose={() => setPicking(false)} onOpen={(id) => { setPicking(false); open(id); }} />}
+    {grouping && inbox.data && <NewGroup contacts={inbox.data.contacts} onClose={() => setGrouping(false)} onOpen={(id) => { setGrouping(false); open(id); }} />}
   </div>;
 }
 
@@ -206,7 +213,7 @@ function ConversationPane({ conversation, me, onBack }: { conversation: Conversa
   </div>;
 }
 
-function NewMessage({ contacts, onClose, onOpen }: { contacts: { id: string; full_name: string; role: string; department: string | null }[]; onClose: () => void; onOpen: (id: string) => void }) {
+function NewMessage({ contacts, manager, onClose, onOpen }: { contacts: Contact[]; manager: boolean; onClose: () => void; onOpen: (id: string) => void }) {
   const { api, report } = useChatApi();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -221,7 +228,7 @@ function NewMessage({ contacts, onClose, onOpen }: { contacts: { id: string; ful
       onOpen(conversation_id); }
     catch (error) { report(errorMessage(error), "error"); } finally { setBusy(undefined); }
   };
-  return <Modal open onClose={onClose} title="New message" subtitle="Message a manager directly. Talk with other agents in your team group.">
+  return <Modal open onClose={onClose} title="New message" subtitle={manager ? "Message any manager, or the agents of your business unit." : "Message a manager directly. Talk with other agents in your team group."}>
     <div className="space-y-3">
       <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input autoFocus type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people" aria-label="Search people" className={cn(controlClass, "h-10 pl-9")} /></div>
       <ul className="max-h-[50vh] divide-y divide-line-soft overflow-y-auto rounded-[12px] border border-line-soft">{list.map((contact) => <li key={contact.id}><button type="button" disabled={Boolean(busy)} onClick={() => void start(contact.id)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-[#FAF8F4] disabled:opacity-60">
@@ -232,14 +239,54 @@ function NewMessage({ contacts, onClose, onOpen }: { contacts: { id: string; ful
   </Modal>;
 }
 
-/** The admin (the team's manager) renames the group and sets its photo; members follow the team. */
+/** A manager's own group chat: a name and the people in it (anyone they may message directly). */
+function NewGroup({ contacts, onClose, onOpen }: { contacts: Contact[]; onClose: () => void; onOpen: (id: string) => void }) {
+  const { api, report } = useChatApi();
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [search, setSearch] = useState("");
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const term = search.trim().toLowerCase();
+  const list = contacts.filter((contact) => !term || `${contact.full_name} ${contact.department ?? ""}`.toLowerCase().includes(term));
+  const toggle = (id: string) => setChosen((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  const create = async (event: FormEvent) => {
+    event.preventDefault();
+    if (name.trim().length < 2 || !chosen.length) return;
+    setSaving(true);
+    try {
+      const { conversation_id } = await responseData<{ conversation_id: string }>(await api("/api/v1/chat/groups", { method: "POST", body: JSON.stringify({ name: name.trim(), member_ids: chosen }) }));
+      await queryClient.refetchQueries({ queryKey: inboxKey });
+      report("Group created.");
+      onOpen(conversation_id);
+    } catch (error) { report(errorMessage(error), "error"); } finally { setSaving(false); }
+  };
+  return <Modal open onClose={onClose} dismissible={!saving} title="New group" subtitle="Name the group and choose who is in it. You are its admin."
+    footer={<><Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button><Button type="submit" form="new-group" variant="primary" pending={saving} pendingLabel="Creating…" disabled={name.trim().length < 2 || !chosen.length}>Create group{chosen.length ? ` (${chosen.length + 1})` : ""}</Button></>}>
+    <form id="new-group" onSubmit={create} className="space-y-3">
+      <TextField label="Group name" required minLength={2} maxLength={80} value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Brokerage load desk" />
+      <div className="relative"><Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search people" aria-label="Search people" className={cn(controlClass, "h-10 pl-9")} /></div>
+      <ul className="max-h-[42vh] divide-y divide-line-soft overflow-y-auto rounded-[12px] border border-line-soft">{list.map((contact) => <li key={contact.id}><label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-[#FAF8F4]">
+        <input type="checkbox" checked={chosen.includes(contact.id)} onChange={() => toggle(contact.id)} className="h-4 w-4 accent-[#F7941D]" />
+        <Avatar name={contact.full_name} /><span className="min-w-0 flex-1"><span className="block truncate text-sm font-semibold">{contact.full_name}</span><span className="block truncate text-xs text-muted">{contact.role === "MANAGER" ? "Manager" : "Agent"}{contact.department ? ` · ${contact.department}` : ""}</span></span>
+      </label></li>)}{!list.length && <li className="p-6 text-center text-sm text-muted">Nobody matches.</li>}</ul>
+    </form>
+  </Modal>;
+}
+
+/** The admin renames the group and sets its photo. A team group's members follow the team; in a manager's own group the admin adds and removes them. */
 function GroupSettings({ conversation, me, onClose }: { conversation: Conversation; me: string; onClose: () => void }) {
   const { api, report } = useChatApi();
   const queryClient = useQueryClient();
   const admin = conversation.my_role === "ADMIN";
+  // A group a manager created (not a team's): its admin adds and removes members here.
+  const ownGroup = admin && !conversation.team_id;
+  const contacts = useInbox().data?.contacts ?? [];
+  const addable = contacts.filter((contact) => !conversation.members.some((member) => member.id === contact.id));
+  const [adding, setAdding] = useState("");
   const [name, setName] = useState(conversation.name);
   const [saving, setSaving] = useState(false);
-  const save = async (patch: { name?: string; photo_url?: string | null }, success: string) => {
+  const save = async (patch: { name?: string; photo_url?: string | null; add_members?: string[]; remove_members?: string[] }, success: string) => {
     setSaving(true);
     try { await responseData(await api(`/api/v1/chat/groups/${conversation.id}`, { method: "PATCH", body: JSON.stringify(patch) })); await queryClient.invalidateQueries({ queryKey: inboxKey }); report(success); }
     catch (error) { report(errorMessage(error), "error"); } finally { setSaving(false); }
@@ -266,8 +313,12 @@ function GroupSettings({ conversation, me, onClose }: { conversation: Conversati
       </form>}
       <div>
         <div className="mb-2 flex items-center justify-between"><p className="text-sm font-semibold">Members</p>{admin && conversation.team_id && <Link href={`/app/teams/${conversation.team_id}`} className="text-xs font-semibold text-brand-deep hover:underline">Add or remove members</Link>}</div>
-        <ul className="divide-y divide-line-soft rounded-[12px] border border-line-soft">{conversation.members.map((member) => <li key={member.id} className="flex items-center gap-3 px-3 py-2.5"><Avatar name={member.full_name} /><span className="min-w-0 flex-1 truncate text-sm font-medium">{member.id === me ? "You" : member.full_name}</span>{member.chat_role === "ADMIN" && <span className="rounded-full bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-[#7C4400]">Admin</span>}</li>)}</ul>
-        <p className="mt-2 text-xs text-muted">Members follow the team. Nobody can leave a group; the admin manages it.</p>
+        <ul className="divide-y divide-line-soft rounded-[12px] border border-line-soft">{conversation.members.map((member) => <li key={member.id} className="flex items-center gap-3 px-3 py-2.5"><Avatar name={member.full_name} /><span className="min-w-0 flex-1 truncate text-sm font-medium">{member.id === me ? "You" : member.full_name}</span>{member.chat_role === "ADMIN" && <span className="rounded-full bg-brand-tint px-2 py-0.5 text-[11px] font-semibold text-[#7C4400]">Admin</span>}{ownGroup && member.id !== me && <button type="button" disabled={saving} onClick={() => void save({ remove_members: [member.id] }, `${member.full_name} removed.`)} className="text-xs font-semibold text-[#A5183F] hover:underline disabled:opacity-50">Remove</button>}</li>)}</ul>
+        {ownGroup && addable.length > 0 && <form onSubmit={(event) => { event.preventDefault(); if (adding) void save({ add_members: [adding] }, "Member added.").then(() => setAdding("")); }} className="mt-3 flex items-end gap-2">
+          <label className="min-w-0 flex-1 text-xs font-medium text-muted">Add a member<select value={adding} onChange={(event) => setAdding(event.target.value)} className={cn(controlClass, "mt-1 h-10")}><option value="">Choose someone</option>{addable.map((contact) => <option key={contact.id} value={contact.id}>{contact.full_name}{contact.department ? ` · ${contact.department}` : ""}</option>)}</select></label>
+          <Button type="submit" variant="ink" pending={saving} disabled={!adding}>Add</Button>
+        </form>}
+        <p className="mt-2 text-xs text-muted">{conversation.team_id ? "Members follow the team. Nobody can leave a group; the admin manages it." : "Nobody can leave a group; the admin adds and removes members."}</p>
       </div>
     </div>
   </Modal>;

@@ -59,6 +59,8 @@ export type ShipmentEvent = { id: string; event_type: string; body?: string | nu
 export type ShipmentComment = { id: string; body: string; author_id?: string | null; created_at: string };
 export type ShipmentDetail = { shipment: Shipment; documents: ShipmentDocument[]; events: ShipmentEvent[]; comments: ShipmentComment[]; invoice?: { invoice_number?: string; status?: string } | null };
 export type Directory = { users: { id: string; full_name: string; email?: string; role?: string }[]; teams: { id: string; name: string }[] };
+/** The Operations Manager can take a customer or a load themselves; they show as "(Manager)" in the pickers. */
+export const personLabel = (user: { full_name: string; role?: string }) => user.role === "MANAGER" ? `${user.full_name} (Manager)` : user.full_name;
 
 /**
  * Load lifecycle: In progress (handed to Operations, no carrier yet) -> Booked (set automatically once the carrier and

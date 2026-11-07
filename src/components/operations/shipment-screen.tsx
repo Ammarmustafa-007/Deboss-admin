@@ -18,7 +18,7 @@ import { Bump } from "@/components/ui/motion";
 import { FilePicker, SelectField, TextAreaField, TextField, controlClass } from "@/components/ui/field";
 import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { documentAccept, documentProblem } from "@/lib/documents";
-import { allowedStatuses, canCancel, canMissPickup, documentTypes, exceptionOpen, loadProfit, nextStatus, paymentStatuses, progressStatuses, statusLabel, useOperationsDirectory, type Directory, type Shipment, type ShipmentDetail } from "@/components/operations/model";
+import { allowedStatuses, canCancel, canMissPickup, documentTypes, exceptionOpen, loadProfit, nextStatus, paymentStatuses, progressStatuses, statusLabel, useOperationsDirectory, type Directory, type Shipment, type ShipmentDetail, personLabel } from "@/components/operations/model";
 
 type TabKey = "details" | "documents" | "exception" | "activity";
 
@@ -111,7 +111,7 @@ function OpsReview({ shipment, directory }: { shipment: Shipment; directory?: Di
     <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
       <label className="min-w-0 flex-1 text-xs text-muted">Operations agent for this customer
         <select value={agent} disabled={pending || !directory} onChange={(event) => setAgent(event.target.value)} className={cn(controlClass, "mt-1 h-10 text-[13px] font-medium")}>
-          <option value="">Choose an agent</option>{(directory?.users ?? []).map((user) => <option key={user.id} value={user.id}>{user.full_name}</option>)}
+          <option value="">Choose an agent</option>{(directory?.users ?? []).map((user) => <option key={user.id} value={user.id}>{personLabel(user)}</option>)}
         </select>
       </label>
       <Button variant="success" icon={<CheckCircle2 size={15} />} pending={pending && !rejecting} pendingLabel="Approving…" disabled={!agent || pending} onClick={() => void decide({ action: "APPROVE", agent_id: agent }, "Approved. The agent now owns this customer.")}>Approve & assign</Button>
@@ -185,8 +185,8 @@ function Assignment({ shipment, directory }: { shipment: Shipment; directory?: D
   const reassignCustomer = (agentId: string) => void run(`assign:${shipment.id}`, `/api/v1/brokerage/customers/${shipment.customer_id}/operations-agent`, "PATCH", { agent_id: agentId }, "Customer's Operations agent changed. Its open loads moved too.");
   return <>
     {manager && shipment.customer_id
-      ? select("Customer's Operations agent", shipment.customer_operations_agent_id ?? shipment.assigned_to ?? "", "Needs assignment", (directory?.users ?? []).map((user) => ({ id: user.id, label: user.full_name })), (value) => value && reassignCustomer(value))
-      : select("Operations agent", shipment.assigned_to ?? "", "Needs assignment", (directory?.users ?? []).map((user) => ({ id: user.id, label: user.full_name })), (value) => assign({ assigned_to: value || null }))}
+      ? select("Customer's Operations agent", shipment.customer_operations_agent_id ?? shipment.assigned_to ?? "", "Needs assignment", (directory?.users ?? []).map((user) => ({ id: user.id, label: personLabel(user) })), (value) => value && reassignCustomer(value))
+      : select("Operations agent", shipment.assigned_to ?? "", "Needs assignment", (directory?.users ?? []).map((user) => ({ id: user.id, label: personLabel(user) })), (value) => assign({ assigned_to: value || null }))}
     {select("Team", shipment.team_id ?? "", "No team", (directory?.teams ?? []).map((team) => ({ id: team.id, label: team.name })), (value) => assign({ team_id: value || null }))}
   </>;
 }

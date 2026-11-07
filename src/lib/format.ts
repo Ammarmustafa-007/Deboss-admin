@@ -23,6 +23,14 @@ export function isPast(value?: string | null) {
   return Boolean(value) && new Date(value as string).getTime() < Date.now();
 }
 
+/** A date-only value (YYYY-MM-DD, like an invoice's due date) is past once that whole day is over, in the viewer's time. */
+export function isPastDay(day?: string | null) {
+  if (!day) return false;
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  return String(day).slice(0, 10) < today;
+}
+
 /** Formats a stored timestamp for a datetime-local input in the viewer's own timezone. */
 export function localInput(value?: string | null) {
   if (!value) return "";
