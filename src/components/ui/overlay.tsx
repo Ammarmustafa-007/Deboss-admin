@@ -7,20 +7,30 @@ import { cn } from "@/lib/cn";
 
 function useOverlay(open: boolean, onClose: () => void, dismissible: boolean) {
   const panel = useRef<HTMLDivElement>(null);
+  // The latest close handler and dismissible flag, read by the Escape key. Kept in refs so the setup below runs only
+  // when the overlay opens: callers pass a new onClose on every render, and re-running the setup on each render (a
+  // keystroke, a data refresh) moved the focus out of the field being typed in and onto the Close button.
+  const closeRef = useRef(onClose);
+  const dismissibleRef = useRef(dismissible);
+  useEffect(() => { closeRef.current = onClose; dismissibleRef.current = dismissible; });
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
     const overflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    panel.current?.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, button")?.focus();
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && dismissible) onClose(); };
+    // Start in the first field, not the header's Close button; a panel without fields focuses its first other button.
+    const root = panel.current;
+    const field = root?.querySelector<HTMLElement>("input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea:not([disabled])");
+    const button = root?.querySelector<HTMLElement>("button:not([aria-label='Close']):not([disabled])");
+    (field ?? button ?? root)?.focus();
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape" && dismissibleRef.current) closeRef.current(); };
     window.addEventListener("keydown", onKey);
     return () => {
       document.body.style.overflow = overflow;
       window.removeEventListener("keydown", onKey);
       previous?.focus?.();
     };
-  }, [open, onClose, dismissible]);
+  }, [open]);
   return panel;
 }
 
