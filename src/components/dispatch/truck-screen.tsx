@@ -15,8 +15,7 @@ import { Stepper, Tabs } from "@/components/ui/navigation";
 import { CommentFeed, Composer } from "@/components/sales/feed";
 import {
   addDays, invoiceStatusLabel, loadStatusLabel, paymentLabel, pct, truckPosition, truckStatusLabel, truckSteps, truckTypeLabel, useDispatchDirectory, useTruck, weekLabel, weekStart,
-  type Load, type TruckDetail,
-} from "@/components/dispatch/model";
+  type Load, type TruckDetail, invoiceLabel } from "@/components/dispatch/model";
 
 type TabKey = "loads" | "invoices" | "comments";
 
@@ -195,7 +194,7 @@ function InvoicesTab({ data }: { data: TruckDetail }) {
     <Card>
       <CardHeader title="Invoices" subtitle="Invoice = its loads' total × the carrier's charge %" />
       {invoices.length ? <ul className="divide-y divide-line-soft">{invoices.map((invoice) => <li key={invoice.id}><Link href={`/app/dispatch/invoices?open=${invoice.id}`} className="flex flex-wrap items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]">
-        <div className="min-w-0 flex-1"><p className="font-semibold">{invoice.invoice_number}</p><p className="text-xs text-muted">{weekLabel(invoice.week_start)} · loads {money(invoice.gross_amount)} × {pct(invoice.charge_percent)}</p></div>
+        <div className="min-w-0 flex-1"><p className="font-semibold">{invoiceLabel(invoice.invoice_number)}</p><p className="text-xs text-muted">{weekLabel(invoice.week_start)} · loads {money(invoice.gross_amount)} × {pct(invoice.charge_percent)}</p></div>
         <b className="tabular-nums">{money(invoice.amount)}</b><StatusChip status={invoice.status} label={invoiceStatusLabel[invoice.status]} />
       </Link></li>)}</ul> : <p className="p-6 text-center text-sm text-muted">No invoices yet.</p>}
     </Card>

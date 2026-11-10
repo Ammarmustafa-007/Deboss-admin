@@ -38,7 +38,11 @@ export type DispatchInvoice = {
   status: string; review_note?: string | null; due_date?: string | null; submitted_at?: string | null; forwarded_at?: string | null; paid_at?: string | null; signed_off_at?: string | null;
   outstanding?: number; overdue?: boolean; truck?: { id: string; unit_number: string; truck_type: string; assigned_to?: string | null }; carrier?: { id: string; company_name: string; mc_number?: string | null; dot_number?: string | null; contact_name?: string | null; phone?: string | null; email?: string | null; payment_method?: string | null };
   created_at?: string;
+  /** The name carriers know the dispatcher by; shown on the invoice instead of their real name. */
+  dispatcher_pseudo_name?: string | null;
 };
+/** Dispatch invoices are numbered 01, 02...: shown as "Invoice #01" (older numbers as they are). */
+export const invoiceLabel = (number: string) => /^\d+$/.test(number) ? `Invoice #${number}` : number;
 export type CarrierSummary = { trucks: number; running: number; week_gross: number; month_gross: number; week_miles: number; week_loads: number; invoices_received: number; received_total: number };
 export type CarrierDetail = {
   summary?: CarrierSummary | null;

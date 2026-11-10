@@ -19,7 +19,7 @@ import { TextAreaField, TextField, controlClass } from "@/components/ui/field";
 import { Drawer, Modal } from "@/components/ui/overlay";
 import { Tabs, type TabItem } from "@/components/ui/navigation";
 import { CommentFeed, Composer } from "@/components/sales/feed";
-import { invoiceStatusLabel, loadStatusLabel, pct, truckTypeLabel, useDispatchInvoices, weekLabel, type DispatchInvoice, type Load } from "@/components/dispatch/model";
+import { invoiceStatusLabel, loadStatusLabel, pct, truckTypeLabel, useDispatchInvoices, weekLabel, type DispatchInvoice, type Load, invoiceLabel } from "@/components/dispatch/model";
 
 // ---- Loads search (DP-4) ---------------------------------------------------------------------------------------
 export function LoadsScreen() {
@@ -95,6 +95,27 @@ export function LoadsScreen() {
   </div>;
 }
 
+/** The name on invoices: the dispatcher's pseudo name (the name carriers know them by), set once and used on all their invoices. */
+function InvoiceName({ invoiceId, realName, pseudoName, editable }: { invoiceId: string; realName: string | null; pseudoName: string | null; editable: boolean }) {
+  const { run, busy } = useBrokerageAction();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(pseudoName ?? "");
+  const pending = busy("pseudo-name");
+  const save = (event: FormEvent) => {
+    event.preventDefault();
+    void run("pseudo-name", `/api/v1/dispatch/invoices/${invoiceId}/dispatcher-name`, "PATCH", { pseudo_name: value.trim() || null }, value.trim() ? "Name on invoices saved." : "Name on invoices removed; the real name is used.").then((result) => { if (result !== undefined) setEditing(false); });
+  };
+  if (editing) return <form onSubmit={save} className="mt-0.5 space-y-1.5">
+    <input autoFocus value={value} maxLength={100} onChange={(event) => setValue(event.target.value)} placeholder={realName ?? "Name on invoices"} aria-label="Name on invoices" className={cn(controlClass, "h-8 text-[13px]")} />
+    <span className="flex gap-1.5"><Button type="submit" size="sm" variant="ink" pending={pending} disabled={value.trim().length === 1}>Save</Button><Button size="sm" variant="ghost" disabled={pending} onClick={() => { setValue(pseudoName ?? ""); setEditing(false); }}>Cancel</Button></span>
+  </form>;
+  return <span className="block">
+    <span className="font-medium">{pseudoName || realName || "—"}</span>
+    {pseudoName && realName && <span className="block text-xs text-muted">Real name: {realName}</span>}
+    {editable && <button type="button" onClick={() => setEditing(true)} className="block text-xs font-semibold text-brand-deep hover:underline">{pseudoName ? "Change name on invoices" : "Set name on invoices"}</button>}
+  </span>;
+}
+
 // ---- Weekly invoices (DP-8, DP-9, DS-12, answer 2) ---------------------------------------------------------------
 type InvoiceFilter = "all" | "DRAFT" | "SUBMITTED" | "FORWARDED" | "PAID" | "signoff" | "overdue";
 
@@ -136,7 +157,7 @@ export function DispatchInvoicesScreen() {
       {invoices.isLoading ? <div className="space-y-2 p-5">{[0, 1, 2].map((index) => <Skeleton key={index} className="h-14" />)}</div>
         : invoices.isError ? <EmptyState icon={AlertTriangle} title="Invoices unavailable" body={errorMessage(invoices.error)} />
         : visible.length ? <ul className="divide-y divide-line-soft">{visible.map((invoice) => <li key={invoice.id}><button type="button" onClick={() => open(invoice.id)} className="flex w-full flex-wrap items-center gap-3 px-5 py-3.5 text-left hover:bg-[#FAF8F4]">
-          <div className="min-w-0 flex-1"><p className="truncate font-semibold">{invoice.invoice_number}</p><p className="truncate text-xs text-muted">{invoice.carrier?.company_name} · {invoice.truck?.unit_number} · {weekLabel(invoice.week_start)} · {invoice.dispatcher_name}</p></div>
+          <div className="min-w-0 flex-1"><p className="truncate font-semibold">{invoiceLabel(invoice.invoice_number)}</p><p className="truncate text-xs text-muted">{invoice.carrier?.company_name} · {invoice.truck?.unit_number} · {weekLabel(invoice.week_start)} · {invoice.dispatcher_name}</p></div>
           <span className="hidden text-right text-xs text-muted sm:block">loads {money(invoice.gross_amount)}<br />× {pct(invoice.charge_percent)}</span>
           <b className="w-24 text-right tabular-nums">{money(invoice.amount)}</b>
           <StatusChip status={invoice.overdue ? "OVERDUE" : invoice.status} label={invoice.overdue ? "Overdue" : invoiceStatusLabel[invoice.status]} />
@@ -148,7 +169,7 @@ export function DispatchInvoicesScreen() {
   </div>;
 }
 
-type InvoiceDetail = { invoice: DispatchInvoice; loads: Load[]; available_loads: Load[]; comments: { id: string; body: string; author_name?: string; created_at: string; can_delete?: boolean }[]; history: { id: string; action: string; actor_name?: string | null; created_at: string; detail?: { from_status?: string; to_status?: string } }[]; rights: { dispatcher: boolean; reviewer: boolean; sign_off: boolean; edit: boolean } };
+type InvoiceDetail = { invoice: DispatchInvoice; loads: Load[]; available_loads: Load[]; comments: { id: string; body: string; author_name?: string; created_at: string; can_delete?: boolean }[]; history: { id: string; action: string; actor_name?: string | null; created_at: string; detail?: { from_status?: string; to_status?: string } }[]; rights: { dispatcher: boolean; reviewer: boolean; sign_off: boolean; edit: boolean; pseudo_name?: boolean } };
 
 function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const { api } = useBrokerage();
@@ -174,7 +195,7 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const remove = () => void run("invoice-delete", `/api/v1/dispatch/invoices/${id}`, "DELETE", undefined, "Invoice deleted. Its loads can be invoiced again.", () => { setDeleting(false); onClose(); });
   const removeLoad = (loadId: string) => void run(`invoice-load:${loadId}`, `/api/v1/dispatch/invoices/${id}`, "PATCH", { remove_load_ids: [loadId] }, "Load removed from the invoice.");
 
-  return <Drawer open onClose={onClose} dismissible={!pending} title={invoice?.invoice_number ?? "Invoice"} subtitle={invoice ? `${invoice.carrier?.company_name} · ${invoice.truck?.unit_number} · ${weekLabel(invoice.week_start)}` : undefined} className="max-w-2xl">
+  return <Drawer open onClose={onClose} dismissible={!pending} title={invoice ? invoiceLabel(invoice.invoice_number) : "Invoice"} subtitle={invoice ? `${invoice.carrier?.company_name} · ${invoice.truck?.unit_number} · ${weekLabel(invoice.week_start)}` : undefined} className="max-w-2xl">
     {detail.isLoading || !data || !invoice ? (detail.isError ? <EmptyState icon={AlertTriangle} title="Invoice unavailable" body={errorMessage(detail.error)} /> : <div className="space-y-3"><Skeleton className="h-24" /><Skeleton className="h-40" /></div>) : <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2"><StatusChip status={invoice.overdue ? "OVERDUE" : invoice.status} label={invoice.overdue ? "Overdue" : invoiceStatusLabel[invoice.status]} />{invoice.signed_off_at && <Chip tone="success">Signed off {dateLabel(invoice.signed_off_at)}</Chip>}
         <Button size="sm" variant="outline" icon={<Download size={14} />} pending={pdfBusy} pendingLabel="Creating PDF…" onClick={() => void downloadPdf()} className="ml-auto">Download PDF</Button></div>
@@ -186,7 +207,7 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
         <div><dt className="text-xs text-muted">Paid</dt><dd className="tabular-nums">{money(invoice.amount_paid)}</dd></div>
         <div><dt className="text-xs text-muted">Outstanding</dt><dd className={cn("tabular-nums", Number(invoice.outstanding) > 0 && "font-semibold text-[#A5183F]")}>{money(invoice.outstanding)}</dd></div>
         <div><dt className="text-xs text-muted">Due</dt><dd>{dateLabel(invoice.due_date)}</dd></div>
-        <div><dt className="text-xs text-muted">Dispatcher</dt><dd>{invoice.dispatcher_name ?? "—"}</dd></div>
+        <div><dt className="text-xs text-muted">Dispatcher</dt><dd><InvoiceName invoiceId={invoice.id} realName={invoice.dispatcher_name ?? null} pseudoName={invoice.dispatcher_pseudo_name ?? null} editable={Boolean(data.rights.pseudo_name)} /></dd></div>
         <div><dt className="text-xs text-muted">Sales agent</dt><dd>{invoice.sales_agent_name ?? "—"}</dd></div>
         <div><dt className="text-xs text-muted">Truck</dt><dd>{invoice.truck ? <Link href={`/app/dispatch/trucks/${invoice.truck.id}`} className="font-medium text-brand-deep hover:underline">{invoice.truck.unit_number}</Link> : "—"}{invoice.truck ? ` · ${truckTypeLabel[invoice.truck.truck_type]}` : ""}</dd></div>
       </dl>

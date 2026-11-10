@@ -4,15 +4,18 @@ import type { DispatchInvoice, Load } from "@/components/dispatch/model";
 
 /**
  * Builds a Dispatch weekly invoice as a real PDF and downloads it (no print dialog).
- * Layout: dark header band with the DEBOSS logo, bill-to and invoice details, the loads table,
- * then the totals, with a footer and page numbers on every page.
+ * Dispatch invoices go out under BACKEND SOLUTIONS (client request), not DEBOSS GLOBAL: black header band with the
+ * Backend Solutions logo (drawn on black), its yellow and purple, bill-to and invoice details, the loads table, then the
+ * totals, with a footer and page numbers on every page. The dispatcher shows under their pseudo name when they have one.
  */
 
-const brand: [number, number, number] = [247, 148, 29];
-const ink: [number, number, number] = [17, 17, 17];
-const muted: [number, number, number] = [95, 91, 83];
-const line: [number, number, number] = [230, 227, 221];
-const tint: [number, number, number] = [255, 244, 228];
+const company = { name: "BACKEND SOLUTIONS", tagline: "Your one stop trucking solutions", logo: "/brand/backend-solutions-logo.jpg", logoRatio: 266 / 800 };
+const brand: [number, number, number] = [237, 210, 43]; // logo yellow
+const accent: [number, number, number] = [112, 30, 210]; // logo purple
+const ink: [number, number, number] = [0, 0, 0];
+const muted: [number, number, number] = [92, 90, 104];
+const line: [number, number, number] = [228, 225, 236];
+const tint: [number, number, number] = [244, 239, 253];
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const money = (value: unknown) => { const number = Number(value); return Number.isFinite(number) ? usd.format(number) : "-"; };
@@ -27,7 +30,7 @@ const truckLabel: Record<string, string> = { DRY_VAN: "Dry van", REEFER: "Reefer
 
 async function logoDataUrl() {
   try {
-    const response = await fetch("/brand/deboss-logo-horizontal.png");
+    const response = await fetch(company.logo);
     if (!response.ok) return null;
     const blob = await response.blob();
     return await new Promise<string | null>((resolve) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = () => resolve(null); reader.readAsDataURL(blob); });
@@ -36,7 +39,7 @@ async function logoDataUrl() {
 
 export async function downloadDispatchInvoicePdf(invoice: DispatchInvoice, loads: Load[]) {
   const doc = await buildDispatchInvoicePdf(invoice, loads, await logoDataUrl());
-  doc.save(`${invoice.invoice_number}.pdf`);
+  doc.save(/^\d+$/.test(invoice.invoice_number) ? `Invoice-${invoice.invoice_number}.pdf` : `${invoice.invoice_number}.pdf`);
 }
 
 /** The invoice document itself (also used to preview it outside the browser). */
@@ -50,13 +53,13 @@ export async function buildDispatchInvoicePdf(invoice: DispatchInvoice, loads: L
   const truck = invoice.truck;
   const live = loads.filter((load) => load.status !== "CANCELLED");
 
-  // Header band with the logo (its lettering is light, so it sits on the dark band like in the app).
+  // Header band with the logo (it is drawn on black, so the band is black too).
   doc.setFillColor(...ink); doc.rect(0, 0, width, 34, "F");
-  doc.setFillColor(...brand); doc.rect(0, 34, width, 1.4, "F");
-  if (logo) doc.addImage(logo, "PNG", margin, 9, 68, 68 * 186 / 800);
-  else { doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.text("DEBOSS GLOBAL", margin, 20); }
+  doc.setFillColor(...accent); doc.rect(0, 34, width, 1.4, "F");
+  if (logo) doc.addImage(logo, "JPEG", margin - 4, 6, 66, 66 * company.logoRatio);
+  else { doc.setTextColor(...brand); doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.text(company.name, margin, 20); }
   doc.setTextColor(...brand); doc.setFont("helvetica", "bold"); doc.setFontSize(24); doc.text("INVOICE", width - margin, 18, { align: "right" });
-  doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.text(invoice.invoice_number, width - margin, 25, { align: "right" });
+  doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.text(`#${invoice.invoice_number}`, width - margin, 25, { align: "right" });
 
   // Bill to (left) and invoice details (right).
   let y = 47;
@@ -77,12 +80,12 @@ export async function buildDispatchInvoicePdf(invoice: DispatchInvoice, loads: L
   const detailX = width / 2 + 10;
   label("Invoice details", detailX, y);
   const details: [string, string][] = [
-    ["Invoice #", invoice.invoice_number],
+    ["Invoice #", `#${invoice.invoice_number}`],
     ["Issued", day(invoice.created_at)],
     ["Week", `${day(invoice.week_start)} - ${day(invoice.week_end)}`],
     ["Due date", day(invoice.due_date)],
     ["Truck", truck ? `${truck.unit_number} · ${truckLabel[truck.truck_type] ?? truck.truck_type}` : "-"],
-    ["Dispatcher", invoice.dispatcher_name ?? "-"],
+    ["Dispatcher", invoice.dispatcher_pseudo_name || invoice.dispatcher_name || "-"],
     ["Status", statusLabel[invoice.status] ?? invoice.status],
   ];
   let right = y + 6;
@@ -107,9 +110,9 @@ export async function buildDispatchInvoicePdf(invoice: DispatchInvoice, loads: L
     foot: live.length ? [[{ content: `${live.length} load${live.length === 1 ? "" : "s"}`, colSpan: 5 }, live.reduce((sum, load) => sum + Number(load.miles ?? 0), 0).toLocaleString("en-US"), money(live.reduce((sum, load) => sum + Number(load.rate), 0))]] : undefined,
     theme: "grid",
     styles: { font: "helvetica", fontSize: 8.5, cellPadding: 2.4, textColor: ink, lineColor: line, lineWidth: 0.2, valign: "middle" },
-    headStyles: { fillColor: brand, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8 },
+    headStyles: { fillColor: accent, textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8 },
     footStyles: { fillColor: tint, textColor: ink, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [251, 250, 247] },
+    alternateRowStyles: { fillColor: [250, 249, 253] },
     columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 20 }, 2: { cellWidth: 30 }, 4: { cellWidth: 22 }, 5: { cellWidth: 15, halign: "right" }, 6: { cellWidth: 22, halign: "right" } },
   });
 
@@ -138,7 +141,7 @@ export async function buildDispatchInvoicePdf(invoice: DispatchInvoice, loads: L
 
   // Note on the left of the totals.
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...muted);
-  doc.text(doc.splitTextToSize(`Dispatch service charge for the week of ${day(invoice.week_start)}, calculated as ${Number(invoice.charge_percent)}% of the loads total. Please pay by ${day(invoice.due_date)} and quote ${invoice.invoice_number} with your payment.`, boxX - margin - 12), margin, totalsY);
+  doc.text(doc.splitTextToSize(`Dispatch service charge for the week of ${day(invoice.week_start)}, calculated as ${Number(invoice.charge_percent)}% of the loads total. Please pay by ${day(invoice.due_date)} and quote invoice #${invoice.invoice_number} with your payment.`, boxX - margin - 12), margin, totalsY);
 
   // Footer on every page.
   const pages = doc.getNumberOfPages();
@@ -146,7 +149,7 @@ export async function buildDispatchInvoicePdf(invoice: DispatchInvoice, loads: L
     doc.setPage(page);
     doc.setDrawColor(...line); doc.line(margin, height - 14, width - margin, height - 14);
     doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(...muted);
-    doc.text("DEBOSS GLOBAL  ·  Thank you for your business", margin, height - 9);
+    doc.text(`${company.name}  ·  ${company.tagline}  ·  Thank you for your business`, margin, height - 9);
     doc.text(`Page ${page} of ${pages}`, width - margin, height - 9, { align: "right" });
   }
   return doc;

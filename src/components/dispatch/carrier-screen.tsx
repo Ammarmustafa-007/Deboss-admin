@@ -19,8 +19,7 @@ import { ActivityFeed, CommentFeed, Composer } from "@/components/sales/feed";
 import { DuplicateWarning, useDuplicateCheck } from "@/components/dispatch/carriers-screen";
 import {
   activityTypes, carrierPosition, carrierStatusLabel, carrierSteps, documentLabel, documentTypes, invoiceStatusLabel, paymentLabel, paymentMethods, pct, requiredDocuments,
-  truckStatusLabel, truckTypeLabel, truckTypes, useCarrier, useDispatchDirectory, weekLabel, type CarrierDetail,
-} from "@/components/dispatch/model";
+  truckStatusLabel, truckTypeLabel, truckTypes, useCarrier, useDispatchDirectory, weekLabel, type CarrierDetail, invoiceLabel } from "@/components/dispatch/model";
 
 type TabKey = "overview" | "trucks" | "documents" | "activity" | "comments" | "invoices";
 
@@ -81,7 +80,7 @@ function CarrierView({ data }: { data: CarrierDetail }) {
         <CommentFeed rows={data.comments} empty="No comments yet." busy={busy} onDelete={(row) => void run(`delete-comment:${row.id}`, `/api/v1/brokerage/comments/${row.id}`, "DELETE", undefined, "Comment deleted.")} />
       </div></Card>}
       {tab === "invoices" && <Card><CardHeader title="Invoices" /><ul className="divide-y divide-line-soft">{data.invoices.map((invoice) => <li key={invoice.id}><Link href={`/app/dispatch/invoices?open=${invoice.id}`} className="flex items-center gap-3 px-5 py-3 hover:bg-[#FAF8F4]">
-        <div className="min-w-0 flex-1"><p className="font-semibold">{invoice.invoice_number}</p><p className="text-xs text-muted">{weekLabel(invoice.week_start)} · gross {money(invoice.gross_amount)}</p></div>
+        <div className="min-w-0 flex-1"><p className="font-semibold">{invoiceLabel(invoice.invoice_number)}</p><p className="text-xs text-muted">{weekLabel(invoice.week_start)} · gross {money(invoice.gross_amount)}</p></div>
         <b className="tabular-nums">{money(invoice.amount)}</b><StatusChip status={invoice.status} label={invoiceStatusLabel[invoice.status]} />{invoice.signed_off_at && <Chip tone="success">Signed off</Chip>}
       </Link></li>)}</ul></Card>}
     </div>
