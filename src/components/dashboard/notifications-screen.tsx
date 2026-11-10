@@ -25,7 +25,8 @@ export function NotificationsScreen() {
   const hrefFor = (item: Item) => notificationHref(item, sales, quotes);
 
   return <div className="mx-auto max-w-4xl space-y-6 animate-rise">
-    <PageHeader title="Notifications" subtitle={unread.length ? `${unread.length} unread` : "You're up to date"} />
+    <PageHeader title="Notifications" subtitle={unread.length ? `${unread.length} unread` : "You're up to date"}
+      actions={unread.length > 0 && <Button variant="outline" icon={<CheckCheck size={15} />} pending={busy("read-all")} pendingLabel="Marking…" onClick={() => void run("read-all", "/api/v1/brokerage/notifications/read-all", "PATCH", undefined, "All notifications marked as read.")}>Mark all as read</Button>} />
     <Card>
       <div className="px-5 pt-3"><Tabs value={filter} onChange={setFilter} className="border-b-0" items={[{ value: "all", label: "All", count: items.length }, { value: "unread", label: "Unread", count: unread.length }]} /></div>
       <div className="border-t border-line">

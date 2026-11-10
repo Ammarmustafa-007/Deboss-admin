@@ -36,7 +36,8 @@ export type DispatchInvoice = {
   id: string; invoice_number: string; truck_id: string; carrier_id: string; dispatcher_id: string; dispatcher_name?: string | null; sales_agent_name?: string | null;
   week_start: string; week_end: string; gross_amount: number | string; charge_percent: number | string; amount: number | string; amount_paid: number | string;
   status: string; review_note?: string | null; due_date?: string | null; submitted_at?: string | null; forwarded_at?: string | null; paid_at?: string | null; signed_off_at?: string | null;
-  outstanding?: number; overdue?: boolean; truck?: { id: string; unit_number: string; truck_type: string; assigned_to?: string | null }; carrier?: { id: string; company_name: string };
+  outstanding?: number; overdue?: boolean; truck?: { id: string; unit_number: string; truck_type: string; assigned_to?: string | null }; carrier?: { id: string; company_name: string; mc_number?: string | null; dot_number?: string | null; contact_name?: string | null; phone?: string | null; email?: string | null; payment_method?: string | null };
+  created_at?: string;
 };
 export type CarrierSummary = { trucks: number; running: number; week_gross: number; month_gross: number; week_miles: number; week_loads: number; invoices_received: number; received_total: number };
 export type CarrierDetail = {

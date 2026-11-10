@@ -9,10 +9,11 @@ import { cn } from "@/lib/cn";
 import { dateLabel, dateTimeLabel, money } from "@/lib/format";
 import { errorMessage, responseData } from "@/lib/api";
 import { downloadExcel } from "@/lib/excel";
+import { downloadDispatchInvoicePdf } from "@/lib/invoice-pdf";
 import { useSession } from "@/components/app/session";
 import { useBrokerage } from "@/components/app/brokerage-context";
 import { useBrokerageAction } from "@/components/app/use-brokerage-action";
-import { Card, Chip, EmptyState, KpiCard, PageHeader, Skeleton, StatusChip, humanize } from "@/components/ui/surface";
+import { Card, CardHeader, Chip, EmptyState, KpiCard, PageHeader, Skeleton, StatusChip, humanize } from "@/components/ui/surface";
 import { Button } from "@/components/ui/button";
 import { TextAreaField, TextField, controlClass } from "@/components/ui/field";
 import { Drawer, Modal } from "@/components/ui/overlay";
@@ -34,11 +35,20 @@ export function LoadsScreen() {
   const list = loads.data ?? [];
   const live = list.filter((load) => load.status !== "CANCELLED");
   const search = (event: FormEvent) => { event.preventDefault(); setApplied(filters); };
+  // Gross per truck for the loads found (cancelled loads left out). Unit numbers repeat across carriers, so each row names both.
+  const byTruck = [...live.reduce((map, load) => {
+    const key = load.truck_id;
+    const row = map.get(key) ?? { id: key, unit: load.truck?.unit_number ?? "—", carrier: load.carrier?.company_name ?? "—", loads: 0, miles: 0, gross: 0 };
+    row.loads += 1; row.miles += Number(load.miles ?? 0); row.gross += Number(load.rate);
+    return map.set(key, row);
+  }, new Map<string, { id: string; unit: string; carrier: string; loads: number; miles: number; gross: number }>()).values()].sort((left, right) => right.gross - left.gross);
   const exportLoads = () => void downloadExcel("Loads", [{ name: "Loads", title: "Loads", columns: [
     { header: "Pickup date", key: "pickup_date", type: "date" }, { header: "Load #", key: "load_number" }, { header: "Truck", key: "truck" }, { header: "Carrier", key: "carrier" }, { header: "Dispatcher", key: "dispatcher_name" },
     { header: "Pickup city", key: "pickup_city" }, { header: "Pickup zip", key: "pickup_zip" }, { header: "Delivery city", key: "delivery_city" }, { header: "Delivery zip", key: "delivery_zip" }, { header: "Delivery date", key: "delivery_date", type: "date" },
     { header: "Broker", key: "broker_name" }, { header: "Status", key: "status", type: "status" }, { header: "Miles", key: "miles", type: "number" }, { header: "Rate", key: "rate", type: "money" },
-  ], rows: list.map((load) => ({ ...load, truck: load.truck?.unit_number, carrier: load.carrier?.company_name })), totals: { rate: live.reduce((sum, load) => sum + Number(load.rate), 0) } }], { exportedBy: profile.full_name });
+  ], rows: list.map((load) => ({ ...load, truck: load.truck?.unit_number, carrier: load.carrier?.company_name })), totals: { rate: live.reduce((sum, load) => sum + Number(load.rate), 0) } },
+    { name: "By truck", title: "Gross by truck", columns: [{ header: "Truck", key: "unit" }, { header: "Carrier", key: "carrier" }, { header: "Loads", key: "loads", type: "number" }, { header: "Miles", key: "miles", type: "number" }, { header: "Gross", key: "gross", type: "money" }],
+      rows: byTruck, totals: { loads: live.length, miles: live.reduce((sum, load) => sum + Number(load.miles ?? 0), 0), gross: live.reduce((sum, load) => sum + Number(load.rate), 0) } }], { exportedBy: profile.full_name });
 
   return <div className="space-y-6 animate-rise">
     <PageHeader title="Loads" subtitle="Search every load by zip code, city, lane, broker or date" actions={<Button variant="outline" icon={<Download size={15} />} disabled={!list.length} onClick={exportLoads}>Export Excel</Button>} />
@@ -55,6 +65,19 @@ export function LoadsScreen() {
       <KpiCard label="Loads total" value={money(live.reduce((sum, load) => sum + Number(load.rate), 0))} tone="success" />
       <KpiCard label="Miles" value={live.reduce((sum, load) => sum + Number(load.miles ?? 0), 0).toLocaleString()} tone="aqua" className="col-span-2 xl:col-span-1" />
     </div>
+    {byTruck.length > 0 && <Card>
+      <CardHeader title="Gross by truck" subtitle="Each truck's loads in this search (cancelled loads not counted)" />
+      <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-sm">
+        <thead><tr className="text-left text-xs text-muted"><th className="px-5 py-2.5 font-medium">Truck</th><th className="px-3 py-2.5 font-medium">Carrier</th><th className="px-3 py-2.5 text-right font-medium">Loads</th><th className="px-3 py-2.5 text-right font-medium">Miles</th><th className="px-5 py-2.5 text-right font-medium">Gross</th></tr></thead>
+        <tbody>{byTruck.map((truck) => <tr key={truck.id} className="border-t border-line-soft">
+          <td className="px-5 py-3 font-medium"><Link href={`/app/dispatch/trucks/${truck.id}`} className="hover:text-brand-deep">{truck.unit}</Link></td>
+          <td className="px-3 py-3 text-[13px]">{truck.carrier}</td>
+          <td className="px-3 py-3 text-right tabular-nums">{truck.loads}</td>
+          <td className="px-3 py-3 text-right tabular-nums">{truck.miles.toLocaleString()}</td>
+          <td className="px-5 py-3 text-right font-semibold tabular-nums">{money(truck.gross)}</td>
+        </tr>)}</tbody>
+      </table></div>
+    </Card>}
     <Card>{loads.isLoading ? <div className="space-y-2 p-5">{[0, 1, 2].map((index) => <Skeleton key={index} className="h-12" />)}</div>
       : loads.isError ? <EmptyState icon={AlertTriangle} title="Loads unavailable" body={errorMessage(loads.error)} />
       : list.length ? <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-sm">
@@ -141,12 +164,20 @@ function InvoiceDrawer({ id, onClose }: { id: string; onClose: () => void }) {
   const paidError = paid !== "" && (!Number.isFinite(paidAmount) || (paidAmount ?? 0) < 0) ? "Enter an amount of 0 or more." : undefined;
 
   const [deleting, setDeleting] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const { report } = useBrokerage();
+  const downloadPdf = async () => {
+    if (!invoice || !data) return;
+    setPdfBusy(true);
+    try { await downloadDispatchInvoicePdf(invoice, data.loads); } catch (error) { report(errorMessage(error, "The PDF could not be created."), "error"); } finally { setPdfBusy(false); }
+  };
   const remove = () => void run("invoice-delete", `/api/v1/dispatch/invoices/${id}`, "DELETE", undefined, "Invoice deleted. Its loads can be invoiced again.", () => { setDeleting(false); onClose(); });
   const removeLoad = (loadId: string) => void run(`invoice-load:${loadId}`, `/api/v1/dispatch/invoices/${id}`, "PATCH", { remove_load_ids: [loadId] }, "Load removed from the invoice.");
 
   return <Drawer open onClose={onClose} dismissible={!pending} title={invoice?.invoice_number ?? "Invoice"} subtitle={invoice ? `${invoice.carrier?.company_name} · ${invoice.truck?.unit_number} · ${weekLabel(invoice.week_start)}` : undefined} className="max-w-2xl">
     {detail.isLoading || !data || !invoice ? (detail.isError ? <EmptyState icon={AlertTriangle} title="Invoice unavailable" body={errorMessage(detail.error)} /> : <div className="space-y-3"><Skeleton className="h-24" /><Skeleton className="h-40" /></div>) : <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-2"><StatusChip status={invoice.overdue ? "OVERDUE" : invoice.status} label={invoice.overdue ? "Overdue" : invoiceStatusLabel[invoice.status]} />{invoice.signed_off_at && <Chip tone="success">Signed off {dateLabel(invoice.signed_off_at)}</Chip>}</div>
+      <div className="flex flex-wrap items-center gap-2"><StatusChip status={invoice.overdue ? "OVERDUE" : invoice.status} label={invoice.overdue ? "Overdue" : invoiceStatusLabel[invoice.status]} />{invoice.signed_off_at && <Chip tone="success">Signed off {dateLabel(invoice.signed_off_at)}</Chip>}
+        <Button size="sm" variant="outline" icon={<Download size={14} />} pending={pdfBusy} pendingLabel="Creating PDF…" onClick={() => void downloadPdf()} className="ml-auto">Download PDF</Button></div>
       {invoice.review_note && invoice.status === "DRAFT" && <p className="rounded-[12px] bg-danger/[.06] px-4 py-3 text-sm text-[#A5183F]"><b>Returned:</b> {invoice.review_note}</p>}
       <dl className="grid grid-cols-2 gap-x-6 gap-y-3 rounded-[14px] border border-line-soft bg-[#FBFAF7] p-4 text-sm sm:grid-cols-3">
         <div><dt className="text-xs text-muted">Loads total</dt><dd className="font-semibold tabular-nums">{money(invoice.gross_amount)}</dd></div>

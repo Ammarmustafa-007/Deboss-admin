@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Bell, Check, ChevronRight } from "lucide-react";
+import { Bell, Check, CheckCheck, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { useBrokerage } from "@/components/app/brokerage-context";
@@ -35,6 +35,9 @@ export function NotificationBell() {
   }, [open]);
 
   const close = () => setOpen(false);
+  const markAll = () => void run("read-all", "/api/v1/brokerage/notifications/read-all", "PATCH", undefined, "All notifications marked as read.");
+  // Opening a notification also marks it read (quietly, no toast).
+  const openItem = (item: NotificationItem) => { if (!item.read_at) void run(`read:${item.id}`, `/api/v1/brokerage/notifications/${item.id}/read`, "PATCH", undefined, ""); close(); };
 
   return <div ref={root} className="relative">
     <button type="button" onClick={() => setOpen((value) => !value)} aria-haspopup="dialog" aria-expanded={open} aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
@@ -46,7 +49,10 @@ export function NotificationBell() {
     {open && <div role="dialog" aria-label="Notifications" className="fixed inset-x-3 top-[68px] z-40 overflow-hidden rounded-[16px] border border-line bg-white shadow-[0_24px_60px_-20px_rgba(17,17,17,.35)] animate-rise sm:absolute sm:inset-x-auto sm:right-0 sm:top-12 sm:w-[400px]">
       <div className="flex items-center justify-between gap-3 border-b border-line-soft px-4 py-3">
         <p className="font-semibold">Notifications</p>
-        {unread > 0 && <span className="rounded-full bg-danger/12 px-2 py-0.5 text-xs font-semibold text-[#A5183F]">{unread} unread</span>}
+        {unread > 0 && <span className="flex items-center gap-2">
+          <span className="rounded-full bg-danger/12 px-2 py-0.5 text-xs font-semibold text-[#A5183F]">{unread} unread</span>
+          <button type="button" disabled={busy("read-all")} onClick={markAll} className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs font-semibold text-brand-deep hover:bg-brand-tint disabled:opacity-50"><CheckCheck size={14} />{busy("read-all") ? "Marking…" : "Mark all as read"}</button>
+        </span>}
       </div>
 
       {items.length ? <ul className="max-h-[min(440px,60vh)] divide-y divide-line-soft overflow-y-auto">
@@ -63,7 +69,7 @@ export function NotificationBell() {
             </div>
           </>;
           return <li key={item.id} className={cn("group relative flex items-start gap-1 pr-2", isUnread && "bg-brand-tint/40")}>
-            {href ? <Link href={href} onClick={close} className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3 hover:bg-black/[.02]">{body}</Link> : <div className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3">{body}</div>}
+            {href ? <Link href={href} onClick={() => openItem(item)} className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3 hover:bg-black/[.02]">{body}</Link> : <div className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3">{body}</div>}
             {isUnread && <button type="button" disabled={pending || (busy() && !pending)} onClick={() => void run(`read:${item.id}`, `/api/v1/brokerage/notifications/${item.id}/read`, "PATCH", undefined, "Notification marked as read.")} aria-label="Mark as read" title="Mark as read" className="mt-3 grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted hover:bg-black/[.05] hover:text-ink disabled:opacity-50"><Check size={15} className={pending ? "animate-pulse" : ""} /></button>}
           </li>;
         })}
