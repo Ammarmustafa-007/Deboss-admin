@@ -67,7 +67,7 @@ export const activityTypes = ["CALL", "CALLBACK", "APPOINTMENT", "FOLLOW_UP", "E
 export const carrierStatusLabel: Record<string, string> = { DOCS_PENDING: "Docs pending", PENDING_REVIEW: "Pending review", RETURNED: "Returned for rework", APPROVED: "Approved", DISCARDED: "Discarded" };
 export const truckStatusLabel: Record<string, string> = { PENDING: "Awaiting approval", ACTIVE: "Active · needs dispatcher", ONBOARDED: "Onboarded", RUNNING: "Running", INACTIVE: "Inactive", DNC: "Do not call", DISCARDED: "Discarded" };
 export const invoiceStatusLabel: Record<string, string> = { DRAFT: "Draft", SUBMITTED: "Submitted for review", FORWARDED: "Forwarded to accounting", PAID: "Paid", CANCELLED: "Cancelled" };
-export const loadStatusLabel: Record<string, string> = { BOOKED: "Booked", DELIVERED: "Delivered", CANCELLED: "Cancelled" };
+export const loadStatusLabel: Record<string, string> = { BOOKED: "Booked", PICKED_UP: "Picked up", DELIVERED: "Delivered", CANCELLED: "Cancelled" };
 
 /** Figure 5 as a line: Docs pending → Pending review → Active → Onboarded → Running. */
 export const carrierSteps = ["Docs pending", "Pending review", "Active", "Onboarded", "Running"];
