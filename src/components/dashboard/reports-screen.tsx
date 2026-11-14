@@ -45,24 +45,15 @@ export function ReportsScreen() {
   // Client feedback: agents see the current month only; managers keep the date range and the export.
   const fullControls = manager || profile.role === "SUPER_ADMIN";
   const [range, setRange] = useState(thisMonth);
-  // The report response is intentionally narrowed once an agent filter is active.
-  // Keep the full roster separately so selecting one agent never removes the way back to all agents.
-  const [agentOptions, setAgentOptions] = useState<{ id: string; full_name: string }[]>([]);
   // Next keeps visited pages alive but hidden; hiding runs effect cleanups, so leaving Reports resets the filters.
   useEffect(() => () => setRange(thisMonth()), []);
   const shown = fullControls ? range : { ...thisMonth(), agent_id: range.agent_id };
   const reports = useQuery({ queryKey: ["brokerage", "reports", shown], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(shown).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000 });
-
-  useEffect(() => {
-    const incoming = reports.data?.sales.agents ?? [];
-    if (!incoming.length) return;
-    setAgentOptions((current) => {
-      const byId = new Map(current.map((agent) => [agent.id, agent]));
-      incoming.forEach((agent) => byId.set(agent.id, agent));
-      const next = [...byId.values()];
-      return next.length === current.length && next.every((agent, index) => agent.id === current[index]?.id && agent.full_name === current[index]?.full_name) ? current : next;
-    });
-  }, [reports.data?.sales.agents]);
+  // The filtered response may contain only one agent. Keep the full roster in
+  // a separate cached query so the dropdown always offers a way back.
+  const unfiltered = { ...shown, agent_id: "" };
+  const roster = useQuery({ queryKey: ["brokerage", "reports", unfiltered], queryFn: async () => responseData<ReportData>(await api(`/api/v1/brokerage/reports?${new URLSearchParams(Object.entries(unfiltered).filter(([, value]) => value) as string[][]).toString()}`)), staleTime: 30_000, enabled: sales && canViewTeamPerformance });
+  const agentOptions = roster.data?.sales.agents ?? reports.data?.sales.agents ?? [];
 
   const [exporting, setExporting] = useState(false);
   const exportExcel = async () => {
