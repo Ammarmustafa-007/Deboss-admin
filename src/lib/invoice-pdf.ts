@@ -119,7 +119,7 @@ export async function buildDispatchInvoicePdf(invoice: DispatchInvoice, loads: L
   // Totals, right-aligned under the table.
   const afterTable = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y + 20;
   let totalsY = afterTable + 8;
-  if (totalsY + 46 > height - 22) { doc.addPage(); totalsY = 24; }
+  if (totalsY + 53 > height - 22) { doc.addPage(); totalsY = 24; }
   const boxX = width - margin - 84;
   const rows: [string, string, boolean?][] = [
     ["Loads total (gross)", money(invoice.gross_amount)],
@@ -142,6 +142,13 @@ export async function buildDispatchInvoicePdf(invoice: DispatchInvoice, loads: L
   // Note on the left of the totals.
   doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(...muted);
   doc.text(doc.splitTextToSize(`Dispatch service charge for the week of ${day(invoice.week_start)}, calculated as ${Number(invoice.charge_percent)}% of the loads total. Please pay by ${day(invoice.due_date)} and quote invoice #${invoice.invoice_number} with your payment.`, boxX - margin - 12), margin, totalsY);
+
+  // Keep the payment destination beside the balance so it remains visible on a printed invoice.
+  const paymentWidth = boxX - margin - 10;
+  doc.setFillColor(...tint); doc.roundedRect(margin, dueY - 4, paymentWidth, 20, 2, 2, "F");
+  doc.setTextColor(...accent); doc.setFont("helvetica", "bold"); doc.setFontSize(8); doc.text("PAY WITH ZELLE", margin + 4, dueY + 1);
+  doc.setTextColor(...ink); doc.setFontSize(9); doc.text("Backend Solutions LLC", margin + 4, dueY + 7);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.text("backendsolllc@gmail.com", margin + 4, dueY + 12);
 
   // Footer on every page.
   const pages = doc.getNumberOfPages();

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Ban, CheckCircle2, Hourglass, PauseCircle, Pencil, PlayCircle, Plus, ReceiptText, ShieldAlert, Trash2 } from "lucide-react";
+import { ArrowLeft, Ban, CheckCircle2, Hourglass, PauseCircle, Pencil, PlayCircle, Plus, ReceiptText, ShieldAlert, Trash2 } from "lucide-react";
 import { use, useMemo, useState, type FormEvent } from "react";
 import { cn } from "@/lib/cn";
 import { dateLabel, money } from "@/lib/format";
@@ -43,8 +43,12 @@ function TruckView({ data }: { data: TruckDetail }) {
   const weeklyTarget = Number(data.targets.find((target) => target.period_type === "WEEKLY")?.amount ?? 0);
   const status = (next: string, success: string, extra: Record<string, unknown> = {}) => void run("status", `/api/v1/dispatch/trucks/${truck.id}`, "PATCH", { status: next, ...extra }, success);
   const closed = ["DNC", "DISCARDED"].includes(truck.status);
+  const backHref = rights.sales_side ? `/app/dispatch/carriers/${carrier.id}` : "/app/dispatch/trucks";
 
   return <div className="space-y-6 animate-rise">
+    <Link href={backHref} className="inline-flex h-10 items-center gap-2 rounded-control border border-line bg-white px-3 text-sm font-semibold text-ink transition hover:border-brand hover:bg-brand/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand">
+      <ArrowLeft size={16} aria-hidden="true" /> Back to {rights.sales_side ? "carrier" : "trucks"}
+    </Link>
     <PageHeader crumbs={[{ label: rights.sales_side ? "Carriers" : "Trucks", href: rights.sales_side ? `/app/dispatch/carriers/${carrier.id}` : "/app/dispatch/trucks" }, { label: `${truck.unit_number}` }]}
       title={<span className="flex flex-wrap items-center gap-3">{truck.unit_number}<StatusChip status={truck.status} label={truckStatusLabel[truck.status]} className="text-[13px]" /></span>}
       subtitle={<span><Link href={`/app/dispatch/carriers/${carrier.id}`} className="font-medium hover:text-ink">{carrier.company_name}</Link> · {truckTypeLabel[truck.truck_type]} · Dispatcher: {truck.assigned_name ?? "not assigned"}</span>}
